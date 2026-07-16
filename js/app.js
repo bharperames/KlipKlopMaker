@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as fflate from 'fflate';
 
 import {
@@ -648,7 +649,9 @@ function pieceWeightsG() {
     for (const m of pieceMeshes) {
         if (!m || weights.has(m.userData.pieceIndex)) continue;
         const pos = m.geometry.attributes.position.array;
-        const idx = m.geometry.index.array;
+        const idx = m.geometry.index
+            ? m.geometry.index.array
+            : Uint32Array.from({ length: m.geometry.attributes.position.count }, (_, i) => i);
         weights.set(m.userData.pieceIndex, printedWeightG(computeMeshVolumeMm3(pos, idx), 'track'));
     }
     return weights;
@@ -1105,7 +1108,7 @@ function setTab(t) {
 
 let audioCtx = null;
 function clack(freq) {
-    if (!state.soundOn) return;
+    if (!state.soundOn && !film.active) return;
     audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
     const t = audioCtx.currentTime;
     const noise = audioCtx.createBufferSource();
@@ -1118,7 +1121,9 @@ function clack(freq) {
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(0.5, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    noise.connect(bp).connect(gain).connect(audioCtx.destination);
+    noise.connect(bp).connect(gain);
+    if (state.soundOn) gain.connect(audioCtx.destination);
+    if (film.active && film.audioDest) gain.connect(film.audioDest);
     noise.start(t);
 }
 $('btn-sound').addEventListener('click', () => {
@@ -1197,9 +1202,11 @@ function fadeStrikeMarkers(now) {
 const film = { active: false, media: null, chunks: [], mime: '', prevCam: null, t0: 0 };
 
 function pickVideoMime() {
+    // prefer audio+video codecs so the klip-klop track records into the film
     const candidates = [
-        'video/mp4;codecs=avc1.42E01E',
+        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
         'video/mp4',
+        'video/webm;codecs=vp9,opus',
         'video/webm;codecs=vp9',
         'video/webm'
     ];
@@ -1224,6 +1231,13 @@ function startFilm() {
     camera.position.set(p0.x - Math.cos(p0.h) * 260, p0.y + 170, p0.z - Math.sin(p0.h) * 260);
 
     const stream = renderer.domElement.captureStream(60);
+    // mix the synthesized klip-klop audio into the recording (even when the
+    // speaker toggle is muted, the film still gets its soundtrack)
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    film.audioDest = audioCtx.createMediaStreamDestination();
+    const audioTrack = film.audioDest.stream.getAudioTracks()[0];
+    if (audioTrack) stream.addTrack(audioTrack);
     film.mime = mime;
     film.chunks = [];
     film.media = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
@@ -1240,6 +1254,7 @@ function endFilm() {
     if (!film.active) return;
     film.active = false;
     if (film.media && film.media.state !== 'inactive') film.media.stop(); // finalize before the camera jumps back
+    film.audioDest = null;
     $('btn-record').textContent = '🎥 Film ride';
     controls.enabled = true;
     arrowGroup.visible = true;
@@ -1486,7 +1501,19 @@ function assembleParts() {
 // geometry (joints, pockets, sockets, washboard — what the slicer will see)
 // ---------------------------------------------------------------------------
 
-const gallery = { open: false, renderer: null, scene: null, camera: null, controls: null, mesh: null, parts: [] };
+const gallery = {
+    open: false, renderer: null, scene: null, camera: null, controls: null,
+    mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
+    style: 'plastic', showWire: false, showDims: true
+};
+
+// material styles: how the same watertight mesh reads under different finishes
+const GALLERY_MATS = {
+    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.32, metalness: 0, clearcoat: 0.65, clearcoatRoughness: 0.25 }),
+    pla: () => new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.85, metalness: 0 }),
+    clay: () => new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
+    normals: () => new THREE.MeshNormalMaterial()
+};
 
 function initGallery() {
     if (gallery.renderer) return;
@@ -1496,18 +1523,94 @@ function initGallery() {
     holder.appendChild(gallery.renderer.domElement);
     gallery.scene = new THREE.Scene();
     gallery.scene.background = new THREE.Color(0x272420);
+    // studio environment: reflections make the physical material read as
+    // injection-molded plastic instead of untextured CAD
+    const pmrem = new THREE.PMREMGenerator(gallery.renderer);
+    gallery.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     gallery.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
     gallery.controls = new OrbitControls(gallery.camera, gallery.renderer.domElement);
     gallery.controls.enableDamping = true;
     gallery.controls.autoRotate = true;
     gallery.controls.autoRotateSpeed = 1.6;
     gallery.controls.zoomSpeed = 3;
-    gallery.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 1.1));
-    const key = new THREE.DirectionalLight(0xfff2d8, 1.6);
+    gallery.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 0.55));
+    const key = new THREE.DirectionalLight(0xfff2d8, 1.1);
     key.position.set(200, 350, 150);
     gallery.scene.add(key);
     const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
     gallery.scene.add(grid);
+
+    $('parts-shading').addEventListener('change', () => { gallery.style = $('parts-shading').value; applyGalleryStyle(); });
+    $('parts-wire').addEventListener('change', () => { gallery.showWire = $('parts-wire').checked; applyGalleryStyle(); });
+    $('parts-dims').addEventListener('change', () => { gallery.showDims = $('parts-dims').checked; applyGalleryStyle(); });
+}
+
+/** Engineering-style dimension lines (L/W/H in mm) around the part's bbox. */
+function makeDimGroup(box) {
+    const g = new THREE.Group();
+    const mat = new THREE.LineBasicMaterial({ color: 0x9ec5ff });
+    const size = box.getSize(new THREE.Vector3());
+    const off = Math.max(14, size.length() * 0.05);
+    const mkLine = (a, b) => {
+        const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+        g.add(new THREE.Line(geo, mat));
+    };
+    const mkLabel = (text, pos) => {
+        const c = document.createElement('canvas');
+        c.width = 256; c.height = 64;
+        const ctx = c.getContext('2d');
+        ctx.font = 'bold 40px sans-serif';
+        ctx.fillStyle = '#cfe2ff';
+        ctx.textAlign = 'center';
+        ctx.fillText(text, 128, 46);
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+        sp.position.copy(pos);
+        const s = Math.max(30, size.length() * 0.14);
+        sp.scale.set(s, s / 4, 1);
+        g.add(sp);
+    };
+    const { min, max } = box;
+    const tick = off * 0.25;
+    // X (length) along the front-bottom edge
+    mkLine(new THREE.Vector3(min.x, min.y, max.z + off), new THREE.Vector3(max.x, min.y, max.z + off));
+    mkLine(new THREE.Vector3(min.x, min.y, max.z + off - tick), new THREE.Vector3(min.x, min.y, max.z + off + tick));
+    mkLine(new THREE.Vector3(max.x, min.y, max.z + off - tick), new THREE.Vector3(max.x, min.y, max.z + off + tick));
+    mkLabel(`${size.x.toFixed(1)} mm`, new THREE.Vector3((min.x + max.x) / 2, min.y + off * 0.4, max.z + off * 1.6));
+    // Z (depth) along the right-bottom edge
+    mkLine(new THREE.Vector3(max.x + off, min.y, min.z), new THREE.Vector3(max.x + off, min.y, max.z));
+    mkLine(new THREE.Vector3(max.x + off - tick, min.y, min.z), new THREE.Vector3(max.x + off + tick, min.y, min.z));
+    mkLine(new THREE.Vector3(max.x + off - tick, min.y, max.z), new THREE.Vector3(max.x + off + tick, min.y, max.z));
+    mkLabel(`${size.z.toFixed(1)} mm`, new THREE.Vector3(max.x + off * 1.6, min.y + off * 0.4, (min.z + max.z) / 2));
+    // Y (height) up the front-right corner
+    mkLine(new THREE.Vector3(max.x + off, min.y, max.z + off), new THREE.Vector3(max.x + off, max.y, max.z + off));
+    mkLine(new THREE.Vector3(max.x + off - tick, min.y, max.z + off), new THREE.Vector3(max.x + off + tick, min.y, max.z + off));
+    mkLine(new THREE.Vector3(max.x + off - tick, max.y, max.z + off), new THREE.Vector3(max.x + off + tick, max.y, max.z + off));
+    mkLabel(`${size.y.toFixed(1)} mm`, new THREE.Vector3(max.x + off * 1.4, (min.y + max.y) / 2 + off * 0.5, max.z + off * 1.4));
+    return g;
+}
+
+/** (Re)builds the displayed mesh + overlays from gallery.geo and view options. */
+function applyGalleryStyle() {
+    for (const key of ['mesh', 'wire', 'dims']) {
+        if (gallery[key]) {
+            gallery.scene.remove(gallery[key]);
+            gallery[key] = null;
+        }
+    }
+    if (!gallery.geo) return;
+    gallery.mesh = new THREE.Mesh(gallery.geo, GALLERY_MATS[gallery.style]());
+    gallery.scene.add(gallery.mesh);
+    if (gallery.showWire) {
+        gallery.wire = new THREE.LineSegments(
+            new THREE.WireframeGeometry(gallery.geo),
+            new THREE.LineBasicMaterial({ color: 0x120f0a, transparent: true, opacity: 0.32 })
+        );
+        gallery.scene.add(gallery.wire);
+    }
+    if (gallery.showDims) {
+        gallery.dims = makeDimGroup(new THREE.Box3().setFromObject(gallery.mesh));
+        gallery.scene.add(gallery.dims);
+    }
 }
 
 function galleryResize() {
@@ -1547,15 +1650,11 @@ function selectGalleryPart(i) {
     [...$('parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
     $('parts-caption').innerHTML = '⏳ building export geometry…';
     setTimeout(() => {
-        if (gallery.mesh) {
-            gallery.scene.remove(gallery.mesh);
-            gallery.mesh.geometry.dispose();
-        }
+        if (gallery.geo) gallery.geo.dispose();
         const mesh = recenter(part.build());
         const report = analyzeMesh(mesh.positions, mesh.indices);
-        const g = toBufferGeometry(mesh);
-        gallery.mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0xe8b23a }));
-        gallery.scene.add(gallery.mesh);
+        gallery.geo = toBufferGeometry(mesh);
+        applyGalleryStyle();
         const box = new THREE.Box3().setFromObject(gallery.mesh);
         const c = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3()).length();
@@ -1735,10 +1834,11 @@ async function doExport(format) {
 }
 
 function toArraysFromBG(g) {
-    return {
-        positions: new Float32Array(g.attributes.position.array),
-        indices: new Uint32Array(g.index.array)
-    };
+    const positions = new Float32Array(g.attributes.position.array);
+    const indices = g.index
+        ? new Uint32Array(g.index.array)
+        : Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i);
+    return { positions, indices };
 }
 
 function exportReadme(joints, switchCount) {

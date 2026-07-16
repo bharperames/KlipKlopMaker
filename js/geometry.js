@@ -315,8 +315,21 @@ export function hexPlan(acrossFlats, rotation = 0) {
     return pts;
 }
 
-/** Circle plan polygon. */
-export function circlePlan(r, segments = 32) {
+/**
+ * Facet tolerance: segment count for a circle of radius r such that the
+ * chord sagitta (max deviation of the flat facet from the true arc) stays
+ * under `tol` mm. 0.1 mm default — well inside FDM accuracy and a 0.4 mm
+ * nozzle, and stricter than the 0.25 mm print-quality ceiling.
+ */
+export const FACET_TOL_MM = 0.1;
+export function segmentsForCircle(r, tol = FACET_TOL_MM) {
+    if (r <= tol) return 12;
+    const n = Math.ceil(Math.PI / Math.acos(Math.max(-1, Math.min(1, 1 - tol / r))));
+    return Math.min(96, Math.max(12, n));
+}
+
+/** Circle plan polygon, tessellated to the facet tolerance by default. */
+export function circlePlan(r, segments = segmentsForCircle(r)) {
     const pts = [];
     for (let i = 0; i < segments; i++) {
         const a = (i / segments) * 2 * Math.PI;

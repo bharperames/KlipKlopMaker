@@ -151,3 +151,23 @@ describe('figure volume estimate', () => {
         expect(vol).toBeLessThan(120000);    // < 120 cm³
     });
 });
+
+describe('facet tolerance', () => {
+    test('tolerance-driven circle tessellation keeps sagitta under 0.1 mm', async () => {
+        const { segmentsForCircle } = await import('../js/geometry.js');
+        for (const r of [1.65, 4, 9.5, 15, 30, 150]) {
+            const n = segmentsForCircle(r);
+            const sagitta = r * (1 - Math.cos(Math.PI / n));
+            expect(sagitta).toBeLessThanOrEqual(0.1 + 1e-9);
+            expect(n).toBeLessThanOrEqual(96);
+        }
+    });
+
+    test('curve-piece sweep stations keep chord error under 0.25 mm at export resolution', () => {
+        const { pieces } = layoutTrack(['curveL'], { curveRadius: 150 });
+        const pc = pieces[1];
+        const step = pc.ridgePitch / 6;
+        const sagitta = pc.radius * (1 - Math.cos(step / pc.radius / 2));
+        expect(sagitta).toBeLessThan(0.001);
+    });
+});

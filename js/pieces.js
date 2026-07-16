@@ -16,10 +16,11 @@
  */
 
 import * as THREE from 'three';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import { SPEC, stationsForPiece } from './track.js';
 import {
-    sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles,
+    sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan,
     bodySideOutline, pendulumSideOutline, FIGURE
 } from './geometry.js';
@@ -37,12 +38,19 @@ export async function initCSG() {
     return wasm;
 }
 
+/**
+ * Arrays → renderable geometry. CSG/sweep output is fully vertex-welded, so
+ * naive computeVertexNormals() averages across 90° edges and smears lighting
+ * over flat walls (reads as "twisted normals" — it isn't; winding is verified).
+ * toCreasedNormals splits normals at edges sharper than 30°: crisp corners,
+ * smooth washboard/fillet arcs. Note: the result is NON-indexed — anything
+ * reading .index must fall back to sequential indices.
+ */
 export function toBufferGeometry({ positions, indices }) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     g.setIndex(new THREE.BufferAttribute(indices, 1));
-    g.computeVertexNormals();
-    return g;
+    return toCreasedNormals(g, Math.PI / 6);
 }
 
 function toArrays(g) {
@@ -206,7 +214,7 @@ function bossOps(piece, spec, support) {
         ops.push({
             op: ADDITION,
             geometry: toBufferGeometry(extrudePolygonY(
-                circlePlan(spec.socket.bossR, 24).map(([px, pz]) => [bx + px, bz + pz]),
+                circlePlan(spec.socket.bossR).map(([px, pz]) => [bx + px, bz + pz]),
                 piece.rimY, ceilY + 0.5))
         });
     } else {
@@ -232,7 +240,7 @@ function bossOps(piece, spec, support) {
         ops.push({
             op: ADDITION,
             geometry: toBufferGeometry(extrudePolygonY(
-                circlePlan(spec.socket.bossR, 24).map(([px, pz]) => [bx + px, bz + pz]),
+                circlePlan(spec.socket.bossR).map(([px, pz]) => [bx + px, bz + pz]),
                 piece.rimY, piece.rimY + 11))
         });
     }
@@ -314,7 +322,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
 
     // gate pivot bore: vertical Ø3.3 through the deck at the divergence point
     const pinPos = gatePinPosition(mainPiece);
-    const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, 20);
+    const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, segmentsForCircle(1.65));
     pin.translate(pinPos.x, pinPos.deckY + spec.railHeight / 2, pinPos.z);
     ops.push({ op: SUBTRACTION, geometry: pin });
 
@@ -368,7 +376,8 @@ export function buildGateGeometry(spec = SPEC) {
         { y: 0, r: 5 },                        // hub
         { y: spec.railHeight - 2, r: 5 }
     ];
-    const profiles = levels.map(l => circlePlan(l.r, 24).map(([x, z]) => [x, -z]));
+    const nHub = segmentsForCircle(Math.max(...levels.map(l => l.r)));
+    const profiles = levels.map(l => circlePlan(l.r, nHub).map(([x, z]) => [x, -z]));
     const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
     const hub = toBufferGeometry(sweepSolid(profiles, stations));
     const vane = new THREE.BoxGeometry(2.6, spec.railHeight - 2, 52);
@@ -440,7 +449,8 @@ export function buildPalmIslandGeometries(spec = SPEC) {
         { y: 0, r: 6 },
         { y: 66, r: 4 }
     ];
-    const profiles = trunkLevels.map(l => circlePlan(l.r, 18).map(([x, z]) => [x, -z]));
+    const nTrunk = segmentsForCircle(Math.max(...trunkLevels.map(l => l.r)));
+    const profiles = trunkLevels.map(l => circlePlan(l.r, nTrunk).map(([x, z]) => [x, -z]));
     const stations = trunkLevels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
     const trunk = toBufferGeometry(sweepSolid(profiles, stations));
     const star = [];
@@ -481,7 +491,7 @@ export function buildPatioGeometry(spec = SPEC) {
 // Walker figure
 // ---------------------------------------------------------------------------
 
-function cylinderX(r, x0, x1, cz, cy, segments = 24) {
+function cylinderX(r, x0, x1, cz, cy, segments = segmentsForCircle(r)) {
     const g = new THREE.CylinderGeometry(r, r, x1 - x0, segments);
     g.rotateZ(Math.PI / 2); // cylinder axis Y → X
     g.translate((x0 + x1) / 2, cy, cz);
@@ -527,7 +537,8 @@ function plugPair(stemR, offsetX, offsetZ) {
             { y: 1.5, r: stemR },
             { y: 5.5, r: stemR }
         ];
-        const profiles = levels.map(l => circlePlan(l.r, 24).map(([x, z]) => [x, -z]));
+        const nPlug = segmentsForCircle(Math.max(...levels.map(l => l.r)));
+        const profiles = levels.map(l => circlePlan(l.r, nPlug).map(([x, z]) => [x, -z]));
         const stations = levels.map(l => ({ origin: [ox, l.y, offsetZ], right: [1, 0, 0], up: [0, 0, -1] }));
         return sweepSolid(profiles, stations);
     };
