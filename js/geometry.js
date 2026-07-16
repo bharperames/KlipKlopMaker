@@ -219,11 +219,39 @@ export function channelProfile(o) {
 }
 
 /**
+ * Skirt-rim height at arc length s, carving gothic arch windows between
+ * support pads on running pieces. Pads (ends + the pillar-boss station) keep
+ * the flat rim so the piece prints on them and joints/bosses stay anchored;
+ * between pads the rim rises at 45° to a peak capped 10 mm under the deck.
+ * Pure 45° edges → printable with zero supports; aerial viaduct look; less
+ * plastic under elevated track.
+ */
+export function archedRimY(piece, s, spec, padCenters = []) {
+    const PAD = 20;
+    const flat = piece.rimY;
+    if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;
+    // pad intervals, merged and sorted
+    const pads = [[0, PAD], [piece.planLen - PAD, piece.planLen]];
+    for (const c of padCenters) pads.push([Math.max(0, c - 12), Math.min(piece.planLen, c + 12)]);
+    pads.sort((a, b) => a[0] - b[0]);
+    for (const [a, b] of pads) if (s >= a - 1e-9 && s <= b + 1e-9) return flat;
+    // window bounds: nearest pad edges around s
+    let s0 = 0, s1 = piece.planLen;
+    for (const [a, b] of pads) {
+        if (b <= s && b > s0) s0 = b;
+        if (a >= s && a < s1) s1 = a;
+    }
+    const rise = Math.min(s - s0, s1 - s); // 45° gothic flanks, no bridging
+    const deckCap = (piece.entryDeck - piece.drop * (s / piece.planLen)) - 10;
+    return Math.min(flat + rise, Math.max(flat, deckCap));
+}
+
+/**
  * Builds all sweep profiles for a piece at the given stations, applying the
  * washboard ridge as a function of arc length (seams always land in valleys
- * because the pitch was snapped to the piece length).
+ * because the pitch was snapped to the piece length) and the arched skirt rim.
  */
-export function pieceProfiles(piece, stations, spec, withRidges) {
+export function pieceProfiles(piece, stations, spec, withRidges, padCenters = []) {
     return stations.map(st => channelProfile({
         innerWidth: piece.innerWidth,
         wall: spec.wall,
@@ -231,7 +259,7 @@ export function pieceProfiles(piece, stations, spec, withRidges) {
         floorThk: spec.floorThk,
         filletR: spec.filletR,
         deckY: 0, // origins already carry the deck elevation
-        rimY: piece.rimY - deckYOffset(piece, st),
+        rimY: archedRimY(piece, st.s, spec, padCenters) - deckYOffset(piece, st),
         ridge: withRidges ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) : 0
     }));
 }

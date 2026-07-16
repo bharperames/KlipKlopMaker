@@ -111,25 +111,48 @@ function planToWorld(pts, face) {
 // ---------------------------------------------------------------------------
 
 /** Fast, ridgeless shell for the interactive scene. */
-export function buildPieceDisplayGeometry(piece, spec = SPEC) {
-    const stations = stationsForPiece(piece, 10);
-    const profiles = pieceProfiles(piece, stations, spec, false);
+export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters) {
+    const stations = stationsForPiece(piece, 6);
+    const profiles = pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
-/** Display union of a switch's two route shells (needs initCSG awaited). */
-export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC) {
+/**
+ * A route's travel envelope: the open air the figure sweeps through — the
+ * full channel width from just above the washboard crests to above the rails.
+ * Subtracting both routes' envelopes from the merged switch carves a proper
+ * open frog: each route's rails are cut flush (to ridge-crest height) where
+ * they would otherwise wall off the other route's channel.
+ */
+function routeClearanceEnvelope(piece, spec, maxStep = 10) {
+    const stations = stationsForPiece(piece, maxStep);
+    const w = piece.innerWidth / 2 - 0.05;
+    const h0 = spec.ridge.height + 0.05;   // spare this route's own washboard
+    const h1 = spec.railHeight + 8;
+    const profile = [[-w, h0], [w, h0], [w, h1], [-w, h1]];
+    // extend past both faces so the cut runs cleanly through the mouth
+    const ext = [...stations];
+    return sweepSolid(ext.map(() => profile), ext);
+}
+
+/** Display union of a switch's two route shells with an open frog. */
+export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, padCenters) {
     const mk = (piece) => {
-        const stations = stationsForPiece(piece, 12);
-        return toBufferGeometry(sweepSolid(pieceProfiles(piece, stations, spec, false), stations));
+        const stations = stationsForPiece(piece, 8);
+        return toBufferGeometry(sweepSolid(
+            pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]), stations));
     };
-    return toBufferGeometry(csgChain(mk(mainPiece), [{ op: ADDITION, geometry: mk(branchPiece) }]));
+    return toBufferGeometry(csgChain(mk(mainPiece), [
+        { op: ADDITION, geometry: mk(branchPiece) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(mainPiece, spec, 12)) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(branchPiece, spec, 12)) }
+    ]));
 }
 
 /** Fine washboard shell (positions/indices) for one piece. */
-function fineShell(piece, spec) {
+function fineShell(piece, spec, padCenters) {
     const stations = stationsForPiece(piece, piece.ridgePitch / 6);
-    const profiles = pieceProfiles(piece, stations, spec, true);
+    const profiles = pieceProfiles(piece, stations, spec, true, padCenters ?? [piece.planLen / 2]);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
@@ -230,7 +253,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const spec = opts.spec ?? SPEC;
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
-    const shell = fineShell(piece, spec);
+    const shell = fineShell(piece, spec, opts.support ? [opts.support.s] : undefined);
     const ops = [];
     const Wi = piece.innerWidth / 2;
 
@@ -268,8 +291,14 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  */
 export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const spec = opts.spec ?? SPEC;
-    const shell = fineShell(mainPiece, spec);
+    const shell = fineShell(mainPiece, spec, opts.support ? [opts.support.s] : undefined);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
+
+    // open the frog: neither route's rails may cross the other's channel
+    ops.push(
+        { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(mainPiece, spec, 4)) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(branchPiece, spec, 4)) }
+    );
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
@@ -292,14 +321,29 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     return csgChain(shell, ops);
 }
 
-/** Gate pivot location: on the centerline, 40 mm into the switch. */
+/**
+ * Gate pivot: the blade hinges on the wall OPPOSITE the branch, just before
+ * the mouth. Parked flat along that wall → figure runs straight through;
+ * swung inward → it sweeps across the channel and deflects the figure into
+ * the diverging route (how the original playset gates work).
+ */
 export function gatePinPosition(mainPiece) {
-    const dir = [Math.cos(mainPiece.entry.h), Math.sin(mainPiece.entry.h)];
-    const s = 40;
+    const h = mainPiece.entry.h;
+    const dir = [Math.cos(h), Math.sin(h)];
+    const right = [Math.sin(h), -Math.cos(h)];
+    // branch curls toward −right for switchL → hinge on +right wall (and vice versa)
+    const hingeSide = mainPiece.switchType === 'switchL' ? 1 : -1;
+    const s = 16;
+    const lat = (mainPiece.innerWidth / 2 - 4) * hingeSide;
     return {
-        x: mainPiece.entry.x + dir[0] * s,
-        z: mainPiece.entry.z + dir[1] * s,
-        deckY: mainPiece.entryDeck - (s / mainPiece.planLen) * mainPiece.drop
+        x: mainPiece.entry.x + dir[0] * s + right[0] * lat,
+        z: mainPiece.entry.z + dir[1] * s + right[1] * lat,
+        deckY: mainPiece.entryDeck - (s / mainPiece.planLen) * mainPiece.drop,
+        hingeSide,
+        // yaw of the blade (which extends forward from the hinge):
+        // parked along the wall vs swung ~33° across the channel toward the branch
+        yawParked: h,
+        yawDiverting: h + (mainPiece.switchType === 'switchL' ? 1 : -1) * 0.58
     };
 }
 

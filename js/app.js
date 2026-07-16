@@ -19,6 +19,7 @@ import {
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict } from './physics.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
+import { createHistory } from './history.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
@@ -50,6 +51,66 @@ const state = {
 };
 
 const DEMO = ['straight', ...appendSpiralTier([], 'L'), ...appendSpiralTier([], 'L'), 'straight', 'straight'];
+
+// ---------------------------------------------------------------------------
+// Edit stack: EVERY design mutation calls recordEdit() (optionally with an
+// opKey so drag/slider gestures coalesce) BEFORE it applies. Undo/redo swap
+// whole design snapshots — new operation types are undoable automatically.
+// ---------------------------------------------------------------------------
+
+const history = createHistory({ limit: 100 });
+
+function designSnapshot() {
+    return {
+        sequence: JSON.parse(JSON.stringify(state.sequence)),
+        scenery: state.scenery.map(s => ({ ...s })),
+        slopeDeg: state.slopeDeg,
+        innerWidth: state.innerWidth,
+        curveRadius: state.curveRadius,
+        muKey: state.muKey,
+        walker: { ...state.walker },
+        name: state.name,
+        activeEndKey: state.activeEndKey
+    };
+}
+
+function recordEdit(opKey = null) {
+    history.push(designSnapshot(), opKey);
+    refreshHistoryButtons();
+}
+
+function restoreSnapshot(s) {
+    state.sequence = s.sequence;
+    state.scenery = s.scenery;
+    state.slopeDeg = s.slopeDeg;
+    state.innerWidth = s.innerWidth;
+    state.curveRadius = s.curveRadius;
+    state.muKey = s.muKey;
+    state.walker = s.walker;
+    state.name = s.name;
+    state.activeEndKey = s.activeEndKey ?? '[]';
+    state.selected = -1;
+    state.selectedScenery = -1;
+    syncControls();
+    rebuild();
+}
+
+function doUndo() {
+    const s = history.undo(designSnapshot());
+    if (s) { restoreSnapshot(s); toast('↩ Undone'); }
+    refreshHistoryButtons();
+}
+function doRedo() {
+    const s = history.redo(designSnapshot());
+    if (s) { restoreSnapshot(s); toast('↪ Redone'); }
+    refreshHistoryButtons();
+}
+function refreshHistoryButtons() {
+    const u = document.getElementById('btn-undo');
+    const r = document.getElementById('btn-redo');
+    if (u) u.disabled = !history.canUndo();
+    if (r) r.disabled = !history.canRedo();
+}
 
 function saveState() {
     localStorage.setItem('klipklop-scene-v1', JSON.stringify(serializeScene(state)));
@@ -202,30 +263,31 @@ function rebuild() {
         }
     }
 
+    // collision-aware supports first: arch pads and pillars depend on them
+    state.supports = planPillarPositions(pieces);
+    const supportOf = (idx) => state.supports.find(s => s.pieceIndex === idx);
+
     for (const pc of pieces) {
         if (pc.role === 'branch') continue; // rendered with its main sibling
+        const pads = supportOf(pc.index) ? [supportOf(pc.index).s ?? pc.planLen / 2] : undefined;
         let mesh;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             mesh = new THREE.Mesh(
-                buildSwitchDisplayGeometry(pair.main, pair.branch),
+                buildSwitchDisplayGeometry(pair.main, pair.branch, SPEC, pads),
                 materialFor(pc, issues.has(pc.index) || issues.has(pair.branch.index))
             );
             mesh.userData.pieceIndex = pc.index;
             mesh.userData.switchKey = pc.switchKey;
             pieceMeshes[pair.branch.index] = mesh;
         } else {
-            mesh = new THREE.Mesh(buildPieceDisplayGeometry(pc), materialFor(pc, issues.has(pc.index)));
+            mesh = new THREE.Mesh(buildPieceDisplayGeometry(pc, SPEC, pads), materialFor(pc, issues.has(pc.index)));
             mesh.userData.pieceIndex = pc.index;
         }
         mesh.castShadow = mesh.receiveShadow = true;
         pieceMeshes[pc.index] = mesh;
         trackGroup.add(mesh);
     }
-
-    // collision-aware supports: pillars never spear a lower tier; blocked
-    // columns move outboard on printable outrigger arms
-    state.supports = planPillarPositions(pieces);
     for (const sup of state.supports) {
         const pc = pieces[sup.pieceIndex];
         if (sup.mode === 'none') {
@@ -254,18 +316,17 @@ function rebuild() {
         }
     }
 
-    // gate paddles: visualize which route each switch feeds
+    // gate blades: hinged on the wall opposite the branch — parked flat along
+    // the wall (straight through) or swung in to deflect into the branch
     for (const sw of switches) {
         const pair = switchPairs.get(sw.key);
         const pin = gatePinPosition(pair.main);
-        const paddle = new THREE.Mesh(new THREE.BoxGeometry(2.6, SPEC.railHeight - 2, 52), MAT.gate);
-        const side = sw.type === 'switchL' ? 1 : -1;
-        // vane angles across the UNSELECTED route's mouth
-        const blockBranch = sw.gate === 'main';
-        const yaw = pair.main.entry.h + (blockBranch ? side * 0.42 : -side * 0.18);
+        const vane = new THREE.BoxGeometry(2.6, SPEC.railHeight - 2, 62);
+        vane.translate(0, 0, 31); // hinge at one end
+        const paddle = new THREE.Mesh(vane, MAT.gate);
+        const yaw = sw.gate === 'branch' ? pin.yawDiverting : pin.yawParked;
         paddle.position.set(pin.x, pin.deckY + SPEC.railHeight / 2, pin.z);
         paddle.rotation.y = Math.PI / 2 - yaw;
-        paddle.translateZ(20);
         paddle.userData.switchKey = sw.key;
         paddle.userData.pieceIndex = pair.main.index;
         trackGroup.add(paddle);
@@ -394,6 +455,7 @@ function activeContainer() {
 
 for (const btn of document.querySelectorAll('[data-add]')) {
     btn.addEventListener('click', () => {
+        recordEdit();
         activeContainer().push(btn.dataset.add);
         state.selected = -1;
         rebuild();
@@ -403,6 +465,7 @@ for (const btn of document.querySelectorAll('[data-add]')) {
 }
 for (const btn of document.querySelectorAll('[data-switch]')) {
     btn.addEventListener('click', () => {
+        recordEdit();
         activeContainer().push({ type: btn.dataset.switch, gate: 'main', main: [], branch: [] });
         state.selected = -1;
         rebuild();
@@ -411,6 +474,7 @@ for (const btn of document.querySelectorAll('[data-switch]')) {
 }
 for (const btn of document.querySelectorAll('[data-spiral]')) {
     btn.addEventListener('click', () => {
+        recordEdit();
         const c = activeContainer();
         const t = btn.dataset.spiral === 'L' ? 'curveL' : 'curveR';
         c.push(t, t, t, t);
@@ -418,19 +482,16 @@ for (const btn of document.querySelectorAll('[data-spiral]')) {
         rebuild();
     });
 }
-$('btn-undo').addEventListener('click', () => {
-    const c = activeContainer();
-    if (c.length) c.pop();
-    else if (state.sequence.length) state.sequence.pop();
-    state.selected = -1;
-    rebuild();
-});
+$('btn-undo').addEventListener('click', doUndo);
+$('btn-redo').addEventListener('click', doRedo);
 $('btn-clear').addEventListener('click', () => {
+    recordEdit();
     state.sequence = []; state.scenery = [];
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
     rebuild();
 });
 $('btn-demo').addEventListener('click', () => {
+    recordEdit();
     state.sequence = [...DEMO]; state.selected = -1; state.activeEndKey = '[]';
     rebuild(); fitView();
 });
@@ -473,6 +534,7 @@ $('file-open').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
+        recordEdit();
         applyScene(JSON.parse(await file.text()));
         syncControls();
         state.selected = -1;
@@ -501,7 +563,9 @@ scenePicker.addEventListener('change', async () => {
     if (!scenePicker.value) return;
     try {
         const res = await fetch(`./scenes/${scenePicker.value}.json`);
-        applyScene(await res.json());
+        const json = await res.json();
+        recordEdit();
+        applyScene(json);
         syncControls();
         state.selected = -1;
         rebuild();
@@ -519,10 +583,12 @@ function bindSlider(id, outId, key, fmt, isWalker = false) {
     el.value = target()[key];
     $(outId).textContent = fmt(target()[key]);
     el.addEventListener('input', () => {
+        recordEdit(`slider:${id}`); // coalesced: one drag = one undo step
         target()[key] = parseFloat(el.value);
         $(outId).textContent = fmt(target()[key]);
         rebuild();
     });
+    el.addEventListener('change', () => history.endGesture());
 }
 bindSlider('in-slope', 'out-slope', 'slopeDeg', v => `${v}°`);
 bindSlider('in-width', 'out-width', 'innerWidth', v => `${v} mm`);
@@ -540,7 +606,7 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
     muSel.appendChild(opt);
 }
 muSel.value = state.muKey;
-muSel.addEventListener('change', () => { state.muKey = muSel.value; rebuild(); });
+muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
 
 // ---------------------------------------------------------------------------
 // Piece list, selection, in-place editing
@@ -596,6 +662,7 @@ function cycleSelectedPieceType() {
     if (!pc || pc.isImplicitStart || pc.isImplicitEnd) return false;
     const node = nodeAt(state.sequence, pc.address);
     if (isSwitchNode(node)) { toggleGate(pc.address); return true; }
+    recordEdit();
     const container = getContainer(state.sequence, pc.address.slice(0, -1));
     const next = TYPE_CYCLE[(TYPE_CYCLE.indexOf(node) + 1) % TYPE_CYCLE.length];
     container[pc.address[pc.address.length - 1]] = next;
@@ -623,6 +690,7 @@ function refreshEditorCard() {
                 Removing keeps the main route's pieces; the branch is discarded.</div>`;
         $('ed-gate').onclick = () => { toggleGate(pc.address); };
         $('ed-del').onclick = () => {
+            recordEdit();
             const container = getContainer(state.sequence, pc.address.slice(0, -1));
             const idx = pc.address[pc.address.length - 1];
             container.splice(idx, 1, ...(node.main ?? []));
@@ -644,18 +712,21 @@ function refreshEditorCard() {
             Changes re-lay the downstream track automatically (Auto-Z).</div>`;
     for (const b of card.querySelectorAll('[data-ed-type]')) {
         b.onclick = () => {
+            recordEdit();
             const container = getContainer(state.sequence, pc.address.slice(0, -1));
             container[pc.address[pc.address.length - 1]] = b.dataset.edType;
             rebuild();
         };
     }
     $('ed-ins').onclick = () => {
+        recordEdit();
         const container = getContainer(state.sequence, pc.address.slice(0, -1));
         container.splice(pc.address[pc.address.length - 1], 0, 'straight');
         state.selected = -1;
         rebuild();
     };
     $('ed-del').onclick = () => {
+        recordEdit();
         const container = getContainer(state.sequence, pc.address.slice(0, -1));
         container.splice(pc.address[pc.address.length - 1], 1);
         state.selected = -1;
@@ -664,6 +735,7 @@ function refreshEditorCard() {
 }
 
 function toggleGate(address) {
+    recordEdit();
     const node = nodeAt(state.sequence, address);
     node.gate = node.gate === 'branch' ? 'main' : 'branch';
     rebuild();
@@ -711,6 +783,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     if (placementKind) {
         const pt = groundPointAt(e);
         if (pt) {
+            recordEdit();
             state.scenery.push({ kind: placementKind, x: Math.round(pt.x), z: Math.round(pt.z), rot: 0 });
             cancelPlacement();
             state.selectedScenery = state.scenery.length - 1;
@@ -724,6 +797,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     const sceneryHit = raycaster.intersectObjects(sceneryGroup.children, true)
         .find(h => h.object.userData.sceneryIndex !== undefined);
     if (sceneryHit && sceneryHit.object.userData.sceneryIndex === state.selectedScenery) {
+        recordEdit(`drag:scenery${state.selectedScenery}`);
         draggingScenery = state.selectedScenery;
         controls.enabled = false;
         return;
@@ -769,6 +843,7 @@ renderer.domElement.addEventListener('pointerup', () => {
     if (draggingScenery >= 0) {
         draggingScenery = -1;
         controls.enabled = true;
+        history.endGesture();
         saveState();
     }
 });
@@ -781,9 +856,23 @@ function cancelPlacement() {
 
 document.addEventListener('keydown', (e) => {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
-    if (e.key === 'Escape') cancelPlacement();
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        e.shiftKey ? doRedo() : doUndo();
+        return;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
+        e.preventDefault();
+        doRedo();
+        return;
+    }
+    if (e.key === 'Escape') {
+        if (gallery.open) { closeGallery(); return; }
+        cancelPlacement();
+    }
     if (e.key === 'r' || e.key === 'R') {
         if (state.selectedScenery >= 0) {
+            recordEdit(`rot:scenery${state.selectedScenery}`);
             state.scenery[state.selectedScenery].rot =
                 ((state.scenery[state.selectedScenery].rot ?? 0) + Math.PI / 6) % (Math.PI * 2);
             rebuildScenery();
@@ -798,6 +887,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
         if (state.selectedScenery >= 0) {
+            recordEdit();
             state.scenery.splice(state.selectedScenery, 1);
             state.selectedScenery = -1;
             rebuildScenery();
@@ -805,6 +895,7 @@ document.addEventListener('keydown', (e) => {
         } else if (state.selected >= 0) {
             const pc = state.layout.pieces[state.selected];
             if (pc && !pc.isImplicitStart && !pc.isImplicitEnd) {
+                recordEdit();
                 const node = nodeAt(state.sequence, pc.address);
                 const container = getContainer(state.sequence, pc.address.slice(0, -1));
                 const idx = pc.address[pc.address.length - 1];
@@ -1087,6 +1178,166 @@ function toast(msg) {
 $('btn-export-stl').addEventListener('click', () => doExport('stl'));
 $('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
 
+/**
+ * The single source of truth for what gets printed: every unique part of the
+ * current design with a lazy geometry builder. Used by the ZIP export AND the
+ * Parts gallery, so what you inspect is byte-identical to what you download.
+ */
+function assembleParts() {
+    const { pieces } = state.layout;
+    const parts = [];
+    const note = {
+        piece: 'End ribs carry the bowtie pockets; hex socket under the boss; washboard floor.',
+        switch: 'Two routes merged with an open frog, three bowtie pockets, gate-pin bore at the mouth.',
+        key: 'Drops into the pockets of two mating pieces — Hot-Wheels-style seam connector.',
+        gate: 'Pin seats in the switch deck bore; blade must swing freely.',
+        pillar: 'Hex tenon (8.6 AF) plugs into any track/scenery socket (9 AF × 10).',
+        scenery: 'Shares the same hex tenon/socket interlock standard.',
+        figure: 'Print on its side; hoof cams must be smooth arcs.'
+    };
+
+    const switchPairs = new Map();
+    for (const pc of pieces) {
+        if (pc.switchKey) {
+            const pair = switchPairs.get(pc.switchKey) ?? {};
+            pair[pc.role] = pc;
+            switchPairs.set(pc.switchKey, pair);
+        }
+    }
+    let joints = 0;
+    for (const pc of pieces) {
+        if (!pc.isImplicitStart && pc.role !== 'branch') joints++;
+        if (pc.role === 'branch') continue;
+        const support = (state.supports ?? []).find(s => s.pieceIndex === pc.index);
+        if (pc.role === 'main') {
+            const pair = switchPairs.get(pc.switchKey);
+            parts.push({ name: pc.name.replace('switchMain', 'switch'), note: note.switch, build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
+        } else {
+            parts.push({ name: pc.name, note: note.piece, build: () => buildPieceExportGeometry(pc, { support }) });
+        }
+    }
+    if (switchPairs.size) {
+        parts.push({ name: `gate_paddle_print_${switchPairs.size}x`, note: note.gate, build: () => buildGateGeometry() });
+    }
+    parts.push({ name: `connector_key_print_${joints}x`, note: note.key, build: () => buildKeyGeometry() });
+
+    for (const sup of state.supports ?? []) {
+        if (sup.mode === 'none') continue;
+        const pc = pieces[sup.pieceIndex];
+        parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}`, note: note.pillar, build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+    }
+
+    const kinds = [...new Set(state.scenery.map(s => s.kind))];
+    for (const kind of kinds) {
+        const count = state.scenery.filter(s => s.kind === kind).length;
+        if (kind === 'tower') parts.push({ name: `scenery_tower_print_${count}x`, note: note.scenery, build: () => buildTowerGeometry(100) });
+        if (kind === 'patio') parts.push({ name: `scenery_patio_print_${count}x`, note: note.scenery, build: () => buildPatioGeometry() });
+        if (kind === 'palm') {
+            parts.push({ name: `scenery_palm_island_print_${count}x`, note: note.scenery, build: () => buildPalmIslandGeometries().island });
+            parts.push({ name: `scenery_palm_tree_print_${count}x_crown_down`, note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
+        }
+    }
+
+    parts.push({ name: 'figure_body_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) });
+    parts.push({ name: 'figure_pendulum_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) });
+    parts.push({ name: 'figure_plugs', note: 'Choke-hazard covers — glue every one at assembly.', build: () => buildFigureGeometries(state.innerWidth).plugSet });
+
+    return { parts, joints, switchCount: switchPairs.size };
+}
+
+// ---------------------------------------------------------------------------
+// Parts gallery: full-page inspection of every printable part's real export
+// geometry (joints, pockets, sockets, washboard — what the slicer will see)
+// ---------------------------------------------------------------------------
+
+const gallery = { open: false, renderer: null, scene: null, camera: null, controls: null, mesh: null, parts: [] };
+
+function initGallery() {
+    if (gallery.renderer) return;
+    const holder = $('parts-view');
+    gallery.renderer = new THREE.WebGLRenderer({ antialias: true });
+    gallery.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    holder.appendChild(gallery.renderer.domElement);
+    gallery.scene = new THREE.Scene();
+    gallery.scene.background = new THREE.Color(0x272420);
+    gallery.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
+    gallery.controls = new OrbitControls(gallery.camera, gallery.renderer.domElement);
+    gallery.controls.enableDamping = true;
+    gallery.controls.autoRotate = true;
+    gallery.controls.autoRotateSpeed = 1.6;
+    gallery.controls.zoomSpeed = 3;
+    gallery.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 1.1));
+    const key = new THREE.DirectionalLight(0xfff2d8, 1.6);
+    key.position.set(200, 350, 150);
+    gallery.scene.add(key);
+    const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
+    gallery.scene.add(grid);
+}
+
+function galleryResize() {
+    const holder = $('parts-view');
+    const w = holder.clientWidth, h = holder.clientHeight;
+    gallery.renderer.setSize(w, h);
+    gallery.camera.aspect = w / h;
+    gallery.camera.updateProjectionMatrix();
+}
+
+function openGallery() {
+    $('parts-overlay').style.display = '';
+    initGallery();
+    galleryResize();
+    gallery.parts = assembleParts().parts;
+    $('parts-count').textContent = `${gallery.parts.length} unique parts in this design`;
+    const list = $('parts-list');
+    list.innerHTML = '';
+    gallery.parts.forEach((part, i) => {
+        const li = document.createElement('li');
+        li.textContent = part.name;
+        li.addEventListener('click', () => selectGalleryPart(i));
+        list.appendChild(li);
+    });
+    gallery.open = true;
+    selectGalleryPart(0);
+}
+
+function closeGallery() {
+    gallery.open = false;
+    $('parts-overlay').style.display = 'none';
+}
+
+function selectGalleryPart(i) {
+    const part = gallery.parts[i];
+    if (!part) return;
+    [...$('parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
+    $('parts-caption').innerHTML = '⏳ building export geometry…';
+    setTimeout(() => {
+        if (gallery.mesh) {
+            gallery.scene.remove(gallery.mesh);
+            gallery.mesh.geometry.dispose();
+        }
+        const mesh = recenter(part.build());
+        const report = analyzeMesh(mesh.positions, mesh.indices);
+        const g = toBufferGeometry(mesh);
+        gallery.mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0xe8b23a }));
+        gallery.scene.add(gallery.mesh);
+        const box = new THREE.Box3().setFromObject(gallery.mesh);
+        const c = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        gallery.controls.target.copy(c);
+        // low three-quarter angle so undersides (pockets, sockets, ribs) show
+        gallery.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        $('parts-caption').innerHTML =
+            `<b>${part.name}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ` +
+            `${report.isManifold && report.isConsistent && report.windsOutward
+                ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
+            `<span style="opacity:.8">${part.note ?? ''} Auto-rotating — drag to inspect the interlocks.</span>`;
+    }, 30);
+}
+
+$('btn-parts').addEventListener('click', openGallery);
+$('parts-close').addEventListener('click', closeGallery);
+window.addEventListener('resize', () => { if (gallery.renderer) galleryResize(); });
+
 function recenter(mesh) {
     const { positions } = mesh;
     let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
@@ -1134,56 +1385,7 @@ async function doExport(format) {
 
     try {
         await initCSG();
-        const { pieces } = state.layout;
-        const parts = [];
-
-        const switchPairs = new Map();
-        for (const pc of pieces) {
-            if (pc.switchKey) {
-                const pair = switchPairs.get(pc.switchKey) ?? {};
-                pair[pc.role] = pc;
-                switchPairs.set(pc.switchKey, pair);
-            }
-        }
-        let joints = 0;
-        for (const pc of pieces) {
-            if (!pc.isImplicitStart && pc.role !== 'branch') joints++;
-            if (pc.role === 'branch') continue;
-            const support = (state.supports ?? []).find(s => s.pieceIndex === pc.index);
-            if (pc.role === 'main') {
-                const pair = switchPairs.get(pc.switchKey);
-                parts.push({ name: pc.name.replace('switchMain', 'switch'), build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
-            } else {
-                parts.push({ name: pc.name, build: () => buildPieceExportGeometry(pc, { support }) });
-            }
-        }
-        if (switchPairs.size) {
-            parts.push({ name: `gate_paddle_print_${switchPairs.size}x`, build: () => buildGateGeometry() });
-        }
-        parts.push({ name: `connector_key_print_${joints}x`, build: () => buildKeyGeometry() });
-
-        for (const sup of state.supports ?? []) {
-            if (sup.mode === 'none') continue;
-            const pc = pieces[sup.pieceIndex];
-            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}`, build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
-        }
-
-        // scenery: one part file per kind in use (README lists quantities)
-        const kinds = [...new Set(state.scenery.map(s => s.kind))];
-        for (const kind of kinds) {
-            const count = state.scenery.filter(s => s.kind === kind).length;
-            if (kind === 'tower') parts.push({ name: `scenery_tower_print_${count}x`, build: () => buildTowerGeometry(100) });
-            if (kind === 'patio') parts.push({ name: `scenery_patio_print_${count}x`, build: () => buildPatioGeometry() });
-            if (kind === 'palm') {
-                parts.push({ name: `scenery_palm_island_print_${count}x`, build: () => buildPalmIslandGeometries().island });
-                parts.push({ name: `scenery_palm_tree_print_${count}x_crown_down`, build: () => rotFlip(buildPalmIslandGeometries().palm) });
-            }
-        }
-
-        parts.push({ name: 'figure_body_print_on_side', build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) });
-        parts.push({ name: 'figure_pendulum_print_on_side', build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) });
-        parts.push({ name: 'figure_plugs', build: () => buildFigureGeometries(state.innerWidth).plugSet });
-
+        const { parts, joints, switchCount } = assembleParts();
         const files = {};
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
@@ -1294,6 +1496,10 @@ function animate(now) {
     for (const a of arrowMeshes) a.position.y = a.userData.baseY + bob;
     controls.update();
     renderer.render(scene, camera);
+    if (gallery.open) {
+        gallery.controls.update();
+        gallery.renderer.render(gallery.scene, gallery.camera);
+    }
 }
 
 function syncControls() {
