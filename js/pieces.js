@@ -158,16 +158,68 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     ];
 }
 
-/** Pillar-socket boss under the piece midpoint. */
-function bossOps(piece, spec) {
-    const stations = stationsForPiece(piece, piece.planLen / 2);
-    const m = stations[Math.floor(stations.length / 2)];
-    const bossPlan = circlePlan(spec.socket.bossR, 24).map(([px, pz]) => [m.origin[0] + px, m.origin[2] + pz]);
-    const hex = hexPlan(spec.socket.hexAF).map(([px, pz]) => [m.origin[0] + px, m.origin[2] + pz]);
-    return [
-        { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(bossPlan, piece.rimY, m.origin[1] - spec.floorThk + 0.5)) },
-        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(hex, piece.rimY - 0.5, piece.rimY + spec.socket.depth)) }
-    ];
+/**
+ * Pillar-socket boss ops. `support` comes from planPillarPositions (collision-
+ * aware); without one, a center boss at the midpoint is used (ground pieces).
+ * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
+ * carrying the socket boss outboard of the tier below.
+ */
+function bossOps(piece, spec, support) {
+    if (support?.mode === 'none') return [];
+    const ops = [];
+    let bx, bz;
+
+    if (!support || support.mode === 'center') {
+        const s = support?.s ?? piece.planLen / 2;
+        const f = s / piece.planLen;
+        if (support) {
+            bx = support.x; bz = support.z;
+        } else {
+            const stations = stationsForPiece(piece, piece.planLen / 2);
+            const m = stations[Math.floor(stations.length / 2)];
+            bx = m.origin[0]; bz = m.origin[2];
+        }
+        const ceilY = (piece.entryDeck - piece.drop * f) - spec.floorThk;
+        ops.push({
+            op: ADDITION,
+            geometry: toBufferGeometry(extrudePolygonY(
+                circlePlan(spec.socket.bossR, 24).map(([px, pz]) => [bx + px, bz + pz]),
+                piece.rimY, ceilY + 0.5))
+        });
+    } else {
+        // outrigger: printable arm at rim level (sits on the bed) carrying the
+        // socket boss outboard, clear of whatever runs beneath this piece
+        bx = support.x; bz = support.z;
+        const right = [Math.sin(support.h), -Math.cos(support.h)];
+        const dirV = [Math.cos(support.h), Math.sin(support.h)];
+        const armEnd = piece.innerWidth / 2 + spec.wall + spec.socket.bossR + 4;
+        const armStart = piece.innerWidth / 2 - 2; // overlap 2 mm into the skirt
+        const centerline = [bx - right[0] * armEnd * support.side, bz - right[1] * armEnd * support.side];
+        const armPts = [
+            [armStart * support.side, -11], [armEnd * support.side, -11],
+            [armEnd * support.side, 11], [armStart * support.side, 11]
+        ].map(([lat, lon]) => [
+            centerline[0] + right[0] * lat + dirV[0] * lon,
+            centerline[1] + right[1] * lat + dirV[1] * lon
+        ]);
+        ops.push({
+            op: ADDITION,
+            geometry: toBufferGeometry(extrudePolygonY(armPts, piece.rimY, piece.rimY + 11))
+        });
+        ops.push({
+            op: ADDITION,
+            geometry: toBufferGeometry(extrudePolygonY(
+                circlePlan(spec.socket.bossR, 24).map(([px, pz]) => [bx + px, bz + pz]),
+                piece.rimY, piece.rimY + 11))
+        });
+    }
+    ops.push({
+        op: SUBTRACTION,
+        geometry: toBufferGeometry(extrudePolygonY(
+            hexPlan(spec.socket.hexAF).map(([px, pz]) => [bx + px, bz + pz]),
+            piece.rimY - 0.5, piece.rimY + spec.socket.depth))
+    });
+    return ops;
 }
 
 /**
@@ -206,7 +258,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             piece.exitDeck, piece.exitDeck, piece.rimY, piece.innerWidth, spec
         ));
     }
-    ops.push(...bossOps(piece, spec));
+    ops.push(...bossOps(piece, spec, opts.support));
     return csgChain(shell, ops);
 }
 
@@ -229,7 +281,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
             pc.exitDeck, pc.exitDeck, pc.rimY, pc.innerWidth, spec
         ));
     }
-    ops.push(...bossOps(mainPiece, spec));
+    ops.push(...bossOps(mainPiece, spec, opts.support));
 
     // gate pivot bore: vertical Ø3.3 through the deck at the divergence point
     const pinPos = gatePinPosition(mainPiece);

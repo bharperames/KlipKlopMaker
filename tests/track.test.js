@@ -215,3 +215,45 @@ describe('lift pieces', () => {
         expect(Math.min(...pieces.map(p => p.rimY))).toBeCloseTo(0, 9);
     });
 });
+
+// ---------------------------------------------------------------------------
+// collision-aware support planning (pillars must never spear a lower tier)
+// ---------------------------------------------------------------------------
+import { planPillarPositions, planPosAt, deckYAt } from '../js/track.js';
+
+describe('planPillarPositions', () => {
+    const columnHits = (pieces, sup) => {
+        const pc = pieces[sup.pieceIndex];
+        for (const q of pieces) {
+            if (q.index === sup.pieceIndex) continue;
+            if (q.switchKey && q.switchKey === pc.switchKey) continue;
+            const reach = q.innerWidth / 2 + 2.4 + 7; // outer half + pillar radius
+            for (let k = 0; k <= 12; k++) {
+                const s = (q.planLen * k) / 12;
+                const p = planPosAt(q, s);
+                if (deckYAt(q, s) >= pc.rimY - 1) continue;
+                if (Math.hypot(sup.x - p.x, sup.z - p.z) < reach) return true;
+            }
+        }
+        return false;
+    };
+
+    test('stacked double spiral gets outrigger supports that clear the tier below', () => {
+        const seq = ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'];
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11, curveRadius: 150 });
+        const sups = planPillarPositions(pieces);
+        expect(sups.length).toBeGreaterThan(5);
+        for (const sup of sups) {
+            expect(sup.mode).not.toBe('none');
+            expect(columnHits(pieces, sup)).toBe(false);
+        }
+        // the upper tier (directly above the lower) must have gone outboard
+        expect(sups.some(s => s.mode === 'outrigger')).toBe(true);
+    });
+
+    test('a simple elevated straight keeps a plain center pillar', () => {
+        const { pieces } = layoutTrack(['straight', 'straight', 'straight'], { slopeDeg: 11 });
+        const sups = planPillarPositions(pieces);
+        expect(sups.every(s => s.mode === 'center')).toBe(true);
+    });
+});

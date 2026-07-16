@@ -332,6 +332,85 @@ export function samplePath(pieces, step = 5) {
 }
 
 /**
+ * Collision-aware support planning. A naive pillar under each piece's midpoint
+ * spears straight through the tier below on stacked spirals, so every support
+ * column is checked against all pieces beneath it:
+ *  - 'center': the usual under-boss pillar, tried at several stations
+ *  - 'outrigger': boss moved laterally outboard on a printable arm (curves
+ *    prefer their outer side) so the pillar drops beside the lower tier
+ *  - 'none': no clear column exists — reported so the UI can warn
+ *
+ * @returns Array<{ pieceIndex, mode, x, z, h, side?, s? }>
+ */
+export function planPillarPositions(pieces, params = {}) {
+    const outerHalfOf = (pc) => pc.innerWidth / 2 + SPEC.wall;
+    const clearR = SPEC.socket.pillarR + 2;
+    const armOffsetOf = (pc) => outerHalfOf(pc) + SPEC.socket.bossR + 4;
+
+    const samples = pieces.map(pc => {
+        const n = Math.max(2, Math.ceil(pc.planLen / 20) + 1);
+        const pts = [];
+        for (let k = 0; k < n; k++) {
+            const s = (pc.planLen * k) / (n - 1);
+            const pos = planPosAt(pc, s);
+            pts.push([pos.x, deckYAt(pc, s), pos.z]);
+        }
+        return pts;
+    });
+
+    const columnBlocked = (x, z, topY, ignore) => {
+        for (let j = 0; j < pieces.length; j++) {
+            if (ignore.has(j)) continue;
+            const q = pieces[j];
+            const reach = outerHalfOf(q) + clearR;
+            for (const pt of samples[j]) {
+                if (pt[1] >= topY - 1) continue; // only geometry beneath obstructs
+                const dx = x - pt[0], dz = z - pt[2];
+                if (dx * dx + dz * dz < reach * reach) return true;
+            }
+        }
+        return false;
+    };
+
+    const supports = [];
+    for (const pc of pieces) {
+        if (pc.rimY <= 1 || pc.role === 'branch') continue; // ground / merged with main
+        const ignore = new Set(
+            pc.switchKey
+                ? pieces.filter(q => q.switchKey === pc.switchKey).map(q => q.index)
+                : [pc.index]
+        );
+        let placed = null;
+        for (const f of [0.5, 0.35, 0.65, 0.2, 0.8]) {
+            const pos = planPosAt(pc, f * pc.planLen);
+            if (!columnBlocked(pos.x, pos.z, pc.rimY, ignore)) {
+                placed = { pieceIndex: pc.index, mode: 'center', x: pos.x, z: pos.z, h: pos.h, s: f * pc.planLen };
+                break;
+            }
+        }
+        if (!placed) {
+            // curves hang the arm outboard first; straights try both sides
+            const sides = pc.turn > 0 ? [1, -1] : pc.turn < 0 ? [-1, 1] : [1, -1];
+            outer: for (const side of sides) {
+                for (const f of [0.5, 0.35, 0.65]) {
+                    const pos = planPosAt(pc, f * pc.planLen);
+                    const right = [Math.sin(pos.h), -Math.cos(pos.h)];
+                    const off = armOffsetOf(pc) * side;
+                    const bx = pos.x + right[0] * off;
+                    const bz = pos.z + right[1] * off;
+                    if (!columnBlocked(bx, bz, pc.rimY, ignore)) {
+                        placed = { pieceIndex: pc.index, mode: 'outrigger', x: bx, z: bz, h: pos.h, side, s: f * pc.planLen };
+                        break outer;
+                    }
+                }
+            }
+        }
+        supports.push(placed ?? { pieceIndex: pc.index, mode: 'none', x: 0, z: 0, h: 0 });
+    }
+    return supports;
+}
+
+/**
  * Spiral-tier / branch clearance check. Pieces that share an endpoint
  * (parent-child seams, switch siblings) are exempt; everything else that
  * overlaps in plan needs SPEC.clearanceHeight of vertical separation.

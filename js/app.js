@@ -14,7 +14,7 @@ import * as fflate from 'fflate';
 
 import {
     SPEC, layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
-    getContainer, nodeAt, isSwitchNode, pathKey, openContainers
+    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict } from './physics.js';
 import { simulateRun, makePathSampler } from './simulate.js';
@@ -102,6 +102,7 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(150, 120, 60);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.495;
+controls.zoomSpeed = 3; // touchpad pinch/scroll deltas are tiny — boost gain
 
 scene.add(new THREE.HemisphereLight(0xe8f2ff, 0x8a7a55, 0.85));
 const sun = new THREE.DirectionalLight(0xfff2d8, 1.7);
@@ -220,20 +221,36 @@ function rebuild() {
         mesh.castShadow = mesh.receiveShadow = true;
         pieceMeshes[pc.index] = mesh;
         trackGroup.add(mesh);
+    }
 
-        if (pc.rimY > 1 && pc.role !== 'main') {
-            const stations = stationsForPiece(pc, pc.planLen / 2);
-            const mid = stations[Math.floor(stations.length / 2)];
-            const pillar = new THREE.Mesh(buildPillarGeometry(pc.rimY), MAT.pillar);
-            pillar.position.set(mid.origin[0], 0, mid.origin[2]);
-            pillar.castShadow = true;
-            trackGroup.add(pillar);
-        } else if (pc.role === 'main' && pc.rimY > 1) {
-            const pin = gatePinPosition(pc);
-            const pillar = new THREE.Mesh(buildPillarGeometry(pc.rimY), MAT.pillar);
-            pillar.position.set(pin.x, 0, pin.z);
-            pillar.castShadow = true;
-            trackGroup.add(pillar);
+    // collision-aware supports: pillars never spear a lower tier; blocked
+    // columns move outboard on printable outrigger arms
+    state.supports = planPillarPositions(pieces);
+    for (const sup of state.supports) {
+        const pc = pieces[sup.pieceIndex];
+        if (sup.mode === 'none') {
+            state.layout.issues.push({
+                level: 'warn', code: 'no-support',
+                msg: `No clear pillar column under ${pc.name} — it will need a scenery tower or manual support.`
+            });
+            continue;
+        }
+        const pillar = new THREE.Mesh(buildPillarGeometry(pc.rimY), MAT.pillar);
+        pillar.position.set(sup.x, 0, sup.z);
+        pillar.castShadow = true;
+        trackGroup.add(pillar);
+        if (sup.mode === 'outrigger') {
+            // arm reaches from the skirt wall out to the boss (lateral = local X)
+            const right = [Math.sin(sup.h), -Math.cos(sup.h)];
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(26, 11, 22), MAT.pillar);
+            arm.position.set(
+                sup.x - right[0] * sup.side * 12,
+                pc.rimY + 5.5,
+                sup.z - right[1] * sup.side * 12
+            );
+            arm.rotation.y = Math.PI / 2 - sup.h;
+            arm.castShadow = true;
+            trackGroup.add(arm);
         }
     }
 
@@ -561,6 +578,30 @@ function selectPiece(i) {
     refreshPieceList();
     refreshEditorCard();
     rebuildScenery();
+    if (state.selected >= 0) {
+        const pc = state.layout.pieces[state.selected];
+        if (!pc.isImplicitStart && !pc.isImplicitEnd) {
+            toast(pc.switchKey
+                ? `✎ ${pc.name} — G or click again to flip the gate · ⌫ remove · more in the left panel`
+                : `✎ ${pc.name} — R cycles its type · ⌫ delete · more tools in the left panel`);
+            $('editor-card').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+}
+
+/** R on a selected piece: cycle its type (RCT-style quick edit). */
+const TYPE_CYCLE = ['straight', 'curveL', 'curveR', 'lift'];
+function cycleSelectedPieceType() {
+    const pc = state.layout?.pieces[state.selected];
+    if (!pc || pc.isImplicitStart || pc.isImplicitEnd) return false;
+    const node = nodeAt(state.sequence, pc.address);
+    if (isSwitchNode(node)) { toggleGate(pc.address); return true; }
+    const container = getContainer(state.sequence, pc.address.slice(0, -1));
+    const next = TYPE_CYCLE[(TYPE_CYCLE.indexOf(node) + 1) % TYPE_CYCLE.length];
+    container[pc.address[pc.address.length - 1]] = next;
+    rebuild();
+    toast(`⇄ ${pc.name} → ${next}`);
+    return true;
 }
 
 /** In-place piece editor (the RCT "modify highlighted piece" panel). */
@@ -741,11 +782,19 @@ function cancelPlacement() {
 document.addEventListener('keydown', (e) => {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
     if (e.key === 'Escape') cancelPlacement();
-    if ((e.key === 'r' || e.key === 'R') && state.selectedScenery >= 0) {
-        state.scenery[state.selectedScenery].rot =
-            ((state.scenery[state.selectedScenery].rot ?? 0) + Math.PI / 6) % (Math.PI * 2);
-        rebuildScenery();
-        saveState();
+    if (e.key === 'r' || e.key === 'R') {
+        if (state.selectedScenery >= 0) {
+            state.scenery[state.selectedScenery].rot =
+                ((state.scenery[state.selectedScenery].rot ?? 0) + Math.PI / 6) % (Math.PI * 2);
+            rebuildScenery();
+            saveState();
+        } else if (state.selected >= 0) {
+            cycleSelectedPieceType();
+        }
+    }
+    if ((e.key === 'g' || e.key === 'G') && state.selected >= 0) {
+        const pc = state.layout.pieces[state.selected];
+        if (pc?.switchKey) toggleGate(pc.address);
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
         if (state.selectedScenery >= 0) {
@@ -1100,11 +1149,12 @@ async function doExport(format) {
         for (const pc of pieces) {
             if (!pc.isImplicitStart && pc.role !== 'branch') joints++;
             if (pc.role === 'branch') continue;
+            const support = (state.supports ?? []).find(s => s.pieceIndex === pc.index);
             if (pc.role === 'main') {
                 const pair = switchPairs.get(pc.switchKey);
-                parts.push({ name: pc.name.replace('switchMain', 'switch'), build: () => buildSwitchExportGeometry(pair.main, pair.branch) });
+                parts.push({ name: pc.name.replace('switchMain', 'switch'), build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
             } else {
-                parts.push({ name: pc.name, build: () => buildPieceExportGeometry(pc) });
+                parts.push({ name: pc.name, build: () => buildPieceExportGeometry(pc, { support }) });
             }
         }
         if (switchPairs.size) {
@@ -1112,10 +1162,10 @@ async function doExport(format) {
         }
         parts.push({ name: `connector_key_print_${joints}x`, build: () => buildKeyGeometry() });
 
-        for (const pc of pieces) {
-            if (pc.rimY > 1 && pc.role !== 'branch') {
-                parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}`, build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
-            }
+        for (const sup of state.supports ?? []) {
+            if (sup.mode === 'none') continue;
+            const pc = pieces[sup.pieceIndex];
+            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}`, build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
         }
 
         // scenery: one part file per kind in use (README lists quantities)
