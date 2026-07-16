@@ -242,27 +242,37 @@ function deckYOffset(piece, station) {
     return station.origin[1];
 }
 
-/** Dovetail tab plan outline in joint-local coords (x lateral, z outward). */
-export function dovetailTabPlan({ rootHalf = 11, tipHalf = 15, depth = 10, inset = 1 }) {
+/**
+ * Bowtie connector key (butterfly key): a separate print-flat part that drops
+ * into matching pockets recessed in the end ribs of two mating pieces —
+ * the Hot-Wheels-connector approach, chosen because it prints with ZERO
+ * overhangs on both the key and the track (pockets are voids in bed-supported
+ * ribs; the old protruding tab was a floating cantilever in the slicer).
+ * Plan coords: z along the track (seam at z=0), x lateral.
+ */
+export function bowtieKeyPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0 }) {
+    const n = neckHalf + clearance, t = tipHalf + clearance, d = depth + clearance;
     return [
-        [-rootHalf, -inset],
-        [rootHalf, -inset],
-        [tipHalf, depth],
-        [-tipHalf, depth]
+        [-t, -d], [t, -d],
+        [n, 0],
+        [t, d], [-t, d],
+        [-n, 0]
     ];
 }
 
-/** Dovetail slot plan (clearance-offset female) in joint-local coords. */
-export function dovetailSlotPlan({ rootHalf = 11, tipHalf = 15, depth = 10, inset = 1, clearance = 0.2 }) {
-    const flare = (tipHalf - rootHalf) / (depth + inset);
-    const z0 = -0.5, z1 = depth + 0.5;
-    const w0 = rootHalf + flare * (z0 + inset) + clearance;
-    const w1 = rootHalf + flare * (z1 + inset) + clearance;
+/**
+ * One half of the bowtie pocket, opening at the end face (z=0 → z=depth
+ * inward), with assembly clearance. Extended 0.5 mm past the face so the
+ * boolean cuts cleanly through the rib's outer skin.
+ */
+export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25 }) {
+    const flare = (tipHalf - neckHalf) / depth;
+    const n = neckHalf + clearance + flare * 0.5; // width at z=-0.5, following the taper
+    const t = tipHalf + clearance;
     return [
-        [-w0, z0],
-        [w0, z0],
-        [w1, z1],
-        [-w1, z1]
+        [-n, -0.5], [n, -0.5],
+        [t, depth + clearance],
+        [-t, depth + clearance]
     ];
 }
 

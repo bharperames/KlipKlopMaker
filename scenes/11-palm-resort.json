@@ -1,0 +1,33 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "name": "Palm Resort",
+  "description": "S-curves through a decorated island resort: palm islands, a patio parking pad for figures, and a stacked tower — all on the standard interlocking hex-socket base system. A right-hand switch offers a shortcut to the beach corral.",
+  "sequence": [
+    "straight",
+    "curveL",
+    "curveR",
+    {
+      "type": "switchR",
+      "gate": "main",
+      "main": ["straight", "curveR", "straight"],
+      "branch": ["straight"]
+    }
+  ],
+  "scenery": [
+    { "kind": "palm", "x": 120, "z": -180, "rot": 0 },
+    { "kind": "palm", "x": 620, "z": 260, "rot": 0.8 },
+    { "kind": "patio", "x": 380, "z": -260, "rot": 0 },
+    { "kind": "tower", "x": -140, "z": 160, "rot": 0 }
+  ],
+  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 150 },
+  "surface": "washboard",
+  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "expect": {
+    "outcome": "arrived",
+    "maxTimeS": 30,
+    "minClacks": 50,
+    "minWalkedFraction": 0.9,
+    "layoutErrors": []
+  }
+}

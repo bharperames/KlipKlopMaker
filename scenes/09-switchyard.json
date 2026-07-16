@@ -1,0 +1,26 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "name": "Switchyard",
+  "description": "A gated Y-junction: the switch's vane routes the horse either straight ahead to corral A or through the diverging curve to corral B. The gate is set to the branch route — flip it in the app and re-run to watch the other ending.",
+  "sequence": [
+    "straight",
+    {
+      "type": "switchL",
+      "gate": "branch",
+      "main": ["straight", "straight"],
+      "branch": ["curveL", "straight"]
+    }
+  ],
+  "scenery": [],
+  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 150 },
+  "surface": "washboard",
+  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "expect": {
+    "outcome": "arrived",
+    "maxTimeS": 20,
+    "minClacks": 30,
+    "minWalkedFraction": 0.9,
+    "layoutErrors": []
+  }
+}

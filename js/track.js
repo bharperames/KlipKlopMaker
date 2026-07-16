@@ -2,38 +2,46 @@
  * track.js
  * Pure track layout engine — no DOM or Three.js dependencies.
  *
- * A track is an ordered sequence of segment types. This module converts that
- * sequence into fully placed pieces (plan position, heading, deck elevations)
- * while enforcing the Klip-Klop physics rule set:
+ * v2: the track is a TREE, not a list. A node is either a simple segment type
+ * ('straight' | 'curveL' | 'curveR' | 'lift') or a switch object:
  *
- *  - Slope lock: every running segment descends at exactly the configured pitch
- *    (green zone 10-12 deg). Elevations are solved automatically ("Auto-Z").
- *  - Waterfall rule: each downhill piece's floor starts 0.25 mm LOWER than the
- *    uphill piece's exit, so a printed seam can never present an uphill lip.
- *  - Washboard phase: piece lengths snap the ridge pitch so seams always land
- *    in a ridge valley, never through a peak.
- *  - Zero bank: layout is pure plan-position + vertical elevation; the sweep
- *    basis vector stays horizontal so curves and spirals never roll inward.
+ *   { type: 'switchL'|'switchR', gate: 'main'|'branch', main: Node[], branch: Node[] }
+ *
+ * A switch is always the last node of its container array; its two exits each
+ * carry their own continuation. Every leaf container is auto-capped with an
+ * end platform, and the root is prefixed with a start platform.
+ *
+ * Physics rule set enforced here (see PHYSICS.md):
+ *  - Slope lock (green 10-12°) with Auto-Z elevation solving down every branch
+ *  - Waterfall rule: every seam steps the downhill floor 0.25 mm lower
+ *  - Washboard pitch snapped per piece so seams land in ridge valleys
+ *  - Zero bank: sweep `right` vectors stay horizontal on curves and spirals
+ *  - Lifts ascend at the same locked angle (externally powered — the one
+ *    exception to gravity-only, flagged with `isLift`)
  */
 
 export const SPEC = {
     slope: { hardMin: 8, greenMin: 10, greenMax: 12, hardMax: 14, default: 11 },
     innerWidth: { min: 46, max: 50, default: 48 },
-    curveWidenMm: 3,            // dynamic curve widening for rigid-body pivot room
+    curveWidenMm: 3,
     minCurveRadius: 120,
     defaultCurveRadius: 150,
     railHeight: 14,
     wall: 2.4,
-    floorThk: 2.0,              // acoustic drumhead thickness under the ridges
-    filletR: 2.0,               // floor-to-wall fillet that re-centers wandering hooves
-    skirtDepth: 12,             // hollow chamber depth below the exit-end deck line
+    floorThk: 2.0,
+    filletR: 2.0,
+    skirtDepth: 12,
     ridge: { height: 0.6, pitch: 2.5 },
-    waterfallStepMm: 0.25,      // downhill floor drop at every seam
-    jointClearanceMm: 0.2,      // horizontal + vertical dovetail clearance
+    waterfallStepMm: 0.25,
+    jointClearanceMm: 0.2,
     tileLen: 150,
     platformLen: 150,
-    clearanceHeight: 100,       // min vertical gap where track overlaps itself (spiral tiers)
-    socket: { hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7 }
+    clearanceHeight: 100,
+    socket: { hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7 },
+    // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
+    // connector): pockets recess into full-height end ribs — zero overhangs.
+    key: { neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12 },
+    liftSpeedMmS: 55
 };
 
 const rot2 = (x, z, a) => [x * Math.cos(a) - z * Math.sin(a), x * Math.sin(a) + z * Math.cos(a)];
@@ -41,61 +49,106 @@ const rot2 = (x, z, a) => [x * Math.cos(a) - z * Math.sin(a), x * Math.sin(a) + 
 export function degToRad(d) { return d * Math.PI / 180; }
 export function radToDeg(r) { return r * 180 / Math.PI; }
 
-/**
- * Snaps the washboard ridge pitch so an integer number of ridge periods fits
- * exactly in `length`, guaranteeing both ends of the piece terminate in a valley.
- */
 export function effectiveRidgePitch(length, nominalPitch) {
     const n = Math.max(1, Math.round(length / nominalPitch));
     return { pitch: length / n, count: n };
 }
 
-/**
- * Raised-cosine washboard profile: 0 at s=0, peaks at half-pitch, 0 at pitch.
- * Gentle sine ridges — hard square ridges would absorb the gait's kinetic energy.
- */
 export function ridgeOffset(s, pitch, height) {
     return (height / 2) * (1 - Math.cos((2 * Math.PI * s) / pitch));
 }
 
-/** Per-type geometric footprint before elevation solving. */
-function segmentPlan(type, entry, params) {
-    const R = params.curveRadius;
+// ---------------------------------------------------------------------------
+// Tree helpers (pure editing API used by the app)
+// ---------------------------------------------------------------------------
+
+export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift'];
+export const isSwitchNode = (n) => typeof n === 'object' && n !== null && (n.type === 'switchL' || n.type === 'switchR');
+
+/** Array a `containerPath` refers to: [] = root; [i,'main',...] descends switches. */
+export function getContainer(sequence, containerPath) {
+    let arr = sequence;
+    for (let k = 0; k < containerPath.length; k += 2) {
+        const node = arr[containerPath[k]];
+        if (!isSwitchNode(node)) throw new Error(`bad container path at ${containerPath[k]}`);
+        arr = node[containerPath[k + 1]];
+    }
+    return arr;
+}
+
+/** Node addressed by [...containerPath, index]. */
+export function nodeAt(sequence, address) {
+    const arr = getContainer(sequence, address.slice(0, -1));
+    return arr[address[address.length - 1]];
+}
+
+export const pathKey = (p) => JSON.stringify(p);
+
+/**
+ * All open build ends: containers that do not terminate in a switch.
+ * (A container ending in a switch builds through the switch's branches.)
+ */
+export function openContainers(sequence) {
+    const out = [];
+    const visit = (arr, path) => {
+        const last = arr[arr.length - 1];
+        if (isSwitchNode(last)) {
+            visit(last.main, [...path, arr.length - 1, 'main']);
+            visit(last.branch, [...path, arr.length - 1, 'branch']);
+        } else {
+            out.push(path);
+        }
+        arr.forEach((n, i) => {
+            if (isSwitchNode(n) && i < arr.length - 1) {
+                // defensive: mid-array switches shouldn't exist, but don't lose them
+                visit(n.main, [...path, i, 'main']);
+                visit(n.branch, [...path, i, 'branch']);
+            }
+        });
+    };
+    visit(sequence, []);
+    return out;
+}
+
+/** Appends a full 360° spiral tier (4 quarter-turns) to a node array. */
+export function appendSpiralTier(sequence, direction = 'L') {
+    const t = direction === 'L' ? 'curveL' : 'curveR';
+    return [...sequence, t, t, t, t];
+}
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+function segmentPlan(kind, entry, params) {
     const { x, z, h } = entry;
     const dir = [Math.cos(h), Math.sin(h)];
-
-    if (type === 'straight' || type === 'start' || type === 'end') {
-        const len = type === 'straight' ? params.tileLen : params.platformLen;
-        return {
-            planLen: len,
-            exit: { x: x + dir[0] * len, z: z + dir[1] * len, h },
-            radius: null, center: null, turn: 0
-        };
+    if (kind === 'straightish') {
+        const len = params.len;
+        return { planLen: len, exit: { x: x + dir[0] * len, z: z + dir[1] * len, h }, radius: null, center: null, turn: 0 };
     }
-    if (type === 'curveL' || type === 'curveR') {
-        const turn = type === 'curveL' ? Math.PI / 2 : -Math.PI / 2;
-        const side = Math.sign(turn);
-        const [nx, nz] = rot2(dir[0], dir[1], side * Math.PI / 2); // toward curve center
-        const center = [x + nx * R, z + nz * R];
-        const exitH = h + turn;
-        // rotate the entry point around the center by the turn angle
-        const [rx, rz] = rot2(x - center[0], z - center[1], turn);
-        return {
-            planLen: (Math.PI / 2) * R,
-            exit: { x: center[0] + rx, z: center[1] + rz, h: exitH },
-            radius: R, center, turn
-        };
-    }
-    throw new Error(`Unknown segment type: ${type}`);
+    // curve: params.turnSign ±1, radius R
+    const R = params.radius;
+    const turn = params.turnSign * Math.PI / 2;
+    const [nx, nz] = rot2(dir[0], dir[1], Math.sign(turn) * Math.PI / 2);
+    const center = [x + nx * R, z + nz * R];
+    const [rx, rz] = rot2(x - center[0], z - center[1], turn);
+    return {
+        planLen: (Math.PI / 2) * R,
+        exit: { x: center[0] + rx, z: center[1] + rz, h: h + turn },
+        radius: R, center, turn
+    };
 }
 
 /**
- * Lays out the full track: implicit start platform + user sequence + implicit
- * end platform. Solves elevations so the lowest skirt rim sits on the ground.
- *
- * @param {string[]} sequence - user segments: 'straight' | 'curveL' | 'curveR'
- * @param {object} params - { slopeDeg, innerWidth, curveRadius, tileLen, ... }
- * @returns {{ pieces: object[], issues: object[], totalDropMm: number }}
+ * Lays out the full track tree. Returns flat `pieces` in depth-first order
+ * (main before branch) with tree metadata:
+ *   piece.address     — [...containerPath, index] of the source node
+ *   piece.role        — 'main' | 'branch' for the two exits of a switch node
+ *   piece.switchKey   — shared by a switch's two role pieces
+ *   piece.active      — lies on the ride path given current gate settings
+ *   piece.isLift      — powered ascending section
+ * Plus `openEnds` (arrow targets), `switches` (gate toggles), `issues`.
  */
 export function layoutTrack(sequence, params = {}) {
     const p = {
@@ -121,61 +174,115 @@ export function layoutTrack(sequence, params = {}) {
         issues.push({ level: 'error', code: 'radius-too-tight', msg: `Curve radius ${p.curveRadius} mm is below the ${SPEC.minCurveRadius} mm minimum — a rigid figure will wedge across the channel.` });
     }
 
-    const types = ['start', ...sequence, 'end'];
     const tanSlope = Math.tan(degToRad(p.slopeDeg));
     const pieces = [];
-    let cursor = { x: 0, z: 0, h: 0 };
-    let deck = 0; // provisional; shifted after the loop
+    const openEnds = [];
+    const switches = [];
+    let pieceCounter = 0;
 
-    for (let i = 0; i < types.length; i++) {
-        const type = types[i];
-        const plan = segmentPlan(type, cursor, p);
-        const isRunning = type !== 'start' && type !== 'end';
-        const drop = isRunning ? plan.planLen * tanSlope : 0;
-        // Waterfall rule: every seam steps the downhill floor DOWN by a hair.
-        const entryDeck = i === 0 ? deck : deck - p.waterfall;
+    const makePiece = (kind, node, cursor, entryDeck, meta) => {
+        let plan, drop, slopeDeg, isLift = false, innerWidth = p.innerWidth;
+        if (kind === 'start' || kind === 'end') {
+            plan = segmentPlan('straightish', cursor, { len: p.platformLen });
+            drop = 0; slopeDeg = 0;
+        } else if (kind === 'straight' || kind === 'switchMain') {
+            plan = segmentPlan('straightish', cursor, { len: p.tileLen });
+            drop = plan.planLen * tanSlope; slopeDeg = p.slopeDeg;
+        } else if (kind === 'lift') {
+            plan = segmentPlan('straightish', cursor, { len: p.tileLen });
+            drop = -plan.planLen * tanSlope; slopeDeg = -p.slopeDeg; isLift = true;
+        } else { // curveL / curveR / switchBranch
+            const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
+            plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
+            drop = plan.planLen * tanSlope; slopeDeg = p.slopeDeg;
+            innerWidth = p.innerWidth + SPEC.curveWidenMm;
+        }
         const exitDeck = entryDeck - drop;
-        const innerWidth = plan.radius ? p.innerWidth + SPEC.curveWidenMm : p.innerWidth;
         const ridge = effectiveRidgePitch(plan.planLen, p.ridgePitch);
+        const piece = {
+            type: kind, index: pieceCounter++,
+            name: `${String(pieceCounter - 1).padStart(2, '0')}_${kind}`,
+            entry: { ...cursor }, exit: { ...plan.exit },
+            planLen: plan.planLen, radius: plan.radius, center: plan.center, turn: plan.turn,
+            slopeDeg, drop, entryDeck, exitDeck,
+            rimY: Math.min(entryDeck, exitDeck) - p.skirtDepth,
+            innerWidth, isLift,
+            ridgePitch: ridge.pitch, ridgeCount: ridge.count,
+            ...meta
+        };
+        pieces.push(piece);
+        return piece;
+    };
 
-        pieces.push({
-            type, index: i,
-            name: `${String(i).padStart(2, '0')}_${type}`,
-            entry: { ...cursor },
-            exit: { ...plan.exit },
-            planLen: plan.planLen,
-            radius: plan.radius, center: plan.center, turn: plan.turn,
-            slopeDeg: isRunning ? p.slopeDeg : 0,
-            drop, entryDeck, exitDeck,
-            rimY: exitDeck - p.skirtDepth,
-            innerWidth,
-            ridgePitch: ridge.pitch, ridgeCount: ridge.count
-        });
+    /** Walks a node array; prevExit carries {cursor, deck}; returns nothing (leaves capped). */
+    const walk = (nodes, prevExit, containerPath, active) => {
+        let cursor = prevExit.cursor;
+        let deck = prevExit.deck;
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            const address = [...containerPath, i];
+            const entryDeck = deck - p.waterfall;
+            if (isSwitchNode(node)) {
+                const gate = node.gate === 'branch' ? 'branch' : 'main';
+                const switchKey = pathKey(address);
+                const main = makePiece('switchMain', node, cursor, entryDeck,
+                    { address, role: 'main', switchKey, switchType: node.type, active: active && gate === 'main', gateOpen: gate === 'main' });
+                const branch = makePiece('switchBranch', node, cursor, entryDeck,
+                    { address, role: 'branch', switchKey, switchType: node.type, active: active && gate === 'branch', gateOpen: gate === 'branch' });
+                // the two route shells are printed as ONE part — share the lower
+                // rim plane so the merged solid sits flat on the build plate
+                const sharedRim = Math.min(main.rimY, branch.rimY);
+                main.rimY = sharedRim;
+                branch.rimY = sharedRim;
+                switches.push({ address, key: switchKey, gate, entry: { ...cursor }, deck: entryDeck, type: node.type });
+                if (i < nodes.length - 1) {
+                    issues.push({ level: 'error', code: 'switch-not-last', msg: 'A switch must be the last piece of its branch — pieces after it are unreachable.' });
+                }
+                walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck }, [...address, 'main'], active && gate === 'main');
+                walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck }, [...address, 'branch'], active && gate === 'branch');
+                return;
+            }
+            const piece = makePiece(node, node, cursor, entryDeck, { address, active });
+            cursor = piece.exit;
+            deck = piece.exitDeck;
+        }
+        // leaf: implicit end platform + an open build end just before it
+        openEnds.push({ containerPath, cursor: { ...cursor }, deck });
+        makePiece('end', 'end', cursor, deck - p.waterfall, { address: [...containerPath, nodes.length], active, isImplicitEnd: true });
+    };
 
-        cursor = plan.exit;
-        deck = exitDeck;
-    }
+    const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true });
+    walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
 
-    // Shift the whole layout up so the lowest skirt rim rests exactly on the ground.
+    // ground shift: lowest skirt rim rests on the ground
     const minRim = Math.min(...pieces.map(pc => pc.rimY));
     for (const pc of pieces) {
         pc.entryDeck -= minRim;
         pc.exitDeck -= minRim;
         pc.rimY -= minRim;
     }
+    for (const sw of switches) sw.deck -= minRim;
+    for (const oe of openEnds) oe.deck -= minRim;
 
-    const totalDropMm = pieces[0].entryDeck - pieces[pieces.length - 1].exitDeck;
+    const active = pieces.filter(pc => pc.active);
+    const totalDropMm = active.length ? active[0].entryDeck - active[active.length - 1].exitDeck : 0;
     issues.push(...checkClearances(pieces, p));
-    return { pieces, issues, totalDropMm, params: p };
+    return { pieces, issues, totalDropMm, params: p, openEnds, switches };
 }
 
-/** Deck-centerline elevation at arc-length s within a piece (excludes ridges). */
+/**
+ * The linear piece list the figure actually rides, following current gate
+ * settings. Depth-first emission order + active flags make this a filter.
+ */
+export function resolveRidePath(pieces) {
+    return pieces.filter(pc => pc.active);
+}
+
 export function deckYAt(piece, s) {
     const f = piece.planLen === 0 ? 0 : s / piece.planLen;
     return piece.entryDeck - piece.drop * f;
 }
 
-/** Plan position + heading at arc-length s within a piece. */
 export function planPosAt(piece, s) {
     if (!piece.radius) {
         const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
@@ -186,11 +293,6 @@ export function planPosAt(piece, s) {
     return { x: piece.center[0] + rx, z: piece.center[1] + rz, h: piece.entry.h + a };
 }
 
-/**
- * Sweep stations for mesh generation. Each station provides the deck-centerline
- * origin and a HORIZONTAL right vector (zero-bank rule: `right` never tilts,
- * so the channel floor stays level side-to-side even on helical curves).
- */
 export function stationsForPiece(piece, maxStep = 8) {
     const n = Math.max(2, Math.ceil(piece.planLen / maxStep) + 1);
     const stations = [];
@@ -200,13 +302,13 @@ export function stationsForPiece(piece, maxStep = 8) {
         stations.push({
             s,
             origin: [x, deckYAt(piece, s), z],
-            right: [Math.sin(h), 0, -Math.cos(h)] // horizontal, perpendicular to travel
+            right: [Math.sin(h), 0, -Math.cos(h)] // zero-bank rule
         });
     }
     return stations;
 }
 
-/** Dense centerline samples for the gait simulation. */
+/** Dense centerline samples for simulation — expects a LINEAR piece list. */
 export function samplePath(pieces, step = 5) {
     const samples = [];
     let total = 0;
@@ -230,13 +332,17 @@ export function samplePath(pieces, step = 5) {
 }
 
 /**
- * Self-intersection / spiral-tier clearance check. Non-adjacent pieces whose
- * centerlines pass within a channel-width of each other must be separated
- * vertically by at least SPEC.clearanceHeight (figure + rails + structure).
+ * Spiral-tier / branch clearance check. Pieces that share an endpoint
+ * (parent-child seams, switch siblings) are exempt; everything else that
+ * overlaps in plan needs SPEC.clearanceHeight of vertical separation.
  */
 export function checkClearances(pieces, params) {
     const issues = [];
     const outerW = (params.innerWidth ?? SPEC.innerWidth.default) + 2 * SPEC.wall + SPEC.curveWidenMm;
+    const near = (a, b) => Math.hypot(a.x - b.x, a.z - b.z) < 2;
+    const related = (a, b) =>
+        near(a.exit, b.entry) || near(b.exit, a.entry) || near(a.entry, b.entry) || near(a.exit, b.exit);
+
     const sampled = pieces.map(pc => {
         const n = Math.max(2, Math.ceil(pc.planLen / 25) + 1);
         const pts = [];
@@ -248,22 +354,20 @@ export function checkClearances(pieces, params) {
         return pts;
     });
 
-    const flagged = new Set();
     for (let i = 0; i < pieces.length; i++) {
-        for (let j = i + 2; j < pieces.length; j++) {
+        for (let j = i + 1; j < pieces.length; j++) {
+            if (related(pieces[i], pieces[j])) continue;
             let clash = false;
             for (const a of sampled[i]) {
                 for (const b of sampled[j]) {
                     const dx = a[0] - b[0], dz = a[2] - b[2];
-                    if (dx * dx + dz * dz < outerW * outerW) {
-                        const dy = Math.abs(a[1] - b[1]);
-                        if (dy < SPEC.clearanceHeight) { clash = true; break; }
+                    if (dx * dx + dz * dz < outerW * outerW && Math.abs(a[1] - b[1]) < SPEC.clearanceHeight) {
+                        clash = true; break;
                     }
                 }
                 if (clash) break;
             }
-            if (clash && !flagged.has(`${i}-${j}`)) {
-                flagged.add(`${i}-${j}`);
+            if (clash) {
                 issues.push({
                     level: 'error', code: 'clearance', i, j,
                     msg: `Pieces ${pieces[i].name} and ${pieces[j].name} overlap with less than ${SPEC.clearanceHeight} mm of vertical clearance — the figure will strike the tier above.`
@@ -272,10 +376,4 @@ export function checkClearances(pieces, params) {
         }
     }
     return issues;
-}
-
-/** Convenience: appends a full 360° spiral tier (4 quarter-turns) to a sequence. */
-export function appendSpiralTier(sequence, direction = 'L') {
-    const t = direction === 'L' ? 'curveL' : 'curveR';
-    return [...sequence, t, t, t, t];
 }

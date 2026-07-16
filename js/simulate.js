@@ -64,17 +64,21 @@ export function simulateRun(pieces, opts = {}) {
     const maxT = opts.maxT ?? 180;
     const traceEvery = opts.traceEvery ?? 0.02;
 
+    const liftSpeed = opts.liftSpeedMmS ?? 55;
     const sampler = makePathSampler(pieces, 4);
     const assess = pieces.map(pc =>
-        pc.slopeDeg > 0
-            ? assessSlope(pc.slopeDeg, { mu, walker })
-            : { status: 'platform', speedMmS: 0, stepHz: 0, strideMm: 0 }
+        pc.isLift
+            ? { status: 'lift', speedMmS: liftSpeed, stepHz: 0, strideMm: 0 }
+            : pc.slopeDeg > 0
+                ? assessSlope(pc.slopeDeg, { mu, walker })
+                : { status: 'platform', speedMmS: 0, stepHz: 0, strideMm: 0 }
     );
 
-    // start at the head of the first running piece (where a child places the toy)
+    // start at the head of the first running piece (where a child places the
+    // toy) — a descending ramp or a powered lift both count
     let dist = 0;
     if (opts.startAtFirstRamp !== false) {
-        const first = sampler.samples.find(s => s.slopeDeg > 0);
+        const first = sampler.samples.find(s => s.slopeDeg > 0 || pieces[s.pieceIndex]?.isLift);
         dist = first ? first.dist : 0;
     }
 
@@ -106,7 +110,9 @@ export function simulateRun(pieces, opts = {}) {
         // --- regime selection ---
         const gaitV = a.speedMmS;
         let nextMode;
-        if (a.status === 'walk') {
+        if (a.status === 'lift') {
+            nextMode = 'lift'; // externally powered conveyor section
+        } else if (a.status === 'walk') {
             // momentum rule: a figure sliding in much faster than the gait speed
             // cannot re-enter the rocking cycle — it keeps skiing.
             nextMode = (mode === 'slide' && v > 1.6 * gaitV) ? 'slide' : 'walk';
@@ -119,7 +125,9 @@ export function simulateRun(pieces, opts = {}) {
         }
 
         // --- integrate ---
-        if (mode === 'walk') {
+        if (mode === 'lift') {
+            v += (liftSpeed - v) * Math.min(1, dt * 6); // conveyor grabs the figure
+        } else if (mode === 'walk') {
             v += (gaitV - v) * Math.min(1, dt * 8); // gait locks in over ~0.1 s
             stepPhase += a.stepHz * dt;
             if (stepPhase >= 1) { stepPhase -= 1; stats.clacks++; }
@@ -180,17 +188,23 @@ export function simulateRun(pieces, opts = {}) {
 }
 
 /**
- * Physics sanity check used by the harness: along a trace starting from rest,
- * kinetic energy must never exceed the gravitational energy released
+ * Physics sanity check used by the harness: within every PASSIVE span of the
+ * trace, kinetic energy must never exceed the gravitational energy released
  * (per unit mass: ½v² ≤ g·(y₀ − y) + ε). Friction and hoof-strike losses only
  * remove energy — a violation means the integrator is creating energy.
+ * Lift sections are externally powered, so the budget baseline resets at the
+ * end of each lift.
  */
 export function verifyEnergyBudget(trace, epsilon = 1e3) {
     if (!trace.length) return { ok: true, worst: 0 };
-    const y0 = trace[0].y;
-    const v0 = trace[0].v;
+    let y0 = trace[0].y;
+    let v0 = trace[0].v;
     let worst = -Infinity;
     for (const s of trace) {
+        if (s.mode === 'lift') {
+            y0 = s.y; v0 = s.v; // powered: re-baseline, skip the check
+            continue;
+        }
         const ke = 0.5 * s.v * s.v - 0.5 * v0 * v0;
         const pe = G * (y0 - s.y);
         worst = Math.max(worst, ke - pe);

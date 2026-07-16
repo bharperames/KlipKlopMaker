@@ -19,10 +19,14 @@ Open the served URL in any modern browser. Everything runs client-side.
 
 ## What you can do
 
-- **Build**: snap together straight ramps, left/right curves, and full 360°
-  spiral tiers. Start/end platforms are added automatically. Elevations are
-  solved automatically (Auto-Z) so every running segment descends at the locked
-  slope, and the lowest rim lands on the ground.
+- **Build (RCT-style)**: snap together straights, curves, spiral tiers,
+  **powered lift ramps**, and **gated Y-switches** that fork the track into
+  branches. Bouncing construction arrows mark every open end — click one to
+  move the build point, hover a palette button for a ghost preview, select any
+  placed piece to convert/insert/delete it in place (downstream re-lays out
+  via Auto-Z), and click a switch to flip its gate. Decorate with the
+  interlocking scenery family (towers, palm islands, patios) — everything
+  shares one hex tenon/socket standard.
 - **Simulate**: hit *Test ride* — a physics-driven horse trots the track with
   synthesized klip-klop audio. It will genuinely stall, slide, or tumble if
   your parameters leave the walkable envelope (see the Physics lab panel).
@@ -30,14 +34,19 @@ Open the served URL in any modern browser. Everything runs client-side.
   rimless-wheel gait verdict (speed, cadence, descent time), a ballast plan,
   and the troubleshooting matrix. See [PHYSICS.md](PHYSICS.md) for derivations.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
-  verified) STL or 3MF meshes, pre-oriented for printing:
-  - track pieces with **washboard friction floors**, hollow **acoustic
-    chambers**, **waterfall dovetail seams** (downhill floor 0.25 mm lower —
-    a seam can never trip the toy), and hex **pillar sockets**
-  - auto-cut support **pillars** with heights baked in
+  verified) STL or 3MF meshes, pre-oriented for printing with **zero
+  overhangs** (slicer-verified):
+  - track pieces with **washboard friction floors**, sealed **acoustic
+    chambers**, **waterfall seams** (downhill floor 0.25 mm lower — a seam
+    can never trip the toy), and hex **pillar sockets**
+  - **bowtie connector keys** (Hot-Wheels-style separate connectors that drop
+    into pockets recessed in bed-supported end ribs — the print-friendly
+    replacement for protruding dovetails)
+  - merged **switch parts** with gate-pin bores plus printable **gate paddles**
+  - auto-cut support **pillars**, plus any placed **scenery** parts
   - the **walker figure** (body + pendulum lying on their sides so hoof cams
     print smooth) and choke-safety **plugs**
-  - a README with print settings and assembly/safety steps
+  - a README with print settings, quantities, and assembly/safety steps
 
 ## Physics rule set (enforced, not suggested)
 

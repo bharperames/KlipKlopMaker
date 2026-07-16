@@ -48,6 +48,18 @@ building, gait physics simulation, and watertight STL/3MF export.
 - **Scenes are tests**: files in `scenes/` carry an `expect` block and are
   auto-picked-up by the harness and the report generator. Keep expectations in
   the scene file, not hardcoded in tests.
+- **Tracks are trees** (v2): a node is a segment string or a switch object
+  `{type: switchL|switchR, gate, main: [], branch: []}` — switches must be the
+  LAST node of their container. `layoutTrack` emits two role pieces per switch
+  (exported merged); `resolveRidePath(pieces)` gives the gate-selected linear
+  path — always simulate THAT, never the raw pieces array.
+- **Print-friendliness is a contract**: parts print rim-down with no supports.
+  Never add geometry that protrudes past an end face or floats above the bed
+  (the original dovetail tab failed in the slicer as a floating cantilever) —
+  joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`
+  enforces the footprint rule.
+- Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
+  (pillars, towers, palm trunks, patio corners, track bosses).
 
 ## Browser verification
 

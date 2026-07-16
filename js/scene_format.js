@@ -2,19 +2,18 @@
  * scene_format.js
  * Versioned persistence format for Klip Klop Maker designs — pure module.
  *
- * A "scene" is a complete, portable description of a design: the path
- * sequence, track parameters, surface finish, and walker configuration,
- * plus optional metadata and test expectations (used by the verification
- * harness in tests/scenes.test.js and scripts/generate_reports.mjs).
+ * v2 adds: tree-structured sequences (switch nodes with gates), 'lift'
+ * segments, and a `scenery` array of placed decorative parts. v1 documents
+ * (flat string arrays) load unchanged — a string is a valid tree node.
  */
 
-import { SPEC } from './track.js';
+import { SIMPLE_TYPES, isSwitchNode } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER } from './physics.js';
 
 export const SCENE_FORMAT = 'klipklop-scene';
-export const SCENE_VERSION = 1;
+export const SCENE_VERSION = 2;
 
-const SEGMENT_TYPES = new Set(['straight', 'curveL', 'curveR']);
+export const SCENERY_KINDS = ['tower', 'palm', 'patio'];
 
 /** Builds a scene object from app state (or state-shaped input). */
 export function serializeScene(state, meta = {}) {
@@ -23,7 +22,8 @@ export function serializeScene(state, meta = {}) {
         version: SCENE_VERSION,
         name: meta.name ?? state.name ?? 'Untitled track',
         description: meta.description ?? state.description ?? '',
-        sequence: [...state.sequence],
+        sequence: cloneNodes(state.sequence),
+        scenery: (state.scenery ?? []).map(s => ({ ...s })),
         params: {
             slopeDeg: state.slopeDeg,
             innerWidth: state.innerWidth,
@@ -35,10 +35,31 @@ export function serializeScene(state, meta = {}) {
     };
 }
 
-/**
- * Validates a parsed scene object. Returns a list of problems (empty = valid).
- * Unknown fields are tolerated (forward compatibility).
- */
+function cloneNodes(nodes) {
+    return nodes.map(n => typeof n === 'string' ? n : {
+        type: n.type,
+        gate: n.gate === 'branch' ? 'branch' : 'main',
+        main: cloneNodes(n.main ?? []),
+        branch: cloneNodes(n.branch ?? [])
+    });
+}
+
+function validateNodes(nodes, problems, path) {
+    if (!Array.isArray(nodes)) { problems.push(`${path}: not an array`); return; }
+    nodes.forEach((n, i) => {
+        if (typeof n === 'string') {
+            if (!SIMPLE_TYPES.includes(n)) problems.push(`${path}[${i}]: unknown segment type "${n}"`);
+        } else if (isSwitchNode(n)) {
+            if (i !== nodes.length - 1) problems.push(`${path}[${i}]: a switch must be the last node of its branch`);
+            validateNodes(n.main ?? [], problems, `${path}[${i}].main`);
+            validateNodes(n.branch ?? [], problems, `${path}[${i}].branch`);
+        } else {
+            problems.push(`${path}[${i}]: unknown node`);
+        }
+    });
+}
+
+/** Returns a list of problems (empty = valid). Tolerates unknown extra fields. */
 export function validateScene(obj) {
     const problems = [];
     if (!obj || typeof obj !== 'object') return ['not an object'];
@@ -46,33 +67,28 @@ export function validateScene(obj) {
     if (typeof obj.version !== 'number' || obj.version > SCENE_VERSION) {
         problems.push(`unsupported version ${obj.version} (this app reads ≤ ${SCENE_VERSION})`);
     }
-    if (!Array.isArray(obj.sequence)) problems.push('sequence must be an array');
-    else {
-        for (const t of obj.sequence) {
-            if (!SEGMENT_TYPES.has(t)) problems.push(`unknown segment type "${t}"`);
-        }
-    }
+    validateNodes(obj.sequence ?? null, problems, 'sequence');
     const p = obj.params ?? {};
     if (typeof p.slopeDeg !== 'number') problems.push('params.slopeDeg missing');
     if (typeof p.innerWidth !== 'number') problems.push('params.innerWidth missing');
     if (typeof p.curveRadius !== 'number') problems.push('params.curveRadius missing');
     if (obj.surface && !FRICTION_PRESETS[obj.surface]) problems.push(`unknown surface "${obj.surface}"`);
+    for (const [i, s] of (obj.scenery ?? []).entries()) {
+        if (!SCENERY_KINDS.includes(s.kind)) problems.push(`scenery[${i}]: unknown kind "${s.kind}"`);
+        if (typeof s.x !== 'number' || typeof s.z !== 'number') problems.push(`scenery[${i}]: missing position`);
+    }
     return problems;
 }
 
-/**
- * Converts a valid scene into app-state fields, clamping parameters into the
- * physics envelope only where the value would break geometry generation
- * (out-of-envelope slopes/radii are allowed — the layout engine flags them,
- * which is exactly what stall/slide test scenes rely on).
- */
+/** Converts a valid scene into app-state fields. */
 export function deserializeScene(obj) {
     const problems = validateScene(obj);
     if (problems.length) throw new Error(`Invalid scene: ${problems.join('; ')}`);
     return {
         name: obj.name ?? 'Untitled track',
         description: obj.description ?? '',
-        sequence: [...obj.sequence],
+        sequence: cloneNodes(obj.sequence),
+        scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
         slopeDeg: obj.params.slopeDeg,
         innerWidth: obj.params.innerWidth,
         curveRadius: obj.params.curveRadius,

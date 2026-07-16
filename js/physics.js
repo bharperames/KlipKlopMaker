@@ -175,10 +175,13 @@ export function trackVerdict(pieces, opts = {}) {
         if (pc.type === 'start' || pc.type === 'end') {
             return { name: pc.name, status: 'platform', speedMmS: 0 };
         }
+        if (pc.isLift) {
+            return { name: pc.name, status: 'lift', speedMmS: 55 };
+        }
         const r = assessSlope(pc.slopeDeg, opts);
         return { name: pc.name, status: r.status, speedMmS: r.speedMmS, stepHz: r.stepHz, detail: r.detail };
     });
-    const running = perPiece.filter(r => r.status !== 'platform');
+    const running = perPiece.filter(r => r.status !== 'platform' && r.status !== 'lift');
     const allWalk = running.length > 0 && running.every(r => r.status === 'walk');
     const runLen = pieces.filter(pc => pc.type !== 'start' && pc.type !== 'end')
         .reduce((s, pc) => s + pc.planLen, 0);

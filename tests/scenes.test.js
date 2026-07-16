@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { layoutTrack } from '../js/track.js';
+import { layoutTrack, resolveRidePath } from '../js/track.js';
 import { FRICTION_PRESETS } from '../js/physics.js';
 import { simulateRun, verifyEnergyBudget } from '../js/simulate.js';
 import { validateScene, deserializeScene, serializeScene, roundTrip } from '../js/scene_format.js';
@@ -40,7 +40,7 @@ describe.each(sceneFiles)('%s', (file) => {
         innerWidth: state.innerWidth,
         curveRadius: state.curveRadius
     });
-    const result = simulateRun(layout.pieces, {
+    const result = simulateRun(resolveRidePath(layout.pieces), {
         mu: FRICTION_PRESETS[state.muKey].mu,
         walker: state.walker
     });

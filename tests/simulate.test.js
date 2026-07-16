@@ -122,3 +122,19 @@ describe('makePathSampler', () => {
         }
     });
 });
+
+describe('LIFT regime', () => {
+    test('powered lift carries the figure uphill at the conveyor speed, then it trots home', () => {
+        const { pieces } = layoutTrack(['lift', 'lift', 'curveL', 'curveL', 'straight'], { slopeDeg: 11 });
+        const r = simulateRun(pieces, { mu: FRICTION_PRESETS.washboard.mu });
+        expect(r.outcome).toBe('arrived');
+        const liftSamples = r.trace.filter(s => s.mode === 'lift' && s.t > 1);
+        expect(liftSamples.length).toBeGreaterThan(10);
+        for (const s of liftSamples) expect(Math.abs(s.v - 55)).toBeLessThan(6);
+        // figure gains height during the lift
+        const first = r.trace[0], peak = Math.max(...r.trace.map(s => s.y));
+        expect(peak).toBeGreaterThan(first.y + 30);
+        // energy budget still holds because lifts re-baseline it
+        expect(verifyEnergyBudget(r.trace).ok).toBe(true);
+    });
+});

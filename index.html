@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Klip Klop Maker — 3D-Printable Ramp Designer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐴</text></svg>">
 <script type="importmap">
 {
     "imports": {
@@ -204,17 +205,29 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 </header>
 
 <aside id="build-panel">
-    <h2>Build path</h2>
+    <h2>Build path <span id="active-end-label" style="text-transform:none;letter-spacing:0"></span></h2>
     <div class="btn-grid">
         <button id="add-straight" data-add="straight">⬆ Straight ramp</button>
+        <button id="add-lift" data-add="lift">⛓ Powered lift</button>
         <button id="add-curveL" data-add="curveL">⟲ Curve left</button>
         <button id="add-curveR" data-add="curveR">⟳ Curve right</button>
+        <button id="add-switchL" data-switch="switchL">⑂ Switch (fork left)</button>
+        <button id="add-switchR" data-switch="switchR">⑂ Switch (fork right)</button>
         <button id="add-spiralL" data-spiral="L">🌀 Spiral tier ⟲</button>
         <button id="add-spiralR" data-spiral="R">🌀 Spiral tier ⟳</button>
         <button id="btn-undo">↩ Undo</button>
         <button id="btn-clear">🗑 Clear</button>
         <button id="btn-demo" class="wide">🏰 Load demo tower (double spiral + run-out)</button>
     </div>
+
+    <h2>Scenery (interlocking hex bases)</h2>
+    <div class="btn-grid">
+        <button id="add-tower" data-scenery="tower">🗼 Tower</button>
+        <button id="add-palm" data-scenery="palm">🌴 Palm island</button>
+        <button id="add-patio" data-scenery="patio" class="wide">🏖 Patio (figure parking)</button>
+    </div>
+
+    <div id="editor-card" class="card" style="display:none"></div>
 
     <h2>Design file</h2>
     <div class="btn-grid">
@@ -250,7 +263,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 <aside id="lab-panel">
     <div class="tabs">
         <button id="tab-physics" class="active">Physics lab</button>
-        <button id="tab-export" >Print &amp; export</button>
+        <button id="tab-export">Print &amp; export</button>
+        <button id="tab-refs">References</button>
     </div>
 
     <div id="pane-physics">
@@ -314,6 +328,46 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <b>Axle:</b> 3 mm steel/brass rod (do NOT print it)<br>
             <b>Ballast:</b> steel BBs in the bores, then glue every plug
             (choke-hazard seal)
+        </div>
+    </div>
+
+    <div id="pane-refs" style="display:none">
+        <h2>Generated for this project</h2>
+        <div class="card">
+            <a href="./reports/index.html" target="_blank">📊 Scene verification report</a><br>
+            <span style="color:var(--ink-2)">All bundled scenes solved by the dynamics engine — outcomes,
+            expectation checks, speed/elevation traces, event timelines, 3D views.
+            Regenerate: <code>node scripts/generate_reports.mjs</code></span>
+        </div>
+        <div class="card">
+            <a href="./PHYSICS.md" target="_blank">📐 PHYSICS.md — model derivations</a><br>
+            <span style="color:var(--ink-2)">Rimless-wheel gait math, friction budget, geometry rule set, sources.</span>
+        </div>
+        <div class="card">
+            <a href="./readme.md" target="_blank">📘 readme.md — app &amp; architecture guide</a>
+        </div>
+
+        <h2>Passive dynamic walking</h2>
+        <div class="card">
+            <a href="https://www.researchgate.net/publication/267123687_Numerical_accuracy_of_two_benchmark_models_of_walking_The_rimless_spoked_wheel_and_the_simplest_walker" target="_blank" rel="noopener">Rimless spoked wheel &amp; simplest walker — benchmark models</a><br>
+            <a href="https://www.researchgate.net/publication/233643468_Small_slope_implies_low_speed_for_McGeer's_passive_walking_machines" target="_blank" rel="noopener">Small slope implies low speed (McGeer's machines)</a><br>
+            <a href="https://digitalcommons.usf.edu/cgi/viewcontent.cgi?article=6690&amp;context=etd" target="_blank" rel="noopener">Experimental study on passive dynamic walking (USF) — solutions to ~15.4°</a><br>
+            <a href="https://repositories.lib.utexas.edu/server/api/core/bitstreams/3a5eec83-109b-497e-889a-8f67ef3a252a/content" target="_blank" rel="noopener">Passive dynamic walking robots for additive manufacture (UT Austin)</a><br>
+            <a href="https://www.sciencedirect.com/science/article/abs/pii/S0022519307002317" target="_blank" rel="noopener">Optimal foot shape for a passive dynamic biped</a>
+        </div>
+
+        <h2>PLA friction &amp; printing</h2>
+        <div class="card">
+            <a href="https://www.emerald.com/insight/content/doi/10.1108/rpj-03-2022-0081/full/html" target="_blank" rel="noopener">Infill density vs coefficient of friction (Rapid Prototyping Journal)</a><br>
+            <a href="https://iopscience.iop.org/article/10.1088/1742-6596/2542/1/012003/pdf" target="_blank" rel="noopener">Tribological behaviour of 3D-printed PLA (IOP)</a><br>
+            <a href="https://revmaterialeplastice.ro/pdf/19%20CHISIU%201%2021.pdf" target="_blank" rel="noopener">Friction behavior of 3D-printed polymeric materials</a>
+        </div>
+
+        <h2>Reference toy &amp; build UX</h2>
+        <div class="card">
+            <a href="https://www.youtube.com/watch?v=wqNYFY2WxSg&amp;t=5s" target="_blank" rel="noopener">Fisher-Price Klip Klop Stable — gait video (motion at 0:18)</a><br>
+            <a href="https://rct.fandom.com/wiki/Building_a_Ride" target="_blank" rel="noopener">RollerCoaster Tycoon — Building a Ride (editor paradigm)</a><br>
+            <a href="https://rct.miraheze.org/wiki/Building_A_Ride" target="_blank" rel="noopener">RCT wiki — construction arrow &amp; piece editing</a>
         </div>
     </div>
 </aside>

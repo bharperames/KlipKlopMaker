@@ -13,7 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { layoutTrack } from '../js/track.js';
+import { layoutTrack, resolveRidePath } from '../js/track.js';
 import { FRICTION_PRESETS } from '../js/physics.js';
 import { simulateRun, verifyEnergyBudget } from '../js/simulate.js';
 import { deserializeScene } from '../js/scene_format.js';
@@ -104,7 +104,7 @@ for (const file of sceneFiles) {
     const raw = JSON.parse(fs.readFileSync(path.join(SCENES, file), 'utf8'));
     const st = deserializeScene(raw);
     const layout = layoutTrack(st.sequence, { slopeDeg: st.slopeDeg, innerWidth: st.innerWidth, curveRadius: st.curveRadius });
-    const result = simulateRun(layout.pieces, { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker });
+    const result = simulateRun(resolveRidePath(layout.pieces), { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker });
     const checks = checkExpectations(raw.expect ?? {}, result, layout);
     const pass = checks.every(c => c.ok);
     summary.push({ id, name: raw.name, outcome: result.outcome, expected: raw.expect?.outcome, t: result.tEnd, clacks: result.stats.clacks, maxV: result.stats.maxV, pass });

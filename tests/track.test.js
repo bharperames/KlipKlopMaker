@@ -148,3 +148,70 @@ describe('samplePath', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// v2: tree tracks — switches, lifts, open ends, ride-path resolution
+// ---------------------------------------------------------------------------
+import { resolveRidePath, openContainers, getContainer, nodeAt, isSwitchNode } from '../js/track.js';
+
+describe('switch nodes', () => {
+    const seq = ['straight', { type: 'switchL', gate: 'branch', main: ['straight'], branch: ['curveL', 'straight'] }];
+
+    test('emits two role pieces and caps every leaf with an end platform', () => {
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11 });
+        const roles = pieces.filter(p => p.switchKey);
+        expect(roles.map(p => p.role).sort()).toEqual(['branch', 'main']);
+        expect(pieces.filter(p => p.type === 'end')).toHaveLength(2);
+    });
+
+    test('ride path follows the gate', () => {
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11 });
+        const ride = resolveRidePath(pieces);
+        expect(ride.some(p => p.role === 'branch')).toBe(true);
+        expect(ride.some(p => p.role === 'main')).toBe(false);
+        expect(ride.at(-1).type).toBe('end');
+        // flipping the gate flips the path
+        const flipped = JSON.parse(JSON.stringify(seq));
+        flipped[1].gate = 'main';
+        const ride2 = resolveRidePath(layoutTrack(flipped, { slopeDeg: 11 }).pieces);
+        expect(ride2.some(p => p.role === 'main')).toBe(true);
+        expect(ride2.some(p => p.role === 'branch')).toBe(false);
+    });
+
+    test('ride path seams stay waterfall-consistent through the switch', () => {
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11 });
+        const ride = resolveRidePath(pieces);
+        for (let i = 1; i < ride.length; i++) {
+            expect(ride[i - 1].exitDeck - ride[i].entryDeck).toBeCloseTo(SPEC.waterfallStepMm, 9);
+        }
+    });
+
+    test('openContainers lists both branch ends, not the root', () => {
+        const ends = openContainers(seq).map(p => JSON.stringify(p));
+        expect(ends).toContain(JSON.stringify([1, 'main']));
+        expect(ends).toContain(JSON.stringify([1, 'branch']));
+        expect(ends).not.toContain(JSON.stringify([]));
+    });
+
+    test('tree helpers address nodes correctly', () => {
+        expect(nodeAt(seq, [0])).toBe('straight');
+        expect(isSwitchNode(nodeAt(seq, [1]))).toBe(true);
+        expect(getContainer(seq, [1, 'branch'])).toHaveLength(2);
+        expect(nodeAt(seq, [1, 'branch', 0])).toBe('curveL');
+    });
+});
+
+describe('lift pieces', () => {
+    test('ascend at the locked angle and carry the isLift flag', () => {
+        const { pieces } = layoutTrack(['lift', 'straight'], { slopeDeg: 11 });
+        const lift = pieces.find(p => p.isLift);
+        expect(lift.exitDeck - lift.entryDeck).toBeCloseTo(150 * Math.tan(degToRad(11)), 6);
+        expect(lift.slopeDeg).toBeCloseTo(-11, 9);
+        expect(lift.rimY).toBeCloseTo(lift.entryDeck - SPEC.skirtDepth, 9);
+    });
+
+    test('lowest rim still lands on the ground with lifts in play', () => {
+        const { pieces } = layoutTrack(['lift', 'lift', 'curveL', 'curveL', 'straight'], { slopeDeg: 11 });
+        expect(Math.min(...pieces.map(p => p.rimY))).toBeCloseTo(0, 9);
+    });
+});

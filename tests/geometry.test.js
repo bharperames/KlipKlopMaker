@@ -1,6 +1,6 @@
 import {
     signedArea2D, earClipTriangulate, sweepSolid, extrudePolygonY, extrudeOutlineX,
-    channelProfile, pieceProfiles, dovetailTabPlan, dovetailSlotPlan, hexPlan,
+    channelProfile, pieceProfiles, bowtieKeyPlan, bowtiePocketPlan, hexPlan,
     circlePlan, bodySideOutline, pendulumSideOutline, figureVolumeEstimate
 } from '../js/geometry.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
@@ -52,8 +52,8 @@ describe('primitive solids', () => {
         expect(r.volumeMm3).toBeCloseTo(1, 9);
     });
 
-    test('hex and dovetail prisms are watertight with correct volume', () => {
-        for (const plan of [hexPlan(9), dovetailTabPlan({}), dovetailSlotPlan({}), circlePlan(5, 16)]) {
+    test('hex, bowtie and circle prisms are watertight with correct volume', () => {
+        for (const plan of [hexPlan(9), bowtieKeyPlan({}), bowtiePocketPlan({}), circlePlan(5, 16)]) {
             const mesh = extrudePolygonY(plan, 0, 10);
             const r = analyzeMesh(mesh.positions, mesh.indices);
             expect(r.isManifold).toBe(true);
