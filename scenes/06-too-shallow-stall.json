@@ -1,0 +1,16 @@
+{
+  "format": "klipklop-scene",
+  "version": 1,
+  "name": "Too Shallow (stall demo)",
+  "description": "8° slope, smooth floor, and a gritty axle (η=0.15): the energy recovered per step can't vault the stance leg over top dead center. The figure never gets going — the STALL regime.",
+  "sequence": ["straight", "straight", "curveL"],
+  "params": { "slopeDeg": 8, "innerWidth": 48, "curveRadius": 150 },
+  "surface": "smooth",
+  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.15, "massG": 45 },
+  "expect": {
+    "outcome": "stalled",
+    "maxTimeS": 10,
+    "maxWalkedFraction": 0.1,
+    "layoutErrors": []
+  }
+}

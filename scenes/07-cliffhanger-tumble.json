@@ -1,0 +1,15 @@
+{
+  "format": "klipklop-scene",
+  "version": 1,
+  "name": "Cliffhanger (tumble demo)",
+  "description": "A 14° slope against a tight ±12° swing limiter: the next hoof lands beyond the limiter's reach and the figure pitches over its front axle at the first ramp. The TUMBLE regime — why the swing stops and slope lock exist together.",
+  "sequence": ["straight", "curveR", "straight"],
+  "params": { "slopeDeg": 14, "innerWidth": 48, "curveRadius": 150 },
+  "surface": "washboard",
+  "walker": { "alphaDeg": 12, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "expect": {
+    "outcome": "tumbled",
+    "maxTimeS": 5,
+    "layoutErrors": []
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "klip-klop-maker",
+  "version": "1.0.0",
+  "description": "Roller-coaster-tycoon-style designer for 3D-printable Klip Klop ramp systems and passive dynamic walker figures",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "start": "npx serve ."
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2",
+    "manifold-3d": "^3.5.1",
+    "three": "0.160.0"
+  }
+}
