@@ -1,0 +1,19 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "name": "Perpetual Motion Ring",
+  "description": "A closed circuit: three powered lifts climb each straightaway and four descending curves spend the height — the ring closes back on its own first piece with a legal 1.7 mm waterfall step. The figure trots laps forever (verified over 3 laps).",
+  "sequence": ["lift", "lift", "lift", "curveL", "curveL", "lift", "lift", "lift", "curveL", "curveL"],
+  "loop": true,
+  "scenery": [],
+  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 140 },
+  "surface": "washboard",
+  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "expect": {
+    "outcome": "circuit",
+    "minLaps": 3,
+    "maxTimeS": 120,
+    "minClacks": 80,
+    "layoutErrors": []
+  }
+}

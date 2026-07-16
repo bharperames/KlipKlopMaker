@@ -257,3 +257,44 @@ describe('planPillarPositions', () => {
         expect(sups.every(s => s.mode === 'center')).toBe(true);
     });
 });
+
+// ---------------------------------------------------------------------------
+// loop mode: closed circuits with lift-funded elevation closure
+// ---------------------------------------------------------------------------
+describe('loop mode', () => {
+    const RING = ['lift', 'lift', 'lift', 'curveL', 'curveL', 'lift', 'lift', 'lift', 'curveL', 'curveL'];
+
+    test('a balanced lift/descent ring closes with a legal waterfall step', () => {
+        const { pieces, issues } = layoutTrack(RING, { slopeDeg: 11, curveRadius: 140, loop: true });
+        expect(issues.filter(i => i.code === 'loop-open')).toHaveLength(0);
+        expect(pieces.some(p => p.type === 'start' || p.type === 'end')).toBe(false);
+        // ring returns to origin in plan
+        const tail = pieces[pieces.length - 1];
+        expect(Math.hypot(tail.exit.x, tail.exit.z)).toBeLessThan(5);
+        // closure step-down within [waterfall, 3mm]
+        const stepDown = tail.exitDeck - pieces[0].entryDeck;
+        expect(stepDown).toBeGreaterThanOrEqual(SPEC.waterfallStepMm - 0.05);
+        expect(stepDown).toBeLessThanOrEqual(3);
+    });
+
+    test('an unbalanced ring reports how it fails to close', () => {
+        const short = ['lift', 'lift', 'curveL', 'curveL', 'lift', 'lift', 'lift', 'curveL', 'curveL'];
+        const { issues } = layoutTrack(short, { slopeDeg: 11, curveRadius: 140, loop: true });
+        expect(issues.some(i => i.code === 'loop-open')).toBe(true);
+    });
+
+    test('switches are rejected on the main ring', () => {
+        const seq = ['lift', { type: 'switchL', gate: 'main', main: [], branch: [] }];
+        const { issues } = layoutTrack(seq, { slopeDeg: 11, loop: true });
+        expect(issues.some(i => i.code === 'loop-no-switch')).toBe(true);
+    });
+
+    test('the simulator runs laps to a circuit outcome', async () => {
+        const { simulateRun } = await import('../js/simulate.js');
+        const { pieces } = layoutTrack(RING, { slopeDeg: 11, curveRadius: 140, loop: true });
+        const r = simulateRun(pieces, { mu: 0.6, loop: true, maxLaps: 3 });
+        expect(r.outcome).toBe('circuit');
+        expect(r.stats.laps).toBe(3);
+        expect(r.events.filter(e => e.type === 'lap')).toHaveLength(3);
+    });
+});

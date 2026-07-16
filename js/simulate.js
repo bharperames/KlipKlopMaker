@@ -85,7 +85,7 @@ export function simulateRun(pieces, opts = {}) {
     const events = [];
     const trace = [];
     const stats = { clacks: 0, maxV: 0, walkDist: 0, slideDist: 0 };
-    let t = 0, v = 0, mode = 'walk', lastPiece = -1, stepPhase = 0, lastTrace = -Infinity;
+    let t = 0, v = 0, mode = 'walk', lastPiece = -1, stepPhase = 0, lastTrace = -Infinity, laps = 0;
     let outcome = null;
 
     const logEvent = (type, detail) => events.push({ t: +t.toFixed(3), dist: +dist.toFixed(1), type, detail });
@@ -150,7 +150,20 @@ export function simulateRun(pieces, opts = {}) {
         dist += v * dt;
         t += dt;
 
-        if (dist >= sampler.total - 0.5) {
+        if (opts.loop) {
+            // closed circuit: wrap the closure seam and count laps
+            if (dist >= sampler.total - 0.5) {
+                dist -= sampler.total - 0.5;
+                laps++;
+                lastPiece = -1;
+                logEvent('lap', `lap ${laps} complete`);
+                if (laps >= (opts.maxLaps ?? 3)) {
+                    outcome = 'circuit';
+                    logEvent('outcome', `perpetual circuit verified over ${laps} laps`);
+                    break;
+                }
+            }
+        } else if (dist >= sampler.total - 0.5) {
             dist = sampler.total;
             outcome = 'arrived';
             logEvent('outcome', 'reached the end of the track');
@@ -180,7 +193,8 @@ export function simulateRun(pieces, opts = {}) {
         trace,
         stats: {
             ...stats,
-            walkedFraction: runLength > 0 ? Math.min(1, stats.walkDist / runLength) : 0,
+            laps,
+            walkedFraction: runLength > 0 ? Math.min(1, stats.walkDist / (runLength * Math.max(1, laps + 1))) : 0,
             descentTimeS: +t.toFixed(2)
         },
         assess
@@ -194,8 +208,13 @@ export function simulateRun(pieces, opts = {}) {
  * remove energy — a violation means the integrator is creating energy.
  * Lift sections are externally powered, so the budget baseline resets at the
  * end of each lift.
+ *
+ * epsilon covers discretization, not physics: the baseline snapshots at trace
+ * cadence (~20 ms), so a lift crest can sit a fraction of a millimetre above
+ * the last lift sample (g·0.25 mm ≈ 2.5e3 mm²/s²). Real energy creation shows
+ * up orders of magnitude larger.
  */
-export function verifyEnergyBudget(trace, epsilon = 1e3) {
+export function verifyEnergyBudget(trace, epsilon = 2.5e3) {
     if (!trace.length) return { ok: true, worst: 0 };
     let y0 = trace[0].y;
     let v0 = trace[0].v;

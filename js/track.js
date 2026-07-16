@@ -214,8 +214,8 @@ export function layoutTrack(sequence, params = {}) {
         return piece;
     };
 
-    /** Walks a node array; prevExit carries {cursor, deck}; returns nothing (leaves capped). */
-    const walk = (nodes, prevExit, containerPath, active) => {
+    /** Walks a node array; returns the final {cursor, deck} for linear chains (null after a switch). */
+    const walk = (nodes, prevExit, containerPath, active, capEnd = true) => {
         let cursor = prevExit.cursor;
         let deck = prevExit.deck;
         for (let i = 0; i < nodes.length; i++) {
@@ -240,19 +240,54 @@ export function layoutTrack(sequence, params = {}) {
                 }
                 walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck }, [...address, 'main'], active && gate === 'main');
                 walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck }, [...address, 'branch'], active && gate === 'branch');
-                return;
+                return null;
             }
             const piece = makePiece(node, node, cursor, entryDeck, { address, active });
             cursor = piece.exit;
             deck = piece.exitDeck;
         }
-        // leaf: implicit end platform + an open build end just before it
-        openEnds.push({ containerPath, cursor: { ...cursor }, deck });
-        makePiece('end', 'end', cursor, deck - p.waterfall, { address: [...containerPath, nodes.length], active, isImplicitEnd: true });
+        if (capEnd) {
+            // leaf: implicit end platform + an open build end just before it
+            openEnds.push({ containerPath, cursor: { ...cursor }, deck });
+            makePiece('end', 'end', cursor, deck - p.waterfall, { address: [...containerPath, nodes.length], active, isImplicitEnd: true });
+        }
+        return { cursor, deck };
     };
 
-    const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true });
-    walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
+    if (p.loop) {
+        // LOOP MODE: no start/end platforms on the root — the path is a ring.
+        // The closure seam must land back on the first piece's entry: same
+        // plan position and heading, and stepping DOWN 0.25–3 mm (a circuit
+        // must regain via lifts exactly what it spends descending).
+        if (sequence.some(isSwitchNode)) {
+            issues.push({ level: 'error', code: 'loop-no-switch', msg: 'Loop mode does not support a switch on the main ring yet — put switches on non-loop designs.' });
+        }
+        const tail = walk(sequence, { cursor: { x: 0, z: 0, h: 0 }, deck: 0 }, [], true /*active*/, false);
+        const first = pieces[0];
+        if (!sequence.length || !tail || !first) {
+            issues.push({ level: 'error', code: 'loop-open', msg: 'Loop mode: add pieces to form the ring.' });
+            openEnds.push({ containerPath: [], cursor: tail?.cursor ?? { x: 0, z: 0, h: 0 }, deck: tail?.deck ?? 0 });
+        } else {
+            const dx = tail.cursor.x - first.entry.x;
+            const dz = tail.cursor.z - first.entry.z;
+            const dh = Math.abs(((tail.cursor.h - first.entry.h) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+            const stepDown = tail.deck - first.entryDeck;
+            const posOk = Math.hypot(dx, dz) <= 5 && dh <= 0.04;
+            const elevOk = stepDown >= p.waterfall - 0.05 && stepDown <= 3;
+            if (!posOk || !elevOk) {
+                const hints = [];
+                if (!posOk) hints.push(`ends ${Math.hypot(dx, dz).toFixed(0)} mm / ${radToDeg(dh).toFixed(0)}° from the start`);
+                if (!elevOk) hints.push(stepDown < p.waterfall
+                    ? `needs ${(p.waterfall - stepDown).toFixed(1)} mm more lift (an uphill lip would trip the figure)`
+                    : `closure step-down ${stepDown.toFixed(1)} mm exceeds the 3 mm limit — add descent or remove a lift`);
+                issues.push({ level: 'error', code: 'loop-open', msg: `Loop does not close: ${hints.join('; ')}.` });
+                openEnds.push({ containerPath: [], cursor: { ...tail.cursor }, deck: tail.deck });
+            }
+        }
+    } else {
+        const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true });
+        walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
+    }
 
     // ground shift: lowest skirt rim rests on the ground
     const minRim = Math.min(...pieces.map(pc => pc.rimY));

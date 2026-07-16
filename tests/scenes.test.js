@@ -38,11 +38,14 @@ describe.each(sceneFiles)('%s', (file) => {
     const layout = layoutTrack(state.sequence, {
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
-        curveRadius: state.curveRadius
+        curveRadius: state.curveRadius,
+        loop: state.loop
     });
     const result = simulateRun(resolveRidePath(layout.pieces), {
         mu: FRICTION_PRESETS[state.muKey].mu,
-        walker: state.walker
+        walker: state.walker,
+        loop: state.loop,
+        maxLaps: 3
     });
     const exp = raw.expect ?? {};
 
@@ -56,6 +59,7 @@ describe.each(sceneFiles)('%s', (file) => {
         if (exp.minWalkedFraction !== undefined) expect(result.stats.walkedFraction).toBeGreaterThanOrEqual(exp.minWalkedFraction);
         if (exp.maxWalkedFraction !== undefined) expect(result.stats.walkedFraction).toBeLessThanOrEqual(exp.maxWalkedFraction);
         if (exp.minMaxV !== undefined) expect(result.stats.maxV).toBeGreaterThanOrEqual(exp.minMaxV);
+        if (exp.minLaps !== undefined) expect(result.stats.laps).toBeGreaterThanOrEqual(exp.minLaps);
     });
 
     test('raises exactly the expected layout errors', () => {

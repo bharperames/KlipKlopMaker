@@ -16,7 +16,8 @@ import {
     SPEC, layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions
 } from './track.js';
-import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict } from './physics.js';
+import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
+import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
 import { createHistory } from './history.js';
@@ -37,6 +38,8 @@ import { analyzeMesh } from './mesh_utils.js';
 const state = {
     sequence: [],
     scenery: [],
+    loop: false,
+    figureStyle: 'classic',
     slopeDeg: 11,
     innerWidth: 48,
     curveRadius: 150,
@@ -64,6 +67,8 @@ function designSnapshot() {
     return {
         sequence: JSON.parse(JSON.stringify(state.sequence)),
         scenery: state.scenery.map(s => ({ ...s })),
+        loop: state.loop,
+        figureStyle: state.figureStyle,
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
         curveRadius: state.curveRadius,
@@ -82,6 +87,8 @@ function recordEdit(opKey = null) {
 function restoreSnapshot(s) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
+    state.loop = s.loop === true;
+    state.figureStyle = s.figureStyle ?? 'classic';
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
@@ -119,6 +126,8 @@ function applyScene(scene) {
     const s = deserializeScene(scene);
     state.sequence = s.sequence;
     state.scenery = s.scenery;
+    state.loop = s.loop === true;
+    state.figureStyle = s.figureStyle ?? 'classic';
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
@@ -243,7 +252,8 @@ function rebuild() {
     state.layout = layoutTrack(state.sequence, {
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
-        curveRadius: state.curveRadius
+        curveRadius: state.curveRadius,
+        loop: state.loop
     });
     const { pieces, switches, openEnds } = state.layout;
     const issues = issueSet();
@@ -493,7 +503,18 @@ $('btn-clear').addEventListener('click', () => {
 $('btn-demo').addEventListener('click', () => {
     recordEdit();
     state.sequence = [...DEMO]; state.selected = -1; state.activeEndKey = '[]';
+    state.loop = false;
     rebuild(); fitView();
+});
+$('btn-loop').addEventListener('click', () => {
+    recordEdit();
+    state.loop = !state.loop;
+    state.selected = -1;
+    syncControls();
+    rebuild();
+    toast(state.loop
+        ? '🔁 Loop mode — the ring must return to its start; lifts pay back the descent (watch the footer for closure hints)'
+        : 'Loop mode off — open ends get corrals again');
 });
 
 /** RCT ghost preview: hypothetical next piece rendered translucent. */
@@ -553,7 +574,7 @@ const scenePicker = $('scene-picker');
     scenePicker.appendChild(opt);
     for (const n of ['01-first-ramp', '02-demo-tower', '03-grand-helix', '04-s-curve-meadow',
         '05-slippery-slide', '06-too-shallow-stall', '07-cliffhanger-tumble', '08-tight-radius-jam',
-        '09-switchyard', '10-lift-and-return', '11-palm-resort']) {
+        '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '13-grand-circuit']) {
         const o = document.createElement('option');
         o.value = n; o.textContent = n.replace(/^\d+-/, '').replace(/-/g, ' ');
         scenePicker.appendChild(o);
@@ -608,14 +629,50 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
 muSel.value = state.muKey;
 muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
 
+const styleSel = $('in-style');
+styleSel.addEventListener('change', () => {
+    recordEdit();
+    state.figureStyle = styleSel.value;
+    rebuild();
+    if (sim.running) { stopSim(); startSim(); } // swap the ridden figure live
+    toast(state.figureStyle === 'knight' ? '⚔️ Mike the Knight saddles up' : '🐴 Classic pony selected');
+});
+
 // ---------------------------------------------------------------------------
 // Piece list, selection, in-place editing
 // ---------------------------------------------------------------------------
+
+/** Per-mesh print-weight estimates from the display geometry (≈ export ±2%). */
+function pieceWeightsG() {
+    const weights = new Map();
+    for (const m of pieceMeshes) {
+        if (!m || weights.has(m.userData.pieceIndex)) continue;
+        const pos = m.geometry.attributes.position.array;
+        const idx = m.geometry.index.array;
+        weights.set(m.userData.pieceIndex, printedWeightG(computeMeshVolumeMm3(pos, idx), 'track'));
+    }
+    return weights;
+}
+
+function printJobTotalG(weights) {
+    let total = [...weights.values()].reduce((s, g) => s + g, 0);
+    for (const sup of state.supports ?? []) {
+        if (sup.mode === 'none') continue;
+        const pc = state.layout.pieces[sup.pieceIndex];
+        // pillar ≈ hex shaft AF15 + base/tenon
+        total += printedWeightG(195 * pc.rimY + 4200, 'pillar');
+    }
+    const sceneryG = { tower: 165, palm: 95, patio: 130 }; // per-kind printed grams
+    for (const s of state.scenery) total += sceneryG[s.kind] ?? 0;
+    total += printedWeightG(figureVolumeEstimate(state.innerWidth - 4, state.figureStyle), 'figure') + 12; // figure + pendulum/keys/plugs
+    return total;
+}
 
 function refreshPieceList() {
     const ul = $('piece-list');
     ul.innerHTML = '';
     const issues = issueSet();
+    const weights = pieceWeightsG();
     state.layout.pieces.forEach((piece, i) => {
         if (piece.role === 'branch') return; // listed with its switch
         const li = document.createElement('li');
@@ -629,12 +686,20 @@ function refreshPieceList() {
         const label = piece.type === 'switchMain'
             ? `${piece.name} (gate→${piece.gateOpen ? 'main' : 'branch'})`
             : piece.name;
+        const g = weights.get(i);
         li.innerHTML = `<span>${icon}</span><span>${label}</span>` +
             (issues.has(i) ? '<span class="flag" title="clearance conflict">⚠️</span>' : '') +
-            (piece.active ? '' : '<span class="flag" title="not on the current ride path">◌</span>');
+            (piece.active ? '' : '<span class="flag" title="not on the current ride path">◌</span>') +
+            (g ? `<span class="wt" title="estimated printed weight (PLA, project print settings)">≈${g.toFixed(0)} g</span>` : '');
         li.addEventListener('click', () => selectPiece(i));
         ul.appendChild(li);
     });
+    // print-job footer: whole-build filament estimate
+    const total = printJobTotalG(weights);
+    const spoolPct = (total / 1000) * 100;
+    $('parts-heading').innerHTML =
+        `Parts list <span class="wt">· print job ≈ ${total >= 1000 ? (total / 1000).toFixed(2) + ' kg' : total.toFixed(0) + ' g'} PLA ` +
+        `(${spoolPct.toFixed(0)}% of a 1 kg spool, ≈$${(total / 1000 * 20).toFixed(2)} filament)</span>`;
 }
 
 function selectPiece(i) {
@@ -867,6 +932,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     if (e.key === 'Escape') {
+        if ($('doc-overlay').style.display !== 'none') { $('doc-overlay').style.display = 'none'; return; }
         if (gallery.open) { closeGallery(); return; }
         cancelPlacement();
     }
@@ -951,7 +1017,7 @@ function refreshPhysicsPanel() {
         </div>
         <div style="margin-top:8px;color:var(--ink-2)">${r.detail}</div>`;
 
-    const vol = figureVolumeEstimate(state.innerWidth - 4);
+    const vol = figureVolumeEstimate(state.innerWidth - 4, state.figureStyle);
     const bp = ballastPlan(vol, 15, state.walker.massG);
     const W = state.innerWidth - 4;
     const capacityG = (Math.PI * 16 * W * 0.6 * 0.0078) + (Math.PI * 12.25 * FIGURE.pendulumW * 0.6 * 0.0078);
@@ -1067,24 +1133,158 @@ $('btn-sound').addEventListener('click', () => {
 const sim = { running: false, t: 0, phase: 0, horse: null, run: null, sampler: null, cursor: 0 };
 
 function buildHorse() {
+    // RCT3-style ghost test figure: semi-transparent body so the swinging
+    // rear-leg pendulum — the actual engine of the gait — stays visible.
     const group = new THREE.Group();
     const pivot = new THREE.Group();
     group.add(pivot);
-    const body = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(bodySideOutline(), -(state.innerWidth - 4) / 2, (state.innerWidth - 4) / 2)), MAT.horseBody);
+    const bodyMat = new THREE.MeshLambertMaterial({
+        color: state.figureStyle === 'knight' ? 0xc68642 : 0xf5f0e8,
+        transparent: true, opacity: 0.5, depthWrite: false
+    });
+    const body = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(bodySideOutline(state.figureStyle), -(state.innerWidth - 4) / 2, (state.innerWidth - 4) / 2)), bodyMat);
     body.castShadow = true;
+    body.renderOrder = 2;
     pivot.add(body);
+    const pendMat = new THREE.MeshLambertMaterial({ color: 0xc0392b }); // pendulum pops through the ghost body
     const pend = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(
         pendulumSideOutline().map(([z, y]) => [z - FIGURE.axle.z, y - FIGURE.axle.y]),
-        -FIGURE.pendulumW / 2, FIGURE.pendulumW / 2)), MAT.horseLegs);
+        -FIGURE.pendulumW / 2, FIGURE.pendulumW / 2)), pendMat);
     pend.castShadow = true;
     pend.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
     pivot.add(pend);
+    // axle marker + CoM bead: ties the animation to the physics story
+    const axleDot = new THREE.Mesh(new THREE.SphereGeometry(2.4, 12, 8), new THREE.MeshBasicMaterial({ color: 0x2a2a2a }));
+    axleDot.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
+    pivot.add(axleDot);
+    const com = new THREE.Mesh(new THREE.SphereGeometry(3.2, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf07818 }));
+    com.position.set(0, 14, 6); // low & slightly rear — where the ballast goes
+    pivot.add(com);
     group.userData = { pivot, pend };
     return group;
 }
 
+// fading hoof-strike markers: the klip-klop rhythm left visibly on the deck
+const strikeGroup = new THREE.Group();
+scene.add(strikeGroup);
+function dropStrikeMarker(front) {
+    if (!sim.horse) return;
+    const dot = new THREE.Mesh(
+        new THREE.CircleGeometry(4.5, 12).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: front ? 0xffffff : 0x574a3a, transparent: true, opacity: 0.85 })
+    );
+    const local = new THREE.Vector3(0, 0.6, front ? 4 : -10); // hoof cam contact points
+    dot.position.copy(sim.horse.localToWorld(local));
+    dot.userData.born = performance.now();
+    strikeGroup.add(dot);
+    if (strikeGroup.children.length > 70) strikeGroup.remove(strikeGroup.children[0]);
+}
+function fadeStrikeMarkers(now) {
+    for (const d of [...strikeGroup.children]) {
+        const age = (now - d.userData.born) / 4000;
+        if (age >= 1) strikeGroup.remove(d);
+        else d.material.opacity = 0.85 * (1 - age);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ride film: records the canvas during a cinematic follow-cam run of the full
+// ride path. MP4 (H.264) where the browser's MediaRecorder supports it
+// (Chrome/Safari on macOS — plays in QuickTime), WebM otherwise. Browsers
+// cannot author .mov containers; MP4 is the QuickTime-compatible equivalent.
+// ---------------------------------------------------------------------------
+
+const film = { active: false, media: null, chunks: [], mime: '', prevCam: null, t0: 0 };
+
+function pickVideoMime() {
+    const candidates = [
+        'video/mp4;codecs=avc1.42E01E',
+        'video/mp4',
+        'video/webm;codecs=vp9',
+        'video/webm'
+    ];
+    for (const m of candidates) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return '';
+}
+
+function startFilm() {
+    if (film.active) { stopSim(); return; }
+    const mime = pickVideoMime();
+    if (!mime) { toast('This browser cannot record video (no MediaRecorder codec).'); return; }
+    startSim();
+    if (!sim.running) return;
+    film.prevCam = { pos: camera.position.clone(), target: controls.target.clone() };
+    controls.enabled = false;
+    arrowGroup.visible = false;
+    ghostGroup.visible = false;
+    // seed the chase cam right behind the start so the film opens on the horse
+    const p0 = sim.sampler.at(sim.run.trace[0]?.dist ?? 0);
+    camera.position.set(p0.x - Math.cos(p0.h) * 260, p0.y + 170, p0.z - Math.sin(p0.h) * 260);
+
+    const stream = renderer.domElement.captureStream(60);
+    film.mime = mime;
+    film.chunks = [];
+    film.media = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+    film.media.ondataavailable = (e) => { if (e.data.size) film.chunks.push(e.data); };
+    film.media.onstop = saveFilm;
+    film.media.start(250);
+    film.active = true;
+    film.t0 = performance.now();
+    $('btn-record').textContent = '⏺ Recording… (click to stop)';
+    toast(`🎥 Filming the ride (${mime.includes('mp4') ? 'MP4' : 'WebM'}) — it saves automatically at the corral`);
+}
+
+function endFilm() {
+    if (!film.active) return;
+    film.active = false;
+    if (film.media && film.media.state !== 'inactive') film.media.stop(); // finalize before the camera jumps back
+    $('btn-record').textContent = '🎥 Film ride';
+    controls.enabled = true;
+    arrowGroup.visible = true;
+    ghostGroup.visible = true;
+    if (film.prevCam) {
+        camera.position.copy(film.prevCam.pos);
+        controls.target.copy(film.prevCam.target);
+        film.prevCam = null;
+    }
+}
+
+function saveFilm() {
+    const blob = new Blob(film.chunks, { type: film.mime });
+    film.chunks = [];
+    if (blob.size < 1000) { toast('Recording produced no data.'); return; }
+    const ext = film.mime.includes('mp4') ? 'mp4' : 'webm';
+    const secs = ((performance.now() - film.t0) / 1000).toFixed(0);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `klipklop_ride_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_${state.slopeDeg}deg.${ext}`;
+    a.click();
+    toast(`🎬 Ride film saved — ${secs}s, ${(blob.size / 1e6).toFixed(1)} MB (${ext.toUpperCase()})` +
+        (ext === 'webm' ? ' · this browser cannot encode MP4; the WebM plays in Chrome/VLC' : ''));
+}
+
+/** Cinematic chase cam: hovers behind and above the horse, looking ahead. */
+function tickFilmCamera(dt) {
+    if (!film.active || !sim.horse || !sim.sampler) return;
+    const s = traceAt(Math.min(sim.t, sim.run.tEnd - 0.01));
+    if (!s) return;
+    const here = sim.sampler.at(s.dist);
+    const ahead = sim.sampler.at(Math.min(s.dist + 90, sim.sampler.total));
+    const back = 240, up = 150, side = 70;
+    const want = new THREE.Vector3(
+        here.x - Math.cos(here.h) * back + Math.sin(here.h) * side,
+        here.y + up,
+        here.z - Math.sin(here.h) * back - Math.cos(here.h) * side
+    );
+    camera.position.lerp(want, Math.min(1, dt * 2.2));
+    camera.lookAt(ahead.x, ahead.y + 30, ahead.z);
+}
+
 const OUTCOME_TOASTS = {
     arrived: '🎉 The horse arrived at the corral!',
+    circuit: '🔁 Perpetual circuit verified — the lifts pay for the descent, lap after lap',
     stalled: '⏸ Stalled — not enough gait energy for this setup (see Physics lab)',
     tumbled: '💥 Tumbled — slope exceeds the swing limiter (see Physics lab)',
     timeout: '⏱ Simulation timed out'
@@ -1092,12 +1292,19 @@ const OUTCOME_TOASTS = {
 
 $('btn-run').addEventListener('click', startSim);
 $('btn-stop').addEventListener('click', stopSim);
+$('btn-record').addEventListener('click', startFilm);
 
 function startSim() {
     stopSim();
     const ridePath = resolveRidePath(state.layout.pieces);
     if (ridePath.length < 3) { toast('Add at least one ramp piece first.'); return; }
-    sim.run = simulateRun(ridePath, { ...physOpts(), liftSpeedMmS: SPEC.liftSpeedMmS });
+    sim.run = simulateRun(ridePath, {
+        ...physOpts(),
+        liftSpeedMmS: SPEC.liftSpeedMmS,
+        loop: state.loop,
+        maxLaps: 3
+    });
+    $('sim-hud').style.display = '';
     sim.sampler = makePathSampler(ridePath, 4);
     sim.ridePath = ridePath;
     sim.horse = buildHorse();
@@ -1114,10 +1321,35 @@ function startSim() {
 }
 
 function stopSim() {
+    if (film.active) {
+        // let the last frames land before tearing the scene down
+        setTimeout(endFilm, 400);
+        setTimeout(() => reallyStopSim(), 450);
+        sim.running = false;
+        return;
+    }
+    reallyStopSim();
+}
+function reallyStopSim() {
     sim.running = false;
     if (sim.horse) { scene.remove(sim.horse); sim.horse = null; }
+    $('sim-hud').style.display = 'none';
     $('btn-run').disabled = false;
     $('btn-stop').disabled = true;
+}
+
+/** Live telemetry: the numbers the physics engine is actually producing. */
+const MODE_LABEL = { walk: '🐴 WALK', slide: '⛸ SLIDE', lift: '⛓ LIFT' };
+function refreshHud(s) {
+    const a = sim.run.assess[s.pieceIndex];
+    const lap = state.loop ? sim.run.events.filter(e => e.type === 'lap' && e.t <= sim.t).length + 1 : null;
+    $('sim-hud').innerHTML =
+        `<span class="hudmode ${s.mode}">${MODE_LABEL[s.mode] ?? s.mode}</span>` +
+        `<span><b>${s.v.toFixed(0)}</b> mm/s</span>` +
+        `<span><b>${s.mode === 'walk' ? a.stepHz.toFixed(1) : '—'}</b> clacks/s</span>` +
+        `<span>piece <b>${sim.ridePath[s.pieceIndex]?.name ?? ''}</b></span>` +
+        (lap ? `<span>lap <b>${lap}/3</b></span>` : '') +
+        `<span class="hudnote">1:1 replay of the verified dynamics trace</span>`;
 }
 
 function traceAt(t) {
@@ -1141,6 +1373,7 @@ function tickSim(dt) {
     const p = sim.sampler.at(s.dist);
     sim.horse.position.set(p.x, p.y, p.z);
     sim.horse.rotation.y = Math.PI / 2 - p.h;
+    refreshHud(s);
 
     const a = sim.run.assess[s.pieceIndex];
     if (s.mode === 'walk' && a.stepHz > 0.1) {
@@ -1150,7 +1383,9 @@ function tickSim(dt) {
         sim.horse.userData.pivot.rotation.x = 0.14 * cur;
         sim.horse.userData.pend.rotation.x = -state.walker.alphaDeg * Math.PI / 180 * cur;
         if (Math.sign(cur) !== Math.sign(prev) && Math.sign(cur) !== 0) {
-            clack(Math.sign(cur) > 0 ? 1900 : 1300);
+            const front = Math.sign(cur) > 0;
+            clack(front ? 1900 : 1300);
+            dropStrikeMarker(front);
         }
     } else if (s.mode === 'lift') {
         sim.phase += dt;
@@ -1238,9 +1473,10 @@ function assembleParts() {
         }
     }
 
-    parts.push({ name: 'figure_body_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) });
-    parts.push({ name: 'figure_pendulum_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) });
-    parts.push({ name: 'figure_plugs', note: 'Choke-hazard covers — glue every one at assembly.', build: () => buildFigureGeometries(state.innerWidth).plugSet });
+    const figOpts = { style: state.figureStyle };
+    parts.push({ name: `figure_body_${state.figureStyle}_print_on_side`, note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth, figOpts).body) });
+    parts.push({ name: 'figure_pendulum_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth, figOpts).pendulum) });
+    parts.push({ name: 'figure_plugs', note: 'Choke-hazard covers — glue every one at assembly.', build: () => buildFigureGeometries(state.innerWidth, figOpts).plugSet });
 
     return { parts, joints, switchCount: switchPairs.size };
 }
@@ -1326,8 +1562,12 @@ function selectGalleryPart(i) {
         gallery.controls.target.copy(c);
         // low three-quarter angle so undersides (pockets, sockets, ribs) show
         gallery.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        const cat = /^pillar/.test(part.name) ? 'pillar'
+            : /^scenery/.test(part.name) ? 'scenery'
+            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
+            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
         $('parts-caption').innerHTML =
-            `<b>${part.name}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ` +
+            `<b>${part.name}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
             `${report.isManifold && report.isConsistent && report.windsOutward
                 ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
             `<span style="opacity:.8">${part.note ?? ''} Auto-rotating — drag to inspect the interlocks.</span>`;
@@ -1337,6 +1577,75 @@ function selectGalleryPart(i) {
 $('btn-parts').addEventListener('click', openGallery);
 $('parts-close').addEventListener('click', closeGallery);
 window.addEventListener('resize', () => { if (gallery.renderer) galleryResize(); });
+
+// ---------------------------------------------------------------------------
+// In-app document viewer: renders the project's markdown docs (PHYSICS.md,
+// readme) without any external library — a minimal renderer that covers
+// exactly the constructs those files use.
+// ---------------------------------------------------------------------------
+
+function renderMarkdown(md) {
+    const esc = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const inline = (s) => s
+        .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+        .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+        .replace(/\*([^*]+)\*/g, '<i>$1</i>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    const lines = esc(md).split('\n');
+    const out = [];
+    let list = false, table = false;
+    const closeAll = () => {
+        if (list) { out.push('</ul>'); list = false; }
+        if (table) { out.push('</tbody></table>'); table = false; }
+    };
+    for (const raw of lines) {
+        const line = raw.trimEnd();
+        const h = line.match(/^(#{1,4})\s+(.*)/);
+        if (h) { closeAll(); out.push(`<h${h[1].length + 1}>${inline(h[2])}</h${h[1].length + 1}>`); continue; }
+        if (/^\s*[-*]\s+/.test(line)) {
+            if (table) { out.push('</tbody></table>'); table = false; }
+            if (!list) { out.push('<ul>'); list = true; }
+            out.push(`<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`);
+            continue;
+        }
+        if (/^\|/.test(line)) {
+            if (list) { out.push('</ul>'); list = false; }
+            if (/^\|[\s:|-]+\|$/.test(line)) continue; // separator row
+            const cells = line.split('|').slice(1, -1).map(c => inline(c.trim()));
+            if (!table) {
+                out.push(`<table><thead><tr>${cells.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>`);
+                table = true;
+            } else {
+                out.push(`<tr>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`);
+            }
+            continue;
+        }
+        closeAll();
+        if (line === '') continue;
+        out.push(`<p>${inline(line)}</p>`);
+    }
+    closeAll();
+    return out.join('\n');
+}
+
+async function openDoc(file, title) {
+    try {
+        const res = await fetch(`./${file}`);
+        if (!res.ok) throw new Error(`${res.status}`);
+        $('doc-title').textContent = title;
+        $('doc-body').innerHTML = renderMarkdown(await res.text());
+        $('doc-overlay').style.display = '';
+    } catch (err) {
+        toast(`Could not load ${file}: ${err.message}`);
+    }
+}
+for (const a of document.querySelectorAll('.doc-link')) {
+    a.addEventListener('click', (e) => {
+        e.preventDefault();
+        openDoc(a.dataset.doc, a.textContent.trim());
+    });
+}
+$('doc-close').addEventListener('click', () => { $('doc-overlay').style.display = 'none'; });
 
 function recenter(mesh) {
     const { positions } = mesh;
@@ -1494,7 +1803,9 @@ function animate(now) {
     // bob the construction arrows
     const bob = Math.sin(now / 250) * 6;
     for (const a of arrowMeshes) a.position.y = a.userData.baseY + bob;
-    controls.update();
+    if (film.active) tickFilmCamera(dt);
+    else controls.update();
+    fadeStrikeMarkers(now);
     renderer.render(scene, camera);
     if (gallery.open) {
         gallery.controls.update();
@@ -1511,6 +1822,9 @@ function syncControls() {
     $('in-leg').value = state.walker.legLenMm; $('out-leg').textContent = `${state.walker.legLenMm} mm`;
     $('in-mass').value = state.walker.massG; $('out-mass').textContent = `${state.walker.massG} g`;
     muSel.value = state.muKey;
+    $('btn-loop').textContent = state.loop ? '🔁 Loop mode: ON' : '🔁 Loop mode: off';
+    $('btn-loop').classList.toggle('primary', state.loop);
+    $('in-style').value = state.figureStyle;
 }
 
 (async () => {

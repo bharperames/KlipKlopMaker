@@ -491,9 +491,10 @@ function cylinderX(r, x0, x1, cz, cy, segments = 24) {
 /** Builds all printable figure parts (width = trackInnerWidth − 4 mm). */
 export function buildFigureGeometries(trackInnerWidth = SPEC.innerWidth.default, opts = {}) {
     const W = (opts.widthMm ?? trackInnerWidth - 4);
+    const style = opts.style ?? 'classic';
     const F = FIGURE;
 
-    const bodyBase = toBufferGeometry(extrudeOutlineX(bodySideOutline(), -W / 2, W / 2));
+    const bodyBase = toBufferGeometry(extrudeOutlineX(bodySideOutline(style), -W / 2, W / 2));
     const slot = new THREE.BoxGeometry(F.slot.halfW * 2, F.slot.yMax - F.slot.yMin, F.slot.zMax - F.slot.zMin);
     slot.translate(0, (F.slot.yMax + F.slot.yMin) / 2, (F.slot.zMax + F.slot.zMin) / 2);
     const body = csgChain(bodyBase, [

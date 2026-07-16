@@ -170,3 +170,16 @@ describe('walker figure parts', () => {
         expect(g.attributes.position.count).toBeGreaterThan(50);
     });
 });
+
+describe('figure styles', () => {
+    test('knight-style body is watertight and shares the physics chassis', async () => {
+        const { bodySideOutline, FIGURE_STYLES } = await import('../js/geometry.js');
+        expect(FIGURE_STYLES).toContain('knight');
+        const { body } = buildFigureGeometries(48, { style: 'knight' });
+        expectWatertight(body, 'knight figure body');
+        // identical hoof cam: the last 10 outline points (cam + arch) match classic
+        const classic = bodySideOutline('classic');
+        const knight = bodySideOutline('knight');
+        expect(knight.slice(-10)).toEqual(classic.slice(-10));
+    });
+});

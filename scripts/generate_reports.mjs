@@ -87,6 +87,7 @@ function checkExpectations(exp, result, layout) {
     if (exp.minWalkedFraction !== undefined) add(`walked ≥ ${exp.minWalkedFraction * 100}%`, result.stats.walkedFraction >= exp.minWalkedFraction, `${(result.stats.walkedFraction * 100).toFixed(0)}%`);
     if (exp.maxWalkedFraction !== undefined) add(`walked ≤ ${exp.maxWalkedFraction * 100}%`, result.stats.walkedFraction <= exp.maxWalkedFraction, `${(result.stats.walkedFraction * 100).toFixed(0)}%`);
     if (exp.minMaxV !== undefined) add(`peak speed ≥ ${exp.minMaxV} mm/s`, result.stats.maxV >= exp.minMaxV, `${result.stats.maxV.toFixed(0)} mm/s`);
+    if (exp.minLaps !== undefined) add(`laps ≥ ${exp.minLaps}`, result.stats.laps >= exp.minLaps, result.stats.laps);
     const errs = [...new Set(layout.issues.filter(i => i.level === 'error').map(i => i.code))].sort();
     const expected = [...(exp.layoutErrors ?? [])].sort();
     add(`layout errors = [${expected.join(', ') || 'none'}]`, JSON.stringify(errs) === JSON.stringify(expected), `[${errs.join(', ') || 'none'}]`);
@@ -103,8 +104,8 @@ for (const file of sceneFiles) {
     const id = file.replace('.json', '');
     const raw = JSON.parse(fs.readFileSync(path.join(SCENES, file), 'utf8'));
     const st = deserializeScene(raw);
-    const layout = layoutTrack(st.sequence, { slopeDeg: st.slopeDeg, innerWidth: st.innerWidth, curveRadius: st.curveRadius });
-    const result = simulateRun(resolveRidePath(layout.pieces), { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker });
+    const layout = layoutTrack(st.sequence, { slopeDeg: st.slopeDeg, innerWidth: st.innerWidth, curveRadius: st.curveRadius, loop: st.loop });
+    const result = simulateRun(resolveRidePath(layout.pieces), { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker, loop: st.loop, maxLaps: 3 });
     const checks = checkExpectations(raw.expect ?? {}, result, layout);
     const pass = checks.every(c => c.ok);
     summary.push({ id, name: raw.name, outcome: result.outcome, expected: raw.expect?.outcome, t: result.tEnd, clacks: result.stats.clacks, maxV: result.stats.maxV, pass });

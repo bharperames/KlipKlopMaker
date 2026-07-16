@@ -168,6 +168,22 @@ export function ballastPlan(bodyVolMm3, infillPct, targetMassG) {
 }
 
 /**
+ * Printed-weight estimate for a part, from its modeled solid volume.
+ * PLA is 1.24 g/cm³; the effective fraction reflects how the slicer treats
+ * each part class with the project print settings (4-5 perimeters, 10% gyroid):
+ *  - track shells are thin walls/floors — the model is ~all real plastic
+ *  - pillars/scenery are compact prisms — walls dominate, some infill savings
+ *  - figures are chunky solids — infill hollows most of the interior
+ * Estimates carry ~±15%; the slicer has the final word.
+ */
+export const PRINT_WEIGHT_FRACTION = { track: 0.95, pillar: 0.7, scenery: 0.6, figure: 0.45, small: 1.0 };
+
+export function printedWeightG(volMm3, category = 'track') {
+    const f = PRINT_WEIGHT_FRACTION[category] ?? 0.8;
+    return volMm3 * 0.00124 * f;
+}
+
+/**
  * Verdict for a laid-out track: per-piece gait status plus total descent stats.
  */
 export function trackVerdict(pieces, opts = {}) {

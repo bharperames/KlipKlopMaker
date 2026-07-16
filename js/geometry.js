@@ -333,21 +333,50 @@ export function circlePlan(r, segments = 32) {
 const camY = (z, cz, cy, R) => cy - Math.sqrt(Math.max(0, R * R - (z - cz) ** 2));
 
 /**
- * Outer body silhouette: blocky horse with head, front-hoof rocker cam
- * (continuous tangent arc, radius 30 mm), and a raised rear arch so only the
- * swinging pendulum's rear hoof contacts the ramp behind the pivot.
+ * Outer body silhouettes. Every style shares the SAME physics chassis —
+ * hoof rocker cam (tangent arc R=30 ending at z=0), axle at (6,26), pendulum
+ * slot, rear arch and ballast bores — only the cosmetic upper outline varies,
+ * so the gait model applies to all of them unchanged.
  */
-export function bodySideOutline() {
-    const pts = [
-        [-23, 8],    // rear bottom (arch, clears ground while rocking)
-        [-23, 36],   // rear top
-        [12, 36],    // wither
-        [15, 46],    // neck
-        [22, 46],    // head top
-        [23, 40],    // nose
-        [23, 6]      // chest down to hoof cam start
-    ];
-    // front hoof rocker cam: circle center (4, 30) R=30, lowest point at z=4
+export const FIGURE_STYLES = ['classic', 'knight'];
+
+export function bodySideOutline(style = 'classic') {
+    const pts = style === 'knight'
+        ? [
+            // "Mike the Knight" steed: rider with crested helmet, arched neck,
+            // head carried low and forward with the nose near chest height
+            [-23, 8],     // rear bottom arch
+            [-23, 32],    // rump
+            [-16, 35],    // saddle rise
+            [-14, 44],    // rider back
+            [-12, 52],    // rider shoulders
+            [-9, 55],     // helmet rear
+            [-8, 60],     // helmet crest back
+            [-2, 62],     // crest top
+            [2, 57],      // helmet brow
+            [3, 50],      // face
+            [1, 44],      // chest of rider
+            [6, 42],      // horse withers / mane root
+            [11, 44],     // ear back
+            [13, 47],     // ear tip
+            [15, 43],     // ear front
+            [20, 38],     // forehead sloping down-forward
+            [26, 30],     // nose tip (low, like the toy)
+            [24, 25],     // nose underside
+            [16, 22],     // throat
+            [21, 15],     // chest bulge
+            [23, 6]       // down to the hoof cam start
+        ]
+        : [
+            [-23, 8],    // rear bottom (arch, clears ground while rocking)
+            [-23, 36],   // rear top
+            [12, 36],    // wither
+            [15, 46],    // neck
+            [22, 46],    // head top
+            [23, 40],    // nose
+            [23, 6]      // chest down to hoof cam start
+        ];
+    // shared front hoof rocker cam: circle center (4, 30) R=30, low point z=4
     for (const z of [22, 19, 16, 13, 10, 7, 4, 2, 0]) {
         pts.push([z, camY(z, 4, 30, 30)]);
     }
@@ -387,8 +416,8 @@ export const FIGURE = {
 };
 
 /** Approximate polygon area × width solid volume for ballast planning (mm³). */
-export function figureVolumeEstimate(bodyWidthMm) {
-    const bodyArea = Math.abs(signedArea2D(bodySideOutline()));
+export function figureVolumeEstimate(bodyWidthMm, style = 'classic') {
+    const bodyArea = Math.abs(signedArea2D(bodySideOutline(style)));
     const pendArea = Math.abs(signedArea2D(pendulumSideOutline()));
     const slotArea = (FIGURE.slot.zMax - FIGURE.slot.zMin) * (FIGURE.slot.yMax - 6); // rough
     return bodyArea * bodyWidthMm - slotArea * (FIGURE.slot.halfW * 2) + pendArea * FIGURE.pendulumW;

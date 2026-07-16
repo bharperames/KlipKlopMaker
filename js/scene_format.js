@@ -9,6 +9,7 @@
 
 import { SIMPLE_TYPES, isSwitchNode } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER } from './physics.js';
+import { FIGURE_STYLES } from './geometry.js';
 
 export const SCENE_FORMAT = 'klipklop-scene';
 export const SCENE_VERSION = 2;
@@ -24,6 +25,8 @@ export function serializeScene(state, meta = {}) {
         description: meta.description ?? state.description ?? '',
         sequence: cloneNodes(state.sequence),
         scenery: (state.scenery ?? []).map(s => ({ ...s })),
+        loop: state.loop === true,
+        figureStyle: state.figureStyle ?? 'classic',
         params: {
             slopeDeg: state.slopeDeg,
             innerWidth: state.innerWidth,
@@ -89,6 +92,8 @@ export function deserializeScene(obj) {
         description: obj.description ?? '',
         sequence: cloneNodes(obj.sequence),
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
+        loop: obj.loop === true,
+        figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'classic',
         slopeDeg: obj.params.slopeDeg,
         innerWidth: obj.params.innerWidth,
         curveRadius: obj.params.curveRadius,
