@@ -28,7 +28,7 @@ import {
     buildPillarGeometry, buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids
 } from './pieces.js';
-import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
+import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
 import { generate3MFXML, generateBinarySTL } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
 
@@ -41,6 +41,7 @@ const state = {
     scenery: [],
     loop: false,
     figureStyle: 'classic',
+    figureOpacity: 0.5,
     slopeDeg: 11,
     innerWidth: 48,
     curveRadius: 150,
@@ -70,6 +71,7 @@ function designSnapshot() {
         scenery: state.scenery.map(s => ({ ...s })),
         loop: state.loop,
         figureStyle: state.figureStyle,
+        figureOpacity: state.figureOpacity,
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
         curveRadius: state.curveRadius,
@@ -90,6 +92,7 @@ function restoreSnapshot(s) {
     state.scenery = s.scenery;
     state.loop = s.loop === true;
     state.figureStyle = s.figureStyle ?? 'classic';
+    state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 0.5;
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
@@ -630,6 +633,18 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
 muSel.value = state.muKey;
 muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
 
+$('in-opacity').addEventListener('input', () => {
+    state.figureOpacity = parseFloat($('in-opacity').value);
+    $('out-opacity').textContent = `${Math.round(state.figureOpacity * 100)}%`;
+    if (sim.horse) {
+        // swap the ridden figure live; its pose is re-driven from the trace
+        scene.remove(sim.horse);
+        sim.horse = buildHorse();
+        scene.add(sim.horse);
+    }
+    saveState();
+});
+
 const styleSel = $('in-style');
 styleSel.addEventListener('change', () => {
     recordEdit();
@@ -939,6 +954,11 @@ document.addEventListener('keydown', (e) => {
         if (gallery.open) { closeGallery(); return; }
         cancelPlacement();
     }
+    if (e.key === ' ' && sim.running) {
+        e.preventDefault();
+        togglePause();
+        return;
+    }
     if (e.key === 'r' || e.key === 'R') {
         if (state.selectedScenery >= 0) {
             recordEdit(`rot:scenery${state.selectedScenery}`);
@@ -1138,19 +1158,34 @@ $('btn-sound').addEventListener('click', () => {
 const sim = { running: false, t: 0, phase: 0, horse: null, run: null, sampler: null, cursor: 0 };
 
 function buildHorse() {
-    // RCT3-style ghost test figure: semi-transparent body so the swinging
-    // rear-leg pendulum — the actual engine of the gait — stays visible.
+    // Test figure with adjustable transparency: ghost (RCT3-style, pendulum
+    // engine visible) through fully opaque toy-accurate colors.
     const group = new THREE.Group();
     const pivot = new THREE.Group();
     group.add(pivot);
-    const bodyMat = new THREE.MeshLambertMaterial({
-        color: state.figureStyle === 'knight' ? 0xc68642 : 0xf5f0e8,
-        transparent: true, opacity: 0.5, depthWrite: false
+    const op = state.figureOpacity ?? 0.5;
+    const mat = (color) => new THREE.MeshLambertMaterial({
+        color,
+        transparent: op < 0.999,
+        opacity: op,
+        depthWrite: op >= 0.999
     });
-    const body = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(bodySideOutline(state.figureStyle), -(state.innerWidth - 4) / 2, (state.innerWidth - 4) / 2)), bodyMat);
+    const W2 = (state.innerWidth - 4) / 2;
+    const body = new THREE.Mesh(
+        toBufferGeometry(extrudeOutlineX(bodySideOutline(state.figureStyle), -W2, W2)),
+        mat(state.figureStyle === 'knight' ? 0xc68642 : 0xf5f0e8) // toy's caramel tan
+    );
     body.castShadow = true;
     body.renderOrder = 2;
     pivot.add(body);
+    if (state.figureStyle === 'knight') {
+        // toy-matched colors: royal blue armor/helmet, red plume
+        const rider = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightRiderOutline(), -12, 12)), mat(0x1f5fbf));
+        rider.renderOrder = 2;
+        const crest = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightCrestOutline(), -3, 3)), mat(0xc0392b));
+        crest.renderOrder = 2;
+        pivot.add(rider, crest);
+    }
     const pendMat = new THREE.MeshLambertMaterial({ color: 0xc0392b }); // pendulum pops through the ghost body
     const pend = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(
         pendulumSideOutline().map(([z, y]) => [z - FIGURE.axle.z, y - FIGURE.axle.y]),
@@ -1308,6 +1343,13 @@ const OUTCOME_TOASTS = {
 $('btn-run').addEventListener('click', startSim);
 $('btn-stop').addEventListener('click', stopSim);
 $('btn-record').addEventListener('click', startFilm);
+$('btn-pause').addEventListener('click', togglePause);
+function togglePause() {
+    if (!sim.running) return;
+    sim.paused = !sim.paused;
+    $('btn-pause').textContent = sim.paused ? '▶ Resume' : '⏸ Pause';
+    toast(sim.paused ? '⏸ Ride paused — orbit around, then resume' : '▶ Resumed');
+}
 
 function startSim() {
     stopSim();
@@ -1327,6 +1369,9 @@ function startSim() {
     sim.t = 0;
     sim.phase = 0;
     sim.cursor = 0;
+    sim.paused = false;
+    $('btn-pause').textContent = '⏸ Pause';
+    $('btn-pause').disabled = false;
     sim.running = true;
     if (sim.run.events.some(e => e.type === 'mode' && e.detail.includes('slide'))) {
         toast('⛸ Hooves lose grip somewhere on this ride — watch it ski (see Physics lab)');
@@ -1347,10 +1392,13 @@ function stopSim() {
 }
 function reallyStopSim() {
     sim.running = false;
+    sim.paused = false;
     if (sim.horse) { scene.remove(sim.horse); sim.horse = null; }
     $('sim-hud').style.display = 'none';
     $('btn-run').disabled = false;
     $('btn-stop').disabled = true;
+    $('btn-pause').disabled = true;
+    $('btn-pause').textContent = '⏸ Pause';
 }
 
 /** Live telemetry: the numbers the physics engine is actually producing. */
@@ -1816,7 +1864,7 @@ async function doExport(format) {
             prog.value = (i + 1) / parts.length;
         }
 
-        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchPairs.size));
+        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount));
         const zipped = fflate.zipSync(files);
         const blob = new Blob([zipped], { type: 'application/zip' });
         const a = document.createElement('a');
@@ -1899,7 +1947,7 @@ function animate(now) {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    if (sim.running) tickSim(dt);
+    if (sim.running && !sim.paused) tickSim(dt);
     // bob the construction arrows
     const bob = Math.sin(now / 250) * 6;
     for (const a of arrowMeshes) a.position.y = a.userData.baseY + bob;
@@ -1925,6 +1973,8 @@ function syncControls() {
     $('btn-loop').textContent = state.loop ? '🔁 Loop mode: ON' : '🔁 Loop mode: off';
     $('btn-loop').classList.toggle('primary', state.loop);
     $('in-style').value = state.figureStyle;
+    $('in-opacity').value = state.figureOpacity ?? 0.5;
+    $('out-opacity').textContent = `${Math.round((state.figureOpacity ?? 0.5) * 100)}%`;
 }
 
 (async () => {

@@ -287,6 +287,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     <h1>🐴 Klip Klop Maker</h1>
     <span class="tagline">design · simulate · print gravity-trot ramp towers</span>
     <button id="btn-run" class="primary">▶ Test ride</button>
+    <button id="btn-pause" disabled title="Pause / resume (Space)">⏸ Pause</button>
     <button id="btn-stop" disabled>⏹ Stop</button>
     <button id="btn-sound" title="Klip-klop sound">🔊</button>
     <button id="btn-record" title="Record a follow-cam video of the whole ride (MP4/WebM)">🎥 Film ride</button>
@@ -400,6 +401,10 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
                 <option value="classic">🐴 Classic princess pony</option>
                 <option value="knight">⚔️ Mike the Knight steed</option>
             </select>
+        </div>
+        <div class="slider-row">
+            <label>Figure opacity (ghost ↔ solid) <output id="out-opacity">50%</output></label>
+            <input type="range" id="in-opacity" min="0.3" max="1" step="0.05" value="0.5">
         </div>
         <div class="slider-row">
             <label>Axle quality (energy retention) <output id="out-eff">0.26</output></label>

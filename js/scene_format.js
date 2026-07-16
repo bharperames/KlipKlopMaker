@@ -27,6 +27,7 @@ export function serializeScene(state, meta = {}) {
         scenery: (state.scenery ?? []).map(s => ({ ...s })),
         loop: state.loop === true,
         figureStyle: state.figureStyle ?? 'classic',
+        figureOpacity: typeof state.figureOpacity === 'number' ? state.figureOpacity : 0.5,
         params: {
             slopeDeg: state.slopeDeg,
             innerWidth: state.innerWidth,
@@ -94,6 +95,7 @@ export function deserializeScene(obj) {
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
         loop: obj.loop === true,
         figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'classic',
+        figureOpacity: typeof obj.figureOpacity === 'number' ? Math.min(1, Math.max(0.3, obj.figureOpacity)) : 0.5,
         slopeDeg: obj.params.slopeDeg,
         innerWidth: obj.params.innerWidth,
         curveRadius: obj.params.curveRadius,

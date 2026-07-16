@@ -193,10 +193,18 @@ export function channelProfile(o) {
     const railTop = deckY + railH;     // rail crest follows the deck line, not the ridges
     const ceilY = deckY - floorThk;    // flat drumhead underside
 
+    // Edge treatment: rail crests get 0.8 mm chamfers (touch-safe, no sharp
+    // plastic ridge for small hands); outer rim corners get 0.5 mm chamfers
+    // (elephant-foot compensation where the part meets the bed).
+    const cr = 0.8;  // rail crest chamfer
+    const ce = 0.5;  // bed-edge chamfer
     const pts = [];
-    pts.push([-Wo, rimY]);
-    pts.push([-Wo, railTop]);
-    pts.push([-Wi, railTop]);
+    pts.push([-Wo + ce, rimY]);
+    pts.push([-Wo, rimY + ce]);
+    pts.push([-Wo, railTop - cr]);
+    pts.push([-Wo + cr, railTop]);
+    pts.push([-Wi - cr, railTop]);
+    pts.push([-Wi, railTop - cr]);
     pts.push([-Wi, dS + filletR]);
     // left fillet: quarter arc from wall down onto the floor
     for (let i = 1; i <= filletSegs; i++) {
@@ -208,9 +216,12 @@ export function channelProfile(o) {
         const t = (3 * Math.PI) / 2 + (i / filletSegs) * (Math.PI / 2);
         pts.push([(Wi - filletR) + filletR * Math.cos(t), (dS + filletR) + filletR * Math.sin(t)]);
     }
-    pts.push([Wi, railTop]);
-    pts.push([Wo, railTop]);
-    pts.push([Wo, rimY]);
+    pts.push([Wi, railTop - cr]);
+    pts.push([Wi + cr, railTop]);
+    pts.push([Wo - cr, railTop]);
+    pts.push([Wo, railTop - cr]);
+    pts.push([Wo, rimY + ce]);
+    pts.push([Wo - ce, rimY]);
     pts.push([Wi, rimY]);
     pts.push([Wi, ceilY]);
     pts.push([-Wi, ceilY]);
@@ -356,22 +367,17 @@ export const FIGURE_STYLES = ['classic', 'knight'];
 export function bodySideOutline(style = 'classic') {
     const pts = style === 'knight'
         ? [
-            // "Mike the Knight" steed: rider with crested helmet, arched neck,
-            // head carried low and forward with the nose near chest height
+            // "Mike the Knight" steed (horse only — the rider is a separate
+            // silhouette so display/print can color match the toy): arched
+            // neck, ears, head carried low with the nose near chest height
             [-23, 8],     // rear bottom arch
             [-23, 32],    // rump
-            [-16, 35],    // saddle rise
-            [-14, 44],    // rider back
-            [-12, 52],    // rider shoulders
-            [-9, 55],     // helmet rear
-            [-8, 60],     // helmet crest back
-            [-2, 62],     // crest top
-            [2, 57],      // helmet brow
-            [3, 50],      // face
-            [1, 44],      // chest of rider
-            [6, 42],      // horse withers / mane root
+            [-16, 36],    // saddle rise
+            [-6, 38],     // saddle seat
+            [2, 40],      // withers
+            [6, 42],      // mane root
             [11, 44],     // ear back
-            [13, 47],     // ear tip
+            [13, 48],     // ear tip
             [15, 43],     // ear front
             [20, 38],     // forehead sloping down-forward
             [26, 30],     // nose tip (low, like the toy)
@@ -417,6 +423,38 @@ export function pendulumSideOutline() {
     return pts;
 }
 
+/**
+ * Knight rider silhouette (blue armor + helmet) — seated astride the saddle,
+ * overlapping the horse back so the printed union is one solid. Same (z,y)
+ * frame as the body outlines.
+ */
+export function knightRiderOutline() {
+    return [
+        [-15, 32],   // seat rear (buried in the saddle)
+        [-15, 48],   // back
+        [-13, 54],   // shoulders
+        [-11, 59],   // helmet rear
+        [-4, 61],    // helmet dome
+        [3, 58],     // helmet brow
+        [4, 51],     // visor
+        [3, 45],     // chest
+        [5, 40],     // arms reaching the mane
+        [2, 33],     // knee
+        [-4, 31]     // saddle front (buried)
+    ];
+}
+
+/** Red plume crest atop the helmet, like the toy's mohawk. */
+export function knightCrestOutline() {
+    return [
+        [-11, 57],
+        [-9, 65],
+        [-3, 66],
+        [-2, 60],
+        [-6, 58]
+    ];
+}
+
 /** Key figure dimensions shared by mesh builder, physics and UI. */
 export const FIGURE = {
     axle: { z: 6, y: 26, holeBodyR: 1.6, holePendR: 1.75, rodDiaMm: 3 },
@@ -433,5 +471,8 @@ export function figureVolumeEstimate(bodyWidthMm, style = 'classic') {
     const bodyArea = Math.abs(signedArea2D(bodySideOutline(style)));
     const pendArea = Math.abs(signedArea2D(pendulumSideOutline()));
     const slotArea = (FIGURE.slot.zMax - FIGURE.slot.zMin) * (FIGURE.slot.yMax - 6); // rough
-    return bodyArea * bodyWidthMm - slotArea * (FIGURE.slot.halfW * 2) + pendArea * FIGURE.pendulumW;
+    const riderVol = style === 'knight'
+        ? Math.abs(signedArea2D(knightRiderOutline())) * 24 + Math.abs(signedArea2D(knightCrestOutline())) * 6
+        : 0;
+    return bodyArea * bodyWidthMm - slotArea * (FIGURE.slot.halfW * 2) + pendArea * FIGURE.pendulumW + riderVol;
 }

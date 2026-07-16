@@ -22,7 +22,7 @@ import { SPEC, stationsForPiece } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan,
-    bodySideOutline, pendulumSideOutline, FIGURE
+    bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
 
@@ -190,6 +190,24 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
 }
 
 /**
+ * Hex socket void with a 0.8 mm mouth flare — the lead-in chamfer that lets a
+ * tenon self-align instead of binding on a sharp 90° opening (and absorbs
+ * elephant-foot flare on the mating part).
+ */
+function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
+    const AF = spec.socket.hexAF;
+    const dir = Math.sign(yEnd - yOpen);
+    const levels = [
+        { y: yOpen, af: AF + 1.2 },
+        { y: yOpen + dir * 0.8, af: AF },
+        { y: yEnd, af: AF }
+    ];
+    const profiles = levels.map(l => hexPlan(l.af).map(([x, z]) => [cx + x, -(cz + z)]));
+    const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
+    return toBufferGeometry(sweepSolid(profiles, stations));
+}
+
+/**
  * Pillar-socket boss ops. `support` comes from planPillarPositions (collision-
  * aware); without one, a center boss at the midpoint is used (ground pieces).
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
@@ -246,9 +264,7 @@ function bossOps(piece, spec, support) {
     }
     ops.push({
         op: SUBTRACTION,
-        geometry: toBufferGeometry(extrudePolygonY(
-            hexPlan(spec.socket.hexAF).map(([px, pz]) => [bx + px, bz + pz]),
-            piece.rimY - 0.5, piece.rimY + spec.socket.depth))
+        geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec)
     });
     return ops;
 }
@@ -358,9 +374,14 @@ export function gatePinPosition(mainPiece) {
 /** Printable connector key — one per seam, prints flat in stacks. */
 export function buildKeyGeometry(spec = SPEC) {
     const K = spec.key;
-    return extrudePolygonY(
-        bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth }),
-        0, K.height - 2 * spec.jointClearanceMm
+    const h = K.height - 2 * spec.jointClearanceMm;
+    const full = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth }).map(([x, z]) => [x, -z]);
+    const inset = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: -0.5 }).map(([x, z]) => [x, -z]);
+    // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
+    // its pockets without snagging a sharp corner
+    return sweepSolid(
+        [inset, full, full, inset],
+        [0, 0.5, h - 0.5, h].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
     );
 }
 
@@ -400,12 +421,14 @@ const TENON_AF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm; // 8.6
 /** Hex support pillar with base flare and top tenon. Zero CSG. */
 export function buildPillarGeometry(heightMm, spec = SPEC) {
     return toBufferGeometry(stackedHex([
-        { y: 0, af: 26 },
+        { y: 0, af: 24.8 },                                   // elephant-foot chamfer
+        { y: 0.6, af: 26 },
         { y: 4, af: 26 },
         { y: 4, af: 15 },
         { y: heightMm, af: 15 },
         { y: heightMm, af: TENON_AF },
-        { y: heightMm + spec.socket.depth - 1, af: TENON_AF }
+        { y: heightMm + spec.socket.depth - 2, af: TENON_AF },
+        { y: heightMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }  // insertion lead-in
     ]));
 }
 
@@ -415,16 +438,18 @@ export function buildPillarGeometry(heightMm, spec = SPEC) {
  */
 export function buildTowerGeometry(heightMm = 100, spec = SPEC) {
     const body = toBufferGeometry(stackedHex([
-        { y: 0, af: 44 },
+        { y: 0, af: 42.8 },                                   // elephant-foot chamfer
+        { y: 0.6, af: 44 },
         { y: 6, af: 44 },
         { y: 6, af: 34 },
         { y: heightMm, af: 34 },
         { y: heightMm, af: 44 },
         { y: heightMm + 6, af: 44 },
         { y: heightMm + 6, af: TENON_AF },
-        { y: heightMm + 6 + spec.socket.depth - 1, af: TENON_AF }
+        { y: heightMm + 6 + spec.socket.depth - 2, af: TENON_AF },
+        { y: heightMm + 6 + spec.socket.depth - 1, af: TENON_AF - 1.4 }
     ]));
-    const socket = toBufferGeometry(extrudePolygonY(hexPlan(spec.socket.hexAF), -0.5, spec.socket.depth));
+    const socket = hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec);
     return csgChain(body, [{ op: SUBTRACTION, geometry: socket }]);
 }
 
@@ -439,13 +464,17 @@ export function buildPalmIslandGeometries(spec = SPEC) {
         { y: 6, af: 70 },
         { y: 10, af: 70 }
     ]));
-    const socket = toBufferGeometry(extrudePolygonY(hexPlan(spec.socket.hexAF), 2, 10.5));
+    const socket = hexSocketSolid(0, 0, 10.5, 2, spec); // mouth at the top
     const island = csgChain(plate, [{ op: SUBTRACTION, geometry: socket }]);
 
-    // palm: tenon → tapered trunk → crown of fronds (8-point star)
+    // palm: hex tenon (was a circumscribed circle that could not fit the
+    // socket flats!) → tapered trunk → crown of fronds (8-point star)
+    const tenon = toBufferGeometry(stackedHex([
+        { y: -8, af: TENON_AF - 1.4 },   // insertion lead-in
+        { y: -7, af: TENON_AF },
+        { y: 0.5, af: TENON_AF }
+    ]));
     const trunkLevels = [
-        { y: -8, r: (TENON_AF / 2) / Math.cos(Math.PI / 6) },
-        { y: 0, r: (TENON_AF / 2) / Math.cos(Math.PI / 6) },
         { y: 0, r: 6 },
         { y: 66, r: 4 }
     ];
@@ -460,7 +489,7 @@ export function buildPalmIslandGeometries(spec = SPEC) {
         star.push([r * Math.cos(a), r * Math.sin(a)]);
     }
     const crown = toBufferGeometry(extrudePolygonY(star, 63, 67));
-    const palm = csgChain(trunk, [{ op: ADDITION, geometry: crown }]);
+    const palm = csgChain(trunk, [{ op: ADDITION, geometry: tenon }, { op: ADDITION, geometry: crown }]);
     return { island, palm };
 }
 
@@ -481,8 +510,7 @@ export function buildPatioGeometry(spec = SPEC) {
     ];
     const ops = rails.map(r => ({ op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(r, 7.5, railTop)) }));
     for (const [cx, cz] of [[-S + 14, -S + 14], [S - 14, -S + 14], [-S + 14, S - 14], [S - 14, S - 14]]) {
-        const hex = hexPlan(spec.socket.hexAF).map(([x, z]) => [cx + x, cz + z]);
-        ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(hex, 1.5, 8.5)) });
+        ops.push({ op: SUBTRACTION, geometry: hexSocketSolid(cx, cz, 8.5, 1.5, spec) }); // mouth at the top
     }
     return csgChain(plate, ops);
 }
@@ -507,7 +535,14 @@ export function buildFigureGeometries(trackInnerWidth = SPEC.innerWidth.default,
     const bodyBase = toBufferGeometry(extrudeOutlineX(bodySideOutline(style), -W / 2, W / 2));
     const slot = new THREE.BoxGeometry(F.slot.halfW * 2, F.slot.yMax - F.slot.yMin, F.slot.zMax - F.slot.zMin);
     slot.translate(0, (F.slot.yMax + F.slot.yMin) / 2, (F.slot.zMax + F.slot.zMin) / 2);
+    const riderOps = style === 'knight'
+        ? [
+            { op: ADDITION, geometry: toBufferGeometry(extrudeOutlineX(knightRiderOutline(), -12, 12)) },
+            { op: ADDITION, geometry: toBufferGeometry(extrudeOutlineX(knightCrestOutline(), -3, 3)) }
+        ]
+        : [];
     const body = csgChain(bodyBase, [
+        ...riderOps,
         { op: SUBTRACTION, geometry: slot },
         { op: SUBTRACTION, geometry: cylinderX(F.axle.holeBodyR, -W / 2 - 1, W / 2 + 1, F.axle.z, F.axle.y) },
         { op: SUBTRACTION, geometry: cylinderX(F.bodyBallast.r, -W / 2 - 1, W / 2 + 1, F.bodyBallast.z, F.bodyBallast.y) }
