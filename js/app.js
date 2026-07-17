@@ -576,8 +576,8 @@ $('btn-loop').addEventListener('click', () => {
     syncControls();
     rebuild();
     toast(state.loop
-        ? '🔁 Loop mode — the ring must return to its start; lifts pay back the descent (watch the footer for closure hints)'
-        : 'Loop mode off — open ends get corrals again');
+        ? '🔁 Circuit: the path must return to its start — lifts pay back the descent (footer shows closure hints)'
+        : '⛰ Open run: ends are auto-capped with corrals again');
 });
 
 /** RCT ghost preview: hypothetical next piece rendered translucent. */
@@ -2135,7 +2135,7 @@ function syncControls() {
     $('in-leg').value = state.walker.legLenMm; $('out-leg').textContent = `${state.walker.legLenMm} mm`;
     $('in-mass').value = state.walker.massG; $('out-mass').textContent = `${state.walker.massG} g`;
     muSel.value = state.muKey;
-    $('btn-loop').textContent = state.loop ? '🔁 Loop mode: ON' : '🔁 Loop mode: off';
+    $('btn-loop').textContent = state.loop ? '🔁 Track type: Circuit' : '⛰ Track type: Open run';
     $('btn-loop').classList.toggle('primary', state.loop);
     for (const btn of document.querySelectorAll('[data-figstyle]')) {
         btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);

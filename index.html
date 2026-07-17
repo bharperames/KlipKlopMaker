@@ -355,7 +355,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <button id="btn-redo" disabled title="Redo (⌘/Ctrl+Shift+Z)">↪ Redo</button>
         <button id="btn-clear" class="wide">🗑 Clear</button>
         <button id="btn-demo" class="wide">🏰 Load demo tower (double spiral + run-out)</button>
-        <button id="btn-loop" class="wide" title="Close the main path into a perpetual circuit — lifts must pay back the descent">🔁 Loop mode: off</button>
+        <button id="btn-loop" class="wide" title="A track is either an open run (auto-capped with corrals) or a closed circuit (must return to its start; lifts pay back the descent)">⛰ Track type: Open run</button>
     </div>
 
     <div id="editor-card" class="card" style="display:none"></div>
@@ -507,6 +507,19 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <a href="https://www.emerald.com/insight/content/doi/10.1108/rpj-03-2022-0081/full/html" target="_blank" rel="noopener">Infill density vs coefficient of friction (Rapid Prototyping Journal)</a><br>
             <a href="https://iopscience.iop.org/article/10.1088/1742-6596/2542/1/012003/pdf" target="_blank" rel="noopener">Tribological behaviour of 3D-printed PLA (IOP)</a><br>
             <a href="https://revmaterialeplastice.ro/pdf/19%20CHISIU%201%2021.pdf" target="_blank" rel="noopener">Friction behavior of 3D-printed polymeric materials</a>
+        </div>
+
+        <h2>Community models (compatibility reviewed)</h2>
+        <div class="card">
+            <a href="https://www.printables.com/model/1284699-custom-ramp-and-stacker-for-klip-klop-horses-origi" target="_blank" rel="noopener">Custom Ramp &amp; Stacker (Printables, Logan Durham)</a><br>
+            <span style="color:var(--ink-2)">Standalone ramp + stacker system in Original and Wide widths. Author states it does
+            NOT connect to original Fisher-Price ramps; friction "precision-fit" stacking, ramps printed vertically with tree supports.
+            Not joint-compatible with this app's bowtie/hex standard — figures should interoperate.</span>
+        </div>
+        <div class="card">
+            <a href="https://www.thingiverse.com/thing:1768487" target="_blank" rel="noopener">Klip Klop Ramp Support (Thingiverse, MeisnerX)</a><br>
+            <span style="color:var(--ink-2)">Replacement for the ORIGINAL playset's snap-in ramp support leg — uses Fisher-Price's
+            own socket geometry, so it mates with original ramps, not printed track systems.</span>
         </div>
 
         <h2>Reference toy &amp; build UX</h2>
