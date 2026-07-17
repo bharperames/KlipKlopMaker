@@ -558,7 +558,9 @@ $('btn-clear').addEventListener('click', () => {
     }
     recordEdit();
     state.sequence = []; state.scenery = [];
+    state.loop = false; // a cleared canvas starts back in open-track mode
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
+    syncControls();
     rebuild();
 });
 $('btn-demo').addEventListener('click', () => {
@@ -1471,7 +1473,15 @@ function togglePause() {
 function startSim() {
     stopSim();
     const ridePath = resolveRidePath(state.layout.pieces);
-    if (ridePath.length < 3) { toast('Add at least one ramp piece first.'); return; }
+    // guard on what actually matters: something to ride, and (for loops) closure
+    if (!ridePath.some(p => p.slopeDeg > 0 || p.isLift)) {
+        toast('Add at least one ramp piece first.');
+        return;
+    }
+    if (state.loop && state.layout.issues.some(i => i.code === 'loop-open')) {
+        toast('🔁 The loop doesn\'t close yet — follow the footer hint, or turn Loop mode off.');
+        return;
+    }
     sim.run = simulateRun(ridePath, {
         ...physOpts(),
         liftSpeedMmS: SPEC.liftSpeedMmS,
