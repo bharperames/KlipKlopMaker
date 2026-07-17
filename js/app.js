@@ -82,8 +82,11 @@ function designSnapshot() {
     };
 }
 
+let designDirty = false;
+
 function recordEdit(opKey = null) {
     history.push(designSnapshot(), opKey);
+    designDirty = true;
     refreshHistoryButtons();
 }
 
@@ -372,6 +375,7 @@ function rebuild() {
     refreshPhysicsPanel();
     refreshFooter();
     refreshEditorCard();
+    refreshIdleHorse();
     saveState();
 }
 
@@ -508,6 +512,10 @@ for (const btn of document.querySelectorAll('[data-spiral]')) {
 $('btn-undo').addEventListener('click', doUndo);
 $('btn-redo').addEventListener('click', doRedo);
 $('btn-clear').addEventListener('click', () => {
+    if (designDirty && state.sequence.length &&
+        !confirm('⚠️ CLEAR THE WHOLE DESIGN?\n\nYou have unsaved changes — they will be wiped from the canvas.\n(Undo can still bring it back afterwards, and Save design exports it first.)')) {
+        return;
+    }
     recordEdit();
     state.sequence = []; state.scenery = [];
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
@@ -582,6 +590,7 @@ $('btn-save').addEventListener('click', () => {
     a.href = URL.createObjectURL(blob);
     a.download = `${(scene.name || 'track').replace(/\W+/g, '_').toLowerCase()}.klipklop.json`;
     a.click();
+    designDirty = false;
     toast('💾 Design saved as a portable scene file');
 });
 $('btn-open').addEventListener('click', () => $('file-open').click());
@@ -672,6 +681,7 @@ $('in-opacity').addEventListener('input', () => {
         sim.horse = buildHorse();
         scene.add(sim.horse);
     }
+    refreshIdleHorse();
     saveState();
 });
 
@@ -1158,8 +1168,8 @@ function refreshFooter() {
         : warns.length ? `⚠️ ${warns[0].msg}` : '✅ layout OK';
 }
 
-// tabs
-const TABS = ['physics', 'export', 'refs'];
+// tabs (single side panel: Build | Physics | Print | Refs)
+const TABS = ['build', 'physics', 'export', 'refs'];
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => setTab(t));
 function setTab(t) {
     for (const k of TABS) {
@@ -1226,9 +1236,9 @@ function buildHorse() {
     pivot.add(body);
     if (state.figureStyle === 'knight') {
         // toy-matched colors: royal blue armor/helmet, red plume
-        const rider = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightRiderOutline(), -12, 12)), mat(0x1f5fbf));
+        const rider = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightRiderOutline(), -12, 12)), mat(0x2b62c4));
         rider.renderOrder = 2;
-        const crest = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightCrestOutline(), -3, 3)), mat(0xc0392b));
+        const crest = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightCrestOutline(), -3, 3)), mat(0xd23c2a));
         crest.renderOrder = 2;
         pivot.add(rider, crest);
     }
@@ -1419,6 +1429,7 @@ function startSim() {
     $('btn-pause').textContent = '⏸ Pause';
     $('btn-pause').disabled = false;
     sim.running = true;
+    refreshIdleHorse();
     if (sim.run.events.some(e => e.type === 'mode' && e.detail.includes('slide'))) {
         toast('⛸ Hooves lose grip somewhere on this ride — watch it ski (see Physics lab)');
     }
@@ -1445,6 +1456,7 @@ function reallyStopSim() {
     $('btn-stop').disabled = true;
     $('btn-pause').disabled = true;
     $('btn-pause').textContent = '⏸ Pause';
+    refreshIdleHorse();
 }
 
 /** Live telemetry: the numbers the physics engine is actually producing. */
@@ -1504,6 +1516,25 @@ function tickSim(dt) {
         sim.horse.userData.pivot.rotation.x *= 0.9;
         sim.horse.userData.pend.rotation.x *= 0.9;
     }
+}
+
+// the figure is always on the track: standing at the ride head when idle
+let idleHorse = null;
+function refreshIdleHorse() {
+    if (idleHorse) { scene.remove(idleHorse); idleHorse = null; }
+    if (sim.running || !state.layout) return;
+    const ride = resolveRidePath(state.layout.pieces);
+    if (!ride.length) return;
+    try {
+        const sampler = makePathSampler(ride, 10);
+        const first = sampler.samples.find(s => s.slopeDeg > 0 || ride[s.pieceIndex]?.isLift);
+        const d = Math.max(0, (first?.dist ?? 60) - 60); // stand just before the first drop
+        const pt = sampler.at(d);
+        idleHorse = buildHorse();
+        idleHorse.position.set(pt.x, pt.y, pt.z);
+        idleHorse.rotation.y = Math.PI / 2 - pt.h;
+        scene.add(idleHorse);
+    } catch { /* empty/degenerate layouts have no place to stand */ }
 }
 
 let toastTimer = null;

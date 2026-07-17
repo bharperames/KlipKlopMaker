@@ -239,22 +239,33 @@ export function channelProfile(o) {
  */
 export function archedRimY(piece, s, spec, padCenters = []) {
     const PAD = 20;
+    const ARCH_MAX_RISE = 22;   // window height cap — keeps a sturdy band under the deck
+    const ARCH_TARGET_W = 56;   // preferred window width; spans subdivide evenly
+    const FOOT = 12;            // mini-pad between adjacent windows
     const flat = piece.rimY;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;
-    // pad intervals, merged and sorted
     const pads = [[0, PAD], [piece.planLen - PAD, piece.planLen]];
     for (const c of padCenters) pads.push([Math.max(0, c - 12), Math.min(piece.planLen, c + 12)]);
     pads.sort((a, b) => a[0] - b[0]);
     for (const [a, b] of pads) if (s >= a - 1e-9 && s <= b + 1e-9) return flat;
-    // window bounds: nearest pad edges around s
+    // span between the surrounding pads
     let s0 = 0, s1 = piece.planLen;
     for (const [a, b] of pads) {
         if (b <= s && b > s0) s0 = b;
         if (a >= s && a < s1) s1 = a;
     }
-    const rise = Math.min(s - s0, s1 - s); // 45° gothic flanks, no bridging
+    // subdivide the span into an even ARCADE of flat-topped windows with
+    // 45° flanks (printable) separated by small feet — regular and calm,
+    // instead of one giant sawtooth per span
+    const span = s1 - s0;
+    const n = Math.max(1, Math.round(span / ARCH_TARGET_W));
+    const unit = span / n;
+    const local = (s - s0) % unit;
+    const w0 = FOOT / 2, w1 = unit - FOOT / 2;
+    if (local <= w0 || local >= w1) return flat; // on a foot
+    const rise = Math.min(local - w0, w1 - local);
     const deckCap = (piece.entryDeck - piece.drop * (s / piece.planLen)) - 10;
-    return Math.min(flat + rise, Math.max(flat, deckCap));
+    return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 
 /**
