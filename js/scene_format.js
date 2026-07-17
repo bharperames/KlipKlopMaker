@@ -27,6 +27,7 @@ export function serializeScene(state, meta = {}) {
         sequence: cloneNodes(state.sequence),
         scenery: (state.scenery ?? []).map(s => ({ ...s })),
         figureStyle: state.figureStyle ?? 'classic',
+        knightVariant: state.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof state.figureOpacity === 'number' ? state.figureOpacity : 1,
         params: {
             slopeDeg: +STANDARD.slopeDeg.toFixed(4),
@@ -90,6 +91,7 @@ export function deserializeScene(obj) {
         sequence: cloneNodes(obj.sequence),
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
         figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'classic',
+        knightVariant: obj.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof obj.figureOpacity === 'number' ? Math.min(1, Math.max(0.3, obj.figureOpacity)) : 1,
         // parameters are CONSTANT: every design lays out on the canonical
         // geometry; legacy/custom params in the file are reported, not obeyed

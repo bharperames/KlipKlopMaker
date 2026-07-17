@@ -64,7 +64,14 @@ function chainmailBump() {
     return t;
 }
 
-export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
+/**
+ * variant selects the helmet crest of the real toy being mirrored:
+ *  - 'trumpet' (default): plain dome + red trumpet-style plume holder at the
+ *    back — the variant in the owner's reference video/photos.
+ *  - 'comb': red comb crest along the dome + curled yellow feather at the
+ *    back — the variant seen in the eBay reference listings.
+ */
+export function buildKnightHorseModel({ halfWidth = 22, opacity = 1, variant = 'trumpet' } = {}) {
     const ghost = opacity < 0.999;
     const mats = {};
     const mat = (color, extra = {}) => {
@@ -346,23 +353,57 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     mike.add(helm);
     ell(mike, blueM, 6.6, 55.6, 1, 2, 3.6, 2.6);             // cheek guards
     ell(mike, blueM, -6.6, 55.6, 1, 2, 3.6, 2.6);
-    // Red trumpet-style plume holder mounted at the helmet's back (this toy
-    // variant carries its plume behind the dome, not as a comb along the top)
     const plumeM = mat(C.plume);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 20, 12), plumeM);
-    shaft.position.set(0, 62, -11.8);
-    shaft.rotation.x = 0.12;                                 // leans back with the dome
-    shaft.castShadow = true;
-    shaft.renderOrder = 2;
-    mike.add(shaft);
-    const cup = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 1.5, 4.5, 14), plumeM);
-    cup.position.set(0, 72.5, -13);
-    cup.rotation.x = 0.12;
-    cup.castShadow = true;
-    cup.renderOrder = 2;
-    mike.add(cup);
-    ell(mike, plumeM, 0, 75.8, -13.4, 2, 3, 2, true);        // plume tuft
-    ell(mike, plumeM, 0, 52, -10.2, 2.4, 2.2, 1.8);          // socket collar at Mike's back
+    if (variant === 'comb') {
+        // Red comb crest arcing along the dome top (eBay listing variant)
+        const combShape = new THREE.Shape();
+        for (let i = 0; i <= 10; i++) {                      // outer arc, swept back
+            const t = -Math.PI * 0.45 + (i / 10) * Math.PI * 0.87;
+            const r = 13 + 2.5 * Math.max(0, -t);
+            const p = [-r * Math.sin(t), r * Math.cos(t)];
+            i ? combShape.lineTo(...p) : combShape.moveTo(...p);
+        }
+        for (let i = 10; i >= 0; i--) {                      // inner arc hugging the dome
+            const t = -Math.PI * 0.45 + (i / 10) * Math.PI * 0.87;
+            combShape.lineTo(-9 * Math.sin(t), 9 * Math.cos(t));
+        }
+        const combGeo = new THREE.ExtrudeGeometry(combShape, {
+            depth: 2.2, bevelEnabled: true, bevelThickness: 0.4, bevelSize: 0.4, bevelOffset: -0.4, bevelSegments: 1
+        });
+        combGeo.rotateY(Math.PI / 2);
+        const comb = new THREE.Mesh(combGeo, plumeM);
+        comb.position.set(-1.1, 60, -4.5);
+        comb.rotation.x = -0.12;
+        comb.castShadow = true;
+        comb.renderOrder = 2;
+        mike.add(comb);
+        // curled yellow feather tucked at Mike's back
+        const featherShape = new THREE.Shape();
+        [[0, 0], [1.8, 2.2], [2.3, 5.5], [1.4, 8.6], [0, 10], [-1.1, 7.6], [-0.6, 4], [-0.8, 1]]
+            .forEach(([x, y], i) => (i ? featherShape.lineTo(x, y) : featherShape.moveTo(x, y)));
+        const featherGeo = new THREE.ExtrudeGeometry(featherShape, { depth: 1.2, bevelEnabled: false });
+        const feather = new THREE.Mesh(featherGeo, mat(C.yellow, { side: THREE.DoubleSide }));
+        feather.position.set(3, 50.5, -11.5);
+        feather.rotation.set(0.45, 0.35, -0.15);
+        feather.renderOrder = 2;
+        mike.add(feather);
+    } else {
+        // Red trumpet-style plume holder at the helmet's back (owner's variant)
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 20, 12), plumeM);
+        shaft.position.set(0, 62, -11.8);
+        shaft.rotation.x = 0.12;                             // leans back with the dome
+        shaft.castShadow = true;
+        shaft.renderOrder = 2;
+        mike.add(shaft);
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 1.5, 4.5, 14), plumeM);
+        cup.position.set(0, 72.5, -13);
+        cup.rotation.x = 0.12;
+        cup.castShadow = true;
+        cup.renderOrder = 2;
+        mike.add(cup);
+        ell(mike, plumeM, 0, 75.8, -13.4, 2, 3, 2, true);    // plume tuft
+        ell(mike, plumeM, 0, 52, -10.2, 2.4, 2.2, 1.8);      // socket collar at Mike's back
+    }
 
     // -----------------------------------------------------------------------
     // PENDULUM group (rear leg skirt) — local origin at the axle; app.js

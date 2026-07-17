@@ -44,6 +44,7 @@ const state = {
     sequence: [],
     scenery: [],
     figureStyle: 'classic',
+    knightVariant: 'trumpet', // helmet crest of the mirrored toy: trumpet | comb
     figureOpacity: 1,
     slopeDeg: +STANDARD.slopeDeg.toFixed(4),
     innerWidth: STANDARD.innerWidth,
@@ -73,6 +74,7 @@ function designSnapshot() {
         sequence: JSON.parse(JSON.stringify(state.sequence)),
         scenery: state.scenery.map(s => ({ ...s })),
         figureStyle: state.figureStyle,
+        knightVariant: state.knightVariant,
         figureOpacity: state.figureOpacity,
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
@@ -96,6 +98,7 @@ function restoreSnapshot(s) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
     state.figureStyle = s.figureStyle ?? 'classic';
+    state.knightVariant = s.knightVariant === 'comb' ? 'comb' : 'trumpet';
     state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 1;
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
@@ -143,6 +146,7 @@ function applyScene(scene) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
     state.figureStyle = s.figureStyle ?? 'classic';
+    state.knightVariant = s.knightVariant === 'comb' ? 'comb' : 'trumpet';
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
@@ -761,13 +765,24 @@ $('in-opacity').addEventListener('input', () => {
 
 for (const btn of document.querySelectorAll('[data-figstyle]')) {
     btn.addEventListener('click', () => {
-        if (state.figureStyle === btn.dataset.figstyle) return;
-        recordEdit();
-        state.figureStyle = btn.dataset.figstyle;
+        if (state.figureStyle === btn.dataset.figstyle) {
+            // re-clicking the knight cycles the real-toy helmet variant:
+            // back-mounted trumpet plume (owner's) ↔ comb crest + feather (eBay)
+            if (state.figureStyle !== 'knight') return;
+            recordEdit();
+            state.knightVariant = state.knightVariant === 'comb' ? 'trumpet' : 'comb';
+        } else {
+            recordEdit();
+            state.figureStyle = btn.dataset.figstyle;
+        }
         syncControls();
         rebuild();
         if (sim.running) { stopSim(); startSim(); } // swap the ridden figure live
-        toast(state.figureStyle === 'knight' ? '⚔️ Mike the Knight saddles up' : '🐴 Classic pony selected');
+        toast(state.figureStyle === 'knight'
+            ? (state.knightVariant === 'comb'
+                ? '⚔️ Mike the Knight — comb-crest helmet (click again for trumpet plume)'
+                : '⚔️ Mike the Knight — trumpet-plume helmet (click again for comb crest)')
+            : '🐴 Classic pony selected');
     });
 }
 
@@ -1304,7 +1319,7 @@ function buildHorse() {
     if (state.figureStyle === 'knight') {
         // sculpted Galahad + Mike (see horse_model.js); the rear leg skirt
         // IS the pendulum — same axle, same swing contract as the red arm
-        const model = buildKnightHorseModel({ halfWidth: W2, opacity: op });
+        const model = buildKnightHorseModel({ halfWidth: W2, opacity: op, variant: state.knightVariant });
         pivot.add(model.body);
         pend = model.pend;
         pend.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
@@ -1589,6 +1604,9 @@ function tickSim(dt) {
         sim.phase += dt;
         const cur = Math.sin(Math.PI * a.stepHz * sim.phase);
         sim.horse.userData.pivot.rotation.x = 0.14 * cur;
+        // lateral waddle seen in reference footage: the toy sways once per
+        // two steps (weight shifts alternate sides). Display-only.
+        sim.horse.userData.pivot.rotation.z = 0.07 * Math.sin(Math.PI * a.stepHz * sim.phase / 2);
         sim.horse.userData.pend.rotation.x = -state.walker.alphaDeg * Math.PI / 180 * cur;
         if (Math.sign(cur) !== Math.sign(prev) && Math.sign(cur) !== 0) {
             const front = Math.sign(cur) > 0;
@@ -1598,9 +1616,11 @@ function tickSim(dt) {
     } else if (s.mode === 'lift') {
         sim.phase += dt;
         sim.horse.userData.pivot.rotation.x = 0.03 * Math.sin(8 * sim.phase); // conveyor judder
+        sim.horse.userData.pivot.rotation.z *= 0.9; // waddle settles on the belt
         if (Math.floor(sim.phase * 3) !== Math.floor((sim.phase - dt) * 3)) clack(700); // chain clank
     } else {
         sim.horse.userData.pivot.rotation.x *= 0.9;
+        sim.horse.userData.pivot.rotation.z *= 0.9;
         sim.horse.userData.pend.rotation.x *= 0.9;
     }
 }

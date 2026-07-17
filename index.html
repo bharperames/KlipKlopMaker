@@ -269,7 +269,31 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     padding: 7px 12px; font-size: 12.5px; color: #ede5d4;
 }
 #parts-tools select { background: #322c21; color: #ede5d4; border: 1px solid #4a4336; border-radius: 6px; padding: 3px 6px; font: inherit; }
-#parts-tools label { display: flex; gap: 5px; align-items: center; cursor: pointer; }
+#parts-tools label {
+    display: flex; gap: 7px; align-items: center; cursor: pointer;
+    padding: 5px 11px; border-radius: 99px;
+    background: #322c21; border: 1px solid #4a4336;
+    white-space: nowrap; user-select: none; font-size: 12px;
+    color: #b8ab8f;
+    transition: background .15s, border-color .15s, color .15s;
+}
+#parts-tools label:hover { border-color: #8a6842; }
+#parts-tools label:has(input:checked) {
+    background: #4c3a1c; border-color: var(--track-gold); color: #ffd98a; font-weight: 600;
+}
+#parts-tools input[type=checkbox] {
+    appearance: none; -webkit-appearance: none;
+    width: 15px; height: 15px; margin: 0; flex: 0 0 auto;
+    border: 1.5px solid #6b5c44; border-radius: 4px; background: #241f18;
+    display: grid; place-items: center; cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+#parts-tools input[type=checkbox]:checked {
+    background: var(--track-gold); border-color: var(--track-gold);
+}
+#parts-tools input[type=checkbox]:checked::before {
+    content: '✔'; font-size: 10px; line-height: 1; color: #3a2814; font-weight: 900;
+}
 #sim-hud {
     position: absolute; left: 12px; top: 12px; z-index: 3;
     display: flex; gap: 14px; align-items: center;
