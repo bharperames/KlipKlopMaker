@@ -1,9 +1,16 @@
 {
   "format": "klipklop-scene",
   "version": 2,
-  "name": "Lift & Return",
-  "description": "A closed circuit using the powered lift to haul the figure uphill, curves to turn it around, and flat powered conveyor tracks to return it horizontally to the start.",
+  "geometry": "1.0.0",
+  "name": "Perpetual Motion Ring",
+  "description": "A closed loop perpetual motion track utilizing powered lifts and turns.",
   "sequence": [
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveL",
+    "curveL",
     "lift",
     "lift",
     "lift",
@@ -12,19 +19,20 @@
     "lift",
     "curveL",
     "curveL",
-    "powered",
-    "powered",
-    "powered",
-    "powered",
-    "powered",
-    "powered",
-    "curveL",
-    "curveL"
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "lift"
   ],
+  "loop": true,
   "scenery": [],
+  "figureStyle": "knight",
+  "knightVariant": "trumpet",
+  "figureOpacity": 1,
   "params": {
     "slopeDeg": 11.2167,
-    "liftSlopeDeg": 11.4045,
     "innerWidth": 48,
     "curveRadius": 143.64
   },
@@ -36,11 +44,10 @@
     "massG": 45
   },
   "expect": {
-    "outcome": "arrived",
-    "maxTimeS": 40,
-    "minClacks": 50,
-    "minWalkedFraction": 0.3,
+    "outcome": "circuit",
+    "minLaps": 3,
+    "maxTimeS": 180,
+    "minClacks": 100,
     "layoutErrors": []
-  },
-  "geometry": "1.0.0"
+  }
 }
