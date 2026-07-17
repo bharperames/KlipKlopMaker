@@ -264,6 +264,7 @@ function rebuild() {
 
     trackGroup.clear();
     arrowGroup.clear();
+    if (!placementKind) ghostGroup.clear(); // any rebuild invalidates a hover ghost
     pieceMeshes = new Array(pieces.length).fill(null);
     arrowMeshes = [];
 
@@ -463,14 +464,22 @@ for (const btn of document.querySelectorAll('[data-scenery]')) {
 
 const $ = (id) => document.getElementById(id);
 
+const isHeadEnd = () => state.activeEndKey === '"head"';
+
 function activeContainer() {
-    return getContainer(state.sequence, JSON.parse(state.activeEndKey));
+    return getContainer(state.sequence, isHeadEnd() ? [] : JSON.parse(state.activeEndKey));
+}
+
+/** Appends at the active arrow — or PREPENDS when the loop's head is active. */
+function addNodes(...nodes) {
+    if (isHeadEnd()) activeContainer().unshift(...nodes);
+    else activeContainer().push(...nodes);
 }
 
 for (const btn of document.querySelectorAll('[data-add]')) {
     btn.addEventListener('click', () => {
         recordEdit();
-        activeContainer().push(btn.dataset.add);
+        addNodes(btn.dataset.add);
         state.selected = -1;
         rebuild();
     });
@@ -479,6 +488,7 @@ for (const btn of document.querySelectorAll('[data-add]')) {
 }
 for (const btn of document.querySelectorAll('[data-switch]')) {
     btn.addEventListener('click', () => {
+        if (isHeadEnd()) { toast('A switch must be the last piece of its branch — build it at a tail arrow.'); return; }
         recordEdit();
         activeContainer().push({ type: btn.dataset.switch, gate: 'main', main: [], branch: [] });
         state.selected = -1;
@@ -489,9 +499,8 @@ for (const btn of document.querySelectorAll('[data-switch]')) {
 for (const btn of document.querySelectorAll('[data-spiral]')) {
     btn.addEventListener('click', () => {
         recordEdit();
-        const c = activeContainer();
         const t = btn.dataset.spiral === 'L' ? 'curveL' : 'curveR';
-        c.push(t, t, t, t);
+        addNodes(t, t, t, t);
         state.selected = -1;
         rebuild();
     });
@@ -525,16 +534,37 @@ $('btn-loop').addEventListener('click', () => {
 function showGhostFor(type) {
     clearGhost();
     try {
+        // only ghost when the active arrow actually exists (a closed loop has
+        // no open ends — appending there would overlap the closure seam)
+        const endKeys = (state.layout?.openEnds ?? []).map(oe => pathKey(oe.containerPath));
+        if (!endKeys.includes(state.activeEndKey)) return;
         const clone = JSON.parse(JSON.stringify(state.sequence));
-        const c = getContainer(clone, JSON.parse(state.activeEndKey));
-        c.push(type);
+        let addr;
+        if (isHeadEnd()) {
+            clone.unshift(type);
+            addr = pathKey([0]);
+        } else {
+            const path = JSON.parse(state.activeEndKey);
+            const c = getContainer(clone, path);
+            c.push(type);
+            addr = pathKey([...path, c.length - 1]);
+        }
         const { pieces } = layoutTrack(clone, {
-            slopeDeg: state.slopeDeg, innerWidth: state.innerWidth, curveRadius: state.curveRadius
+            slopeDeg: state.slopeDeg, innerWidth: state.innerWidth, curveRadius: state.curveRadius,
+            loop: state.loop
         });
-        const addr = pathKey([...JSON.parse(state.activeEndKey), c.length - 1]);
         const pc = pieces.find(p => pathKey(p.address ?? []) === addr);
         if (pc) {
             const m = new THREE.Mesh(buildPieceDisplayGeometry(pc), MAT.ghost);
+            if (isHeadEnd()) {
+                // prepends re-anchor the hypothetical ring at origin — map the
+                // ghost back so its EXIT lands on the current ring's head
+                const h = pc.exit.h;
+                const ex = pc.exit.x * Math.cos(-h) - pc.exit.z * Math.sin(-h);
+                const ez = pc.exit.x * Math.sin(-h) + pc.exit.z * Math.cos(-h);
+                m.rotation.y = h;
+                m.position.set(-ex, (state.layout.pieces[0]?.entryDeck ?? 0) + SPEC.waterfallStepMm - pc.exitDeck, -ez);
+            }
             ghostGroup.add(m);
         }
     } catch { /* ghost is best-effort */ }
@@ -645,14 +675,17 @@ $('in-opacity').addEventListener('input', () => {
     saveState();
 });
 
-const styleSel = $('in-style');
-styleSel.addEventListener('change', () => {
-    recordEdit();
-    state.figureStyle = styleSel.value;
-    rebuild();
-    if (sim.running) { stopSim(); startSim(); } // swap the ridden figure live
-    toast(state.figureStyle === 'knight' ? '⚔️ Mike the Knight saddles up' : '🐴 Classic pony selected');
-});
+for (const btn of document.querySelectorAll('[data-figstyle]')) {
+    btn.addEventListener('click', () => {
+        if (state.figureStyle === btn.dataset.figstyle) return;
+        recordEdit();
+        state.figureStyle = btn.dataset.figstyle;
+        syncControls();
+        rebuild();
+        if (sim.running) { stopSim(); startSim(); } // swap the ridden figure live
+        toast(state.figureStyle === 'knight' ? '⚔️ Mike the Knight saddles up' : '🐴 Classic pony selected');
+    });
+}
 
 // ---------------------------------------------------------------------------
 // Piece list, selection, in-place editing
@@ -783,6 +816,7 @@ function refreshEditorCard() {
         return;
     }
     const types = [['straight', '⬆ Straight'], ['curveL', '⟲ Left'], ['curveR', '⟳ Right'], ['lift', '⛓ Lift']];
+    const loopOrigin = state.loop && pc.address.length === 1;
     card.innerHTML = `
         <b>Edit ${pc.name}</b>
         <div class="btn-grid" style="margin-top:8px">
@@ -790,9 +824,21 @@ function refreshEditorCard() {
                 `<button data-ed-type="${t}" ${t === node ? 'disabled' : ''}>${l}</button>`).join('')}
             <button id="ed-ins">＋ Insert straight before</button>
             <button id="ed-del" style="color:var(--critical)">🗑 Delete</button>
+            ${loopOrigin ? '<button id="ed-origin" class="wide" title="Rotate the ring so this piece anchors at the world origin">🔁 Set as loop origin</button>' : ''}
         </div>
         <div style="color:var(--ink-2);margin-top:6px;font-size:11.5px">
             Changes re-lay the downstream track automatically (Auto-Z).</div>`;
+    if (loopOrigin) {
+        $('ed-origin').onclick = () => {
+            recordEdit();
+            const i = pc.address[0];
+            state.sequence = [...state.sequence.slice(i), ...state.sequence.slice(0, i)];
+            state.selected = -1;
+            rebuild();
+            fitView();
+            toast('🔁 Ring re-anchored — this piece is now the loop origin');
+        };
+    }
     for (const b of card.querySelectorAll('[data-ed-type]')) {
         b.onclick = () => {
             recordEdit();
@@ -1972,7 +2018,9 @@ function syncControls() {
     muSel.value = state.muKey;
     $('btn-loop').textContent = state.loop ? '🔁 Loop mode: ON' : '🔁 Loop mode: off';
     $('btn-loop').classList.toggle('primary', state.loop);
-    $('in-style').value = state.figureStyle;
+    for (const btn of document.querySelectorAll('[data-figstyle]')) {
+        btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);
+    }
     $('in-opacity').value = state.figureOpacity ?? 0.5;
     $('out-opacity').textContent = `${Math.round((state.figureOpacity ?? 0.5) * 100)}%`;
 }

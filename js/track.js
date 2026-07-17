@@ -282,6 +282,9 @@ export function layoutTrack(sequence, params = {}) {
                     : `closure step-down ${stepDown.toFixed(1)} mm exceeds the 3 mm limit — add descent or remove a lift`);
                 issues.push({ level: 'error', code: 'loop-open', msg: `Loop does not close: ${hints.join('; ')}.` });
                 openEnds.push({ containerPath: [], cursor: { ...tail.cursor }, deck: tail.deck });
+                // the ring's HEAD is buildable too: activating this end
+                // prepends pieces before the current first piece
+                openEnds.push({ containerPath: 'head', cursor: { x: 0, z: 0, h: Math.PI }, deck: first.entryDeck });
             }
         }
     } else {

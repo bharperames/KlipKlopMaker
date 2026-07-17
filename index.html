@@ -105,9 +105,33 @@ h2 {
     margin: 16px 0 8px;
 }
 h2:first-child { margin-top: 2px; }
-.btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.btn-grid button { text-align: left; font-size: 13px; }
+.btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.btn-grid button {
+    text-align: left; font-size: 13px; font-weight: 600;
+    background: linear-gradient(180deg, #fffdf6, #f1e6cd);
+    border: 1px solid #c9b48a;
+    box-shadow: 0 1.5px 0 #c9b48a, 0 2px 4px rgba(76, 51, 26, .14);
+    padding: 8px 10px;
+}
+.btn-grid button:hover { border-color: var(--accent); box-shadow: 0 1.5px 0 var(--accent), 0 3px 7px rgba(76, 51, 26, .22); transform: translateY(-1px); }
+.btn-grid button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 0 0 #c9b48a, inset 0 1px 3px rgba(76, 51, 26, .2); }
+.btn-grid button:disabled { box-shadow: none; transform: none; }
+.btn-grid button.primary { background: var(--accent); border-color: #8a5a20; box-shadow: 0 1.5px 0 #8a5a20, 0 2px 4px rgba(76, 51, 26, .25); }
+@media (prefers-color-scheme: dark) {
+    .btn-grid button { background: linear-gradient(180deg, #2e2921, #241f18); border-color: #4a4336; box-shadow: 0 1.5px 0 #4a4336, 0 2px 4px rgba(0, 0, 0, .4); }
+    .btn-grid button:hover { border-color: var(--accent); }
+}
 .btn-grid .wide { grid-column: span 2; }
+details.acc { margin-top: 16px; }
+details.acc summary {
+    cursor: pointer;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .12em;
+    color: var(--ink-3); font-weight: 700;
+    padding: 4px 0;
+    list-style: none;
+}
+details.acc summary::before { content: '▸ '; }
+details.acc[open] summary::before { content: '▾ '; }
 .slider-row { margin: 8px 0; }
 .slider-row label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); }
 .slider-row output { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
@@ -344,6 +368,16 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
     <div id="editor-card" class="card" style="display:none"></div>
 
+    <h2>Figure</h2>
+    <div class="btn-grid">
+        <button data-figstyle="classic">🐴 Classic pony</button>
+        <button data-figstyle="knight">⚔️ Mike the Knight</button>
+    </div>
+    <div class="slider-row">
+        <label>Opacity (ghost ↔ solid) <output id="out-opacity">50%</output></label>
+        <input type="range" id="in-opacity" min="0.3" max="1" step="0.05" value="0.5">
+    </div>
+
     <h2>Design file</h2>
     <div class="btn-grid">
         <button id="btn-save">💾 Save design</button>
@@ -352,19 +386,21 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <select id="scene-picker" class="wide" title="Bundled example scenes"></select>
     </div>
 
-    <h2>Track parameters <span title="Locked to the passive-walker physics envelope">🔒</span></h2>
-    <div class="slider-row">
-        <label>Slope (green zone 10–12°) <output id="out-slope">11°</output></label>
-        <input type="range" id="in-slope" min="8" max="14" step="0.5" value="11">
-    </div>
-    <div class="slider-row">
-        <label>Channel inner width <output id="out-width">48 mm</output></label>
-        <input type="range" id="in-width" min="46" max="50" step="1" value="48">
-    </div>
-    <div class="slider-row">
-        <label>Curve radius (min 120) <output id="out-radius">150 mm</output></label>
-        <input type="range" id="in-radius" min="120" max="220" step="5" value="150">
-    </div>
+    <details class="acc">
+        <summary>Track parameters <span title="Locked to the passive-walker physics envelope">🔒</span></summary>
+        <div class="slider-row">
+            <label>Slope (green zone 10–12°) <output id="out-slope">11°</output></label>
+            <input type="range" id="in-slope" min="8" max="14" step="0.5" value="11">
+        </div>
+        <div class="slider-row">
+            <label>Channel inner width <output id="out-width">48 mm</output></label>
+            <input type="range" id="in-width" min="46" max="50" step="1" value="48">
+        </div>
+        <div class="slider-row">
+            <label>Curve radius (min 120) <output id="out-radius">150 mm</output></label>
+            <input type="range" id="in-radius" min="120" max="220" step="5" value="150">
+        </div>
+    </details>
 
     <h2 id="parts-heading">Parts list</h2>
     <ul id="piece-list"></ul>
@@ -394,17 +430,6 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <div class="slider-row">
             <label>Ramp floor finish</label>
             <select id="in-mu"></select>
-        </div>
-        <div class="slider-row">
-            <label>Figure style</label>
-            <select id="in-style">
-                <option value="classic">🐴 Classic princess pony</option>
-                <option value="knight">⚔️ Mike the Knight steed</option>
-            </select>
-        </div>
-        <div class="slider-row">
-            <label>Figure opacity (ghost ↔ solid) <output id="out-opacity">50%</output></label>
-            <input type="range" id="in-opacity" min="0.3" max="1" step="0.05" value="0.5">
         </div>
         <div class="slider-row">
             <label>Axle quality (energy retention) <output id="out-eff">0.26</output></label>
