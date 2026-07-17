@@ -104,8 +104,8 @@ for (const file of sceneFiles) {
     const id = file.replace('.json', '');
     const raw = JSON.parse(fs.readFileSync(path.join(SCENES, file), 'utf8'));
     const st = deserializeScene(raw);
-    const layout = layoutTrack(st.sequence, { slopeDeg: st.slopeDeg, innerWidth: st.innerWidth, curveRadius: st.curveRadius, loop: st.loop });
-    const result = simulateRun(resolveRidePath(layout.pieces), { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker, loop: st.loop, maxLaps: 3 });
+    const layout = layoutTrack(st.sequence, { slopeDeg: st.slopeDeg, innerWidth: st.innerWidth, curveRadius: st.curveRadius });
+    const result = simulateRun(resolveRidePath(layout.pieces), { mu: FRICTION_PRESETS[st.muKey].mu, walker: st.walker, loop: layout.isCircuit, maxLaps: 3 });
     const checks = checkExpectations(raw.expect ?? {}, result, layout);
     const pass = checks.every(c => c.ok);
     summary.push({ id, name: raw.name, outcome: result.outcome, expected: raw.expect?.outcome, t: result.tEnd, clacks: result.stats.clacks, maxV: result.stats.maxV, pass });

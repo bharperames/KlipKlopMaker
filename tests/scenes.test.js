@@ -38,13 +38,12 @@ describe.each(sceneFiles)('%s', (file) => {
     const layout = layoutTrack(state.sequence, {
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
-        curveRadius: state.curveRadius,
-        loop: state.loop
+        curveRadius: state.curveRadius
     });
     const result = simulateRun(resolveRidePath(layout.pieces), {
         mu: FRICTION_PRESETS[state.muKey].mu,
         walker: state.walker,
-        loop: state.loop,
+        loop: layout.isCircuit,
         maxLaps: 3
     });
     const exp = raw.expect ?? {};

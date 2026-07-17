@@ -316,42 +316,44 @@ export function layoutTrack(sequence, params = {}) {
         return { cursor, deck };
     };
 
-    if (p.loop) {
-        // LOOP MODE: no start/end platforms on the root — the path is a ring.
-        // The closure seam must land back on the first piece's entry: same
-        // plan position and heading, and stepping DOWN 0.25–3 mm (a circuit
-        // must regain via lifts exactly what it spends descending).
-        if (sequence.some(isSwitchNode)) {
-            issues.push({ level: 'error', code: 'loop-no-switch', msg: 'Loop mode does not support a switch on the main ring yet — put switches on non-loop designs.' });
+    // IMPLICIT TOPOLOGY: a design is a circuit because its geometry closes,
+    // not because a mode said so. Trial-walk the root chain from the origin;
+    // if the tail lands back on the head (pose + a legal waterfall step-down)
+    // the design IS a circuit: no platforms, ride wraps. Otherwise it's an
+    // open run and every leaf gets its corral.
+    let isCircuit = false;
+    const rootHasSwitch = sequence.some(isSwitchNode);
+    if (sequence.length && !rootHasSwitch) {
+        const probePieces = [];
+        const probeCounter = { n: 0 };
+        // cheap pose-only probe using the same segment math
+        let cur = { x: 0, z: 0, h: 0 };
+        let deck = 0;
+        const tanL = tanLift;
+        for (const node of sequence) {
+            const isLift = node === 'lift';
+            const plan = (node === 'straight' || node === 'lift')
+                ? segmentPlan('straightish', cur, { len: p.tileLen })
+                : segmentPlan('curve', cur, { radius: p.curveRadius, turnSign: node === 'curveL' ? 1 : -1 });
+            const drop = isLift ? -plan.planLen * tanL : plan.planLen * tanSlope;
+            deck = (deck - p.waterfall) - drop;
+            cur = plan.exit;
         }
-        const tail = walk(sequence, { cursor: { x: 0, z: 0, h: 0 }, deck: 0 }, [], true /*active*/, false);
-        const first = pieces[0];
-        if (!sequence.length || !tail || !first) {
-            issues.push({ level: 'error', code: 'loop-open', msg: 'Loop mode: add pieces to form the ring.' });
-            openEnds.push({ containerPath: [], cursor: tail?.cursor ?? { x: 0, z: 0, h: 0 }, deck: tail?.deck ?? 0 });
-        } else {
-            const dx = tail.cursor.x - first.entry.x;
-            const dz = tail.cursor.z - first.entry.z;
-            const dh = Math.abs(((tail.cursor.h - first.entry.h) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
-            const stepDown = tail.deck - first.entryDeck;
-            const posOk = Math.hypot(dx, dz) <= 5 && dh <= 0.04;
-            const elevOk = stepDown >= p.waterfall - 0.05 && stepDown <= 3;
-            if (!posOk || !elevOk) {
-                const hints = [];
-                if (!posOk) hints.push(`ends ${Math.hypot(dx, dz).toFixed(0)} mm / ${radToDeg(dh).toFixed(0)}° from the start`);
-                if (!elevOk) hints.push(stepDown < p.waterfall
-                    ? `needs ${(p.waterfall - stepDown).toFixed(1)} mm more lift (an uphill lip would trip the figure)`
-                    : `closure step-down ${stepDown.toFixed(1)} mm exceeds the 3 mm limit — add descent or remove a lift`);
-                issues.push({ level: 'error', code: 'loop-open', msg: `Loop does not close: ${hints.join('; ')}.` });
-                openEnds.push({ containerPath: [], cursor: { ...tail.cursor }, deck: tail.deck });
-                // the ring's HEAD is buildable too: activating this end
-                // prepends pieces before the current first piece
-                openEnds.push({ containerPath: 'head', cursor: { x: 0, z: 0, h: Math.PI }, deck: first.entryDeck });
-            }
-        }
+        const dh = Math.abs(((cur.h % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+        const stepDown = deck - (-p.waterfall); // tail exit vs head entry (0 − wf)
+        isCircuit = Math.hypot(cur.x, cur.z) <= 5 && dh <= 0.04
+            && stepDown >= p.waterfall - 0.05 && stepDown <= 3;
+    }
+
+    if (isCircuit) {
+        walk(sequence, { cursor: { x: 0, z: 0, h: 0 }, deck: 0 }, [], true, false);
     } else {
         const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true }, false);
         walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
+        if (sequence.length && !rootHasSwitch) {
+            // the ring's head is buildable: activating this end PREPENDS
+            openEnds.push({ containerPath: 'head', cursor: { x: 0, z: 0, h: Math.PI }, deck: 0 });
+        }
     }
 
     // ground shift: lowest skirt rim rests on the ground
@@ -367,7 +369,7 @@ export function layoutTrack(sequence, params = {}) {
     const active = pieces.filter(pc => pc.active);
     const totalDropMm = active.length ? active[0].entryDeck - active[active.length - 1].exitDeck : 0;
     issues.push(...checkClearances(pieces, p));
-    return { pieces, issues, totalDropMm, params: p, openEnds, switches };
+    return { pieces, issues, totalDropMm, params: p, openEnds, switches, isCircuit };
 }
 
 /**

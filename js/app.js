@@ -23,6 +23,7 @@ import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
 import { createHistory } from './history.js';
+import { solveClosureForLayout } from './connect.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
@@ -41,7 +42,6 @@ import { analyzeMesh } from './mesh_utils.js';
 const state = {
     sequence: [],
     scenery: [],
-    loop: false,
     figureStyle: 'classic',
     figureOpacity: 0.5,
     slopeDeg: +STANDARD.slopeDeg.toFixed(4),
@@ -71,7 +71,6 @@ function designSnapshot() {
     return {
         sequence: JSON.parse(JSON.stringify(state.sequence)),
         scenery: state.scenery.map(s => ({ ...s })),
-        loop: state.loop,
         figureStyle: state.figureStyle,
         figureOpacity: state.figureOpacity,
         slopeDeg: state.slopeDeg,
@@ -95,7 +94,6 @@ function recordEdit(opKey = null) {
 function restoreSnapshot(s) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
-    state.loop = s.loop === true;
     state.figureStyle = s.figureStyle ?? 'classic';
     state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 0.5;
     state.slopeDeg = s.slopeDeg;
@@ -135,7 +133,6 @@ function applyScene(scene) {
     const s = deserializeScene(scene);
     state.sequence = s.sequence;
     state.scenery = s.scenery;
-    state.loop = s.loop === true;
     state.figureStyle = s.figureStyle ?? 'classic';
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
@@ -261,8 +258,7 @@ function rebuild() {
     state.layout = layoutTrack(state.sequence, {
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
-        curveRadius: state.curveRadius,
-        loop: state.loop
+        curveRadius: state.curveRadius
     });
     const { pieces, switches, openEnds } = state.layout;
     const issues = issueSet();
@@ -376,6 +372,7 @@ function rebuild() {
     refreshEditorCard();
     refreshIdleHorse();
     refreshParamsMode();
+    $('btn-connect').disabled = state.layout.isCircuit || !state.sequence.length || state.sequence.some(n => typeof n !== 'string');
     saveState();
 }
 
@@ -558,26 +555,28 @@ $('btn-clear').addEventListener('click', () => {
     }
     recordEdit();
     state.sequence = []; state.scenery = [];
-    state.loop = false; // a cleared canvas starts back in open-track mode
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
-    syncControls();
     rebuild();
 });
 $('btn-demo').addEventListener('click', () => {
     recordEdit();
     state.sequence = [...DEMO]; state.selected = -1; state.activeEndKey = '[]';
-    state.loop = false;
     rebuild(); fitView();
 });
-$('btn-loop').addEventListener('click', () => {
+$('btn-connect').addEventListener('click', () => {
+    if (state.layout.isCircuit) { toast('🔁 Already a closed circuit.'); return; }
+    const sol = solveClosureForLayout(state.layout);
+    if (!sol) {
+        toast('🧲 No closing path found — root chains with switches, or gaps beyond ~26 tiles, cannot auto-close.');
+        return;
+    }
     recordEdit();
-    state.loop = !state.loop;
+    state.sequence.push(...sol.moves);
     state.selected = -1;
-    syncControls();
     rebuild();
-    toast(state.loop
-        ? '🔁 Circuit: the path must return to its start — lifts pay back the descent (footer shows closure hints)'
-        : '⛰ Open run: ends are auto-capped with corrals again');
+    fitView();
+    const parts = Object.entries(sol.summary).map(([k, v]) => `${v}× ${k}`).join(', ');
+    toast(`🧲 Ends connected with ${sol.moves.length} standard tiles (${parts}) — the design is now a circuit`);
 });
 
 /** RCT ghost preview: hypothetical next piece rendered translucent. */
@@ -600,8 +599,7 @@ function showGhostFor(type) {
             addr = pathKey([...path, c.length - 1]);
         }
         const { pieces } = layoutTrack(clone, {
-            slopeDeg: state.slopeDeg, innerWidth: state.innerWidth, curveRadius: state.curveRadius,
-            loop: state.loop
+            slopeDeg: state.slopeDeg, innerWidth: state.innerWidth, curveRadius: state.curveRadius
         });
         const pc = pieces.find(p => pathKey(p.address ?? []) === addr);
         if (pc) {
@@ -889,7 +887,7 @@ function refreshEditorCard() {
         return;
     }
     const types = [['straight', '⬆ Straight'], ['curveL', '⟲ Left'], ['curveR', '⟳ Right'], ['lift', '⛓ Lift']];
-    const loopOrigin = state.loop && pc.address.length === 1;
+    const loopOrigin = state.layout?.isCircuit && pc.address.length === 1;
     card.innerHTML = `
         <b>Edit ${pc.name}</b>
         <div class="btn-grid" style="margin-top:8px">
@@ -1220,7 +1218,7 @@ $('matrix').innerHTML = MATRIX.map(([sym, cause, fix]) => `
 
 function refreshFooter() {
     const { pieces, issues, totalDropMm } = state.layout;
-    $('ft-pieces').textContent = `${pieces.length} pieces`;
+    $('ft-pieces').textContent = `${pieces.length} pieces · ${state.layout.isCircuit ? '🔁 circuit' : '⛰ open run'}`;
     $('ft-drop').textContent = `ride drop ${totalDropMm.toFixed(0)} mm`;
     const rideLen = resolveRidePath(pieces).reduce((s, p) => s + p.planLen, 0);
     $('ft-run').textContent = `ride ${rideLen.toFixed(0)} mm`;
@@ -1478,14 +1476,11 @@ function startSim() {
         toast('Add at least one ramp piece first.');
         return;
     }
-    if (state.loop && state.layout.issues.some(i => i.code === 'loop-open')) {
-        toast('🔁 The loop doesn\'t close yet — follow the footer hint, or turn Loop mode off.');
-        return;
-    }
+
     sim.run = simulateRun(ridePath, {
         ...physOpts(),
         liftSpeedMmS: SPEC.liftSpeedMmS,
-        loop: state.loop,
+        loop: state.layout.isCircuit,
         maxLaps: 3
     });
     $('sim-hud').style.display = '';
@@ -1534,7 +1529,7 @@ function reallyStopSim() {
 const MODE_LABEL = { walk: '🐴 WALK', slide: '⛸ SLIDE', lift: '⛓ LIFT' };
 function refreshHud(s) {
     const a = sim.run.assess[s.pieceIndex];
-    const lap = state.loop ? sim.run.events.filter(e => e.type === 'lap' && e.t <= sim.t).length + 1 : null;
+    const lap = state.layout?.isCircuit ? sim.run.events.filter(e => e.type === 'lap' && e.t <= sim.t).length + 1 : null;
     $('sim-hud').innerHTML =
         `<span class="hudmode ${s.mode}">${MODE_LABEL[s.mode] ?? s.mode}</span>` +
         `<span><b>${s.v.toFixed(0)}</b> mm/s</span>` +
@@ -2135,8 +2130,6 @@ function syncControls() {
     $('in-leg').value = state.walker.legLenMm; $('out-leg').textContent = `${state.walker.legLenMm} mm`;
     $('in-mass').value = state.walker.massG; $('out-mass').textContent = `${state.walker.massG} g`;
     muSel.value = state.muKey;
-    $('btn-loop').textContent = state.loop ? '🔁 Track type: Circuit' : '⛰ Track type: Open run';
-    $('btn-loop').classList.toggle('primary', state.loop);
     for (const btn of document.querySelectorAll('[data-figstyle]')) {
         btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);
     }

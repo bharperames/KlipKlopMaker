@@ -147,3 +147,8 @@ tan 12° = 0.213 « 0.85·μs) — i.e., **our physics engine predicts that the
 known-working design works**, the strongest external check available without
 printing. Interlocks are not cross-compatible (round pegs vs hex sockets), but
 figures interoperate across all systems.
+
+Community print-orientation note: the surveyed standalone set recommends
+printing ramps vertically with tree supports to get clean rib lines — this
+project's flat, rim-down orientation achieves clean transverse ridges with
+zero supports instead (the ridges print as stacked perimeter steps).
