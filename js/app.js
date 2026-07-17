@@ -14,7 +14,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as fflate from 'fflate';
 
 import {
-    SPEC, layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
+    SPEC, STANDARD, isStandardParams, decomposeSupport,
+    layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
@@ -25,7 +26,8 @@ import { createHistory } from './history.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
-    buildPillarGeometry, buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
+    buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry,
+    buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids
 } from './pieces.js';
 import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
@@ -42,9 +44,9 @@ const state = {
     loop: false,
     figureStyle: 'classic',
     figureOpacity: 0.5,
-    slopeDeg: 11,
-    innerWidth: 48,
-    curveRadius: 150,
+    slopeDeg: +STANDARD.slopeDeg.toFixed(4),
+    innerWidth: STANDARD.innerWidth,
+    curveRadius: +STANDARD.curveRadius.toFixed(2),
     muKey: 'washboard',
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
@@ -315,10 +317,7 @@ function rebuild() {
             });
             continue;
         }
-        const pillar = new THREE.Mesh(buildPillarGeometry(pc.rimY), MAT.pillar);
-        pillar.position.set(sup.x, 0, sup.z);
-        pillar.castShadow = true;
-        trackGroup.add(pillar);
+        trackGroup.add(buildSupportObject(pc.rimY, sup.x, sup.z));
         if (sup.mode === 'outrigger') {
             // arm reaches from the skirt wall out to the boss (lateral = local X)
             const right = [Math.sin(sup.h), -Math.cos(sup.h)];
@@ -376,7 +375,48 @@ function rebuild() {
     refreshFooter();
     refreshEditorCard();
     refreshIdleHorse();
+    refreshParamsMode();
     saveState();
+}
+
+function usingStandard() {
+    return isStandardParams({ slopeDeg: state.slopeDeg, curveRadius: state.curveRadius, innerWidth: state.innerWidth });
+}
+
+// standard support stacks (foot + risers) — cached geometries, one design each
+const supportGeomCache = new Map();
+function supportGeom(kind) {
+    if (!supportGeomCache.has(kind)) {
+        supportGeomCache.set(kind, kind === 'foot'
+            ? buildSupportFootGeometry()
+            : toBufferGeometry(buildRiserGeometry(Number(kind))));
+    }
+    return supportGeomCache.get(kind);
+}
+
+/** A support at (x,z): stacked standard parts on-grid, legacy pillar otherwise. */
+function buildSupportObject(heightMm, x, z) {
+    const dec = usingStandard() ? decomposeSupport(heightMm) : null;
+    if (!dec) {
+        const pillar = new THREE.Mesh(buildPillarGeometry(heightMm), MAT.pillar);
+        pillar.position.set(x, 0, z);
+        pillar.castShadow = true;
+        return pillar;
+    }
+    const g = new THREE.Group();
+    const foot = new THREE.Mesh(supportGeom('foot'), MAT.pillar);
+    foot.castShadow = true;
+    g.add(foot);
+    let y = STANDARD.footHeight;
+    for (const r of [...dec.risers].sort((a, b) => b - a)) {
+        const m = new THREE.Mesh(supportGeom(String(r)), MAT.pillar);
+        m.position.y = y;
+        m.castShadow = true;
+        g.add(m);
+        y += r;
+    }
+    g.position.set(x, 0, z);
+    return g;
 }
 
 function refreshSelectionHighlight() {
@@ -654,9 +694,30 @@ function bindSlider(id, outId, key, fmt, isWalker = false) {
     });
     el.addEventListener('change', () => history.endGesture());
 }
-bindSlider('in-slope', 'out-slope', 'slopeDeg', v => `${v}°`);
+bindSlider('in-slope', 'out-slope', 'slopeDeg', v => `${(+v).toFixed(1)}°`);
 bindSlider('in-width', 'out-width', 'innerWidth', v => `${v} mm`);
-bindSlider('in-radius', 'out-radius', 'curveRadius', v => `${v} mm`);
+bindSlider('in-radius', 'out-radius', 'curveRadius', v => `${(+v).toFixed(0)} mm`);
+
+const customToggle = $('in-custom');
+function refreshParamsMode() {
+    const std = usingStandard();
+    $('params-mode').textContent = std ? 'STANDARD 🔒' : 'CUSTOM ⚠️';
+    $('custom-sliders').style.display = customToggle.checked ? '' : 'none';
+}
+customToggle.addEventListener('change', () => {
+    if (customToggle.checked) {
+        toast('🔓 Custom parameters unlocked — parts printed here will NOT fit standard prints or standard supports');
+    } else {
+        recordEdit();
+        state.slopeDeg = +STANDARD.slopeDeg.toFixed(4);
+        state.curveRadius = +STANDARD.curveRadius.toFixed(2);
+        state.innerWidth = STANDARD.innerWidth;
+        syncControls();
+        rebuild();
+        toast('🔒 Back on the Klip Klop Standard — parts interoperate again');
+    }
+    refreshParamsMode();
+});
 bindSlider('in-eff', 'out-eff', 'efficiency', v => v.toFixed(2), true);
 bindSlider('in-alpha', 'out-alpha', 'alphaDeg', v => `${v}°`, true);
 bindSlider('in-leg', 'out-leg', 'legLenMm', v => `${v} mm`, true);
@@ -1596,10 +1657,27 @@ function assembleParts() {
     }
     parts.push({ name: `connector_key_print_${joints}x`, note: note.key, build: () => buildKeyGeometry() });
 
-    for (const sup of state.supports ?? []) {
-        if (sup.mode === 'none') continue;
-        const pc = pieces[sup.pieceIndex];
-        parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}`, note: note.pillar, build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+    // supports: reusable standard modules (foot + risers) with print counts —
+    // never cut-to-height "magic" pillars unless custom parameters force it
+    const supList = (state.supports ?? []).filter(sup => sup.mode !== 'none');
+    if (usingStandard()) {
+        let feet = 0;
+        const riserCounts = new Map();
+        for (const sup of supList) {
+            const dec = decomposeSupport(pieces[sup.pieceIndex].rimY);
+            if (!dec) continue;
+            feet++;
+            for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
+        }
+        if (feet) parts.push({ name: `support_foot_print_${feet}x`, note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
+        for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
+            parts.push({ name: `support_riser_${r}mm_print_${count}x`, note: note.pillar, build: () => buildRiserGeometry(r) });
+        }
+    } else {
+        for (const sup of supList) {
+            const pc = pieces[sup.pieceIndex];
+            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+        }
     }
 
     const kinds = [...new Set(state.scenery.map(s => s.kind))];
@@ -2060,6 +2138,7 @@ function syncControls() {
     await initCSG(); // switch display meshes and scenery need booleans
     await loadState();
     syncControls();
+    customToggle.checked = !usingStandard();
     rebuild();
     resize();
     fitView();

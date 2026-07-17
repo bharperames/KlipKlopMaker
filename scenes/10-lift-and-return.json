@@ -3,11 +3,28 @@
   "version": 2,
   "name": "Lift & Return",
   "description": "Three powered lift sections haul the figure ~90 mm uphill (externally driven conveyor — the one exception to gravity), then a 180° descent brings it trotting home. Demonstrates the LIFT regime and the energy-budget reset at powered spans.",
-  "sequence": ["lift", "lift", "lift", "curveL", "curveL", "straight", "straight"],
+  "sequence": [
+    "lift",
+    "lift",
+    "lift",
+    "curveL",
+    "curveL",
+    "straight",
+    "straight"
+  ],
   "scenery": [],
-  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 150 },
+  "params": {
+    "slopeDeg": 11.2167,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
   "surface": "washboard",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 35,

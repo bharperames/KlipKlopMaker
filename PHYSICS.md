@@ -104,3 +104,25 @@ robustness against bearing friction, not speed.
   [Friction Behavior of 3D-printed Polymeric Materials](https://revmaterialeplastice.ro/pdf/19%20CHISIU%201%2021.pdf)
 - Reference toy: Fisher-Price Little People Disney Princess Klip Klop Stable
   ([motion video](https://www.youtube.com/watch?v=wqNYFY2WxSg&t=5s))
+
+## 6. The Klip Klop Standard (interoperability lock)
+
+Free parameters silently fork a printed part library: pieces sliced at 11°
+don't mate with pieces at 12°, and cut-to-height pillars are single-use. The
+locked standard makes every part reusable:
+
+| Locked value | Why |
+|---|---|
+| Tile drop = **30 mm** (straights & lifts, incl. the 0.25 mm waterfall seam) | two 15 mm grid units |
+| Curve drop = **45 mm** | three grid units |
+| Ramp slope = atan(29.75/150) = **11.217°** | dead center of the 10–12° green zone |
+| Lift slope = atan(30.25/150) = **11.405°** | powered; nets +30 mm after its seam |
+| Curve radius = **143.64 mm** | gives the 45 mm curve drop; above the 120 mm rigid-body minimum |
+| Channel width = **48 mm** | center of the 46–50 mm spec |
+
+Consequences: every deck boundary — and therefore every support rim — lands
+on a **15 mm height grid**, so supports are stacks of five reusable designs
+(foot + 15/30/60/120 mm risers on the common hex interlock) instead of
+cut-to-height pillars; and closed loops balance exactly (6 lift tiles buy
+what 4 curves spend). Custom parameters remain available behind an explicit
+unlock, clearly marked as producing a non-interoperable print batch.

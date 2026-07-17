@@ -66,3 +66,7 @@ building, gait physics simulation, and watertight STL/3MF export.
 `npx serve -l 3311 .` then run the Playwright smoke script pattern (see git
 history / scratchpad): load page, assert zero console errors, exercise
 build → simulate → export, and confirm `#export-log` shows only "✔ watertight".
+- **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
+  curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
+  and supports stack from five reusable riser designs. Never change STANDARD
+  values casually; custom parameters are an explicit non-interoperable mode.

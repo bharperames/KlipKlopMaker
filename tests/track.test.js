@@ -207,7 +207,9 @@ describe('lift pieces', () => {
         const lift = pieces.find(p => p.isLift);
         expect(lift.exitDeck - lift.entryDeck).toBeCloseTo(150 * Math.tan(degToRad(11)), 6);
         expect(lift.slopeDeg).toBeCloseTo(-11, 9);
-        expect(lift.rimY).toBeCloseTo(lift.entryDeck - SPEC.skirtDepth, 9);
+        // rim anchors to the uphill GRID BOUNDARY (entry + waterfall) so all
+        // supports share one height family
+        expect(lift.rimY).toBeCloseTo(lift.entryDeck + SPEC.waterfallStepMm - SPEC.skirtDepth, 9);
     });
 
     test('lowest rim still lands on the ground with lifts in play', () => {
@@ -296,5 +298,55 @@ describe('loop mode', () => {
         expect(r.outcome).toBe('circuit');
         expect(r.stats.laps).toBe(3);
         expect(r.events.filter(e => e.type === 'lap')).toHaveLength(3);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// The Klip Klop Standard: locked parameters, 15mm grid, reusable supports
+// ---------------------------------------------------------------------------
+import { STANDARD, isStandardParams, decomposeSupport } from '../js/track.js';
+
+describe('the Klip Klop Standard', () => {
+    test('standard slope sits in the green zone; every tile nets a grid drop', () => {
+        expect(STANDARD.slopeDeg).toBeGreaterThan(SPEC.slope.greenMin);
+        expect(STANDARD.slopeDeg).toBeLessThan(SPEC.slope.greenMax);
+        expect(150 * Math.tan(degToRad(STANDARD.slopeDeg)) + SPEC.waterfallStepMm).toBeCloseTo(30, 3);
+        const arc = (Math.PI / 2) * STANDARD.curveRadius;
+        expect(arc * Math.tan(degToRad(STANDARD.slopeDeg)) + SPEC.waterfallStepMm).toBeCloseTo(45, 2);
+        expect(150 * Math.tan(degToRad(STANDARD.liftSlopeDeg)) - SPEC.waterfallStepMm).toBeCloseTo(30, 3);
+        expect(STANDARD.curveRadius).toBeGreaterThanOrEqual(SPEC.minCurveRadius);
+    });
+
+    test('default layouts put every support rim on the 15 mm grid', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'lift', 'lift', 'curveR', 'straight']);
+        for (const pc of pieces) {
+            expect(Math.abs(pc.rimY / 15 - Math.round(pc.rimY / 15))).toBeLessThan(0.005);
+            if (pc.rimY > 1) expect(decomposeSupport(pc.rimY)).not.toBeNull();
+        }
+    });
+
+    test('supports decompose into foot + standard risers that sum exactly', () => {
+        for (const h of [15, 30, 45, 75, 120, 135, 255, 300]) {
+            const d = decomposeSupport(h);
+            expect(d).not.toBeNull();
+            expect(STANDARD.footHeight + d.risers.reduce((s, r) => s + r, 0)).toBeCloseTo(h, 6);
+            for (const r of d.risers) expect(STANDARD.riserSizes).toContain(r);
+        }
+        expect(decomposeSupport(137)).toBeNull(); // off-grid = custom mode only
+    });
+
+    test('standard loops close exactly (6 lift tiles = 4 curve drops)', () => {
+        const ring = ['lift', 'lift', 'lift', 'curveL', 'curveL', 'lift', 'lift', 'lift', 'curveL', 'curveL'];
+        const { pieces, issues } = layoutTrack(ring, { loop: true });
+        expect(issues.filter(i => i.code === 'loop-open')).toHaveLength(0);
+        const tail = pieces[pieces.length - 1];
+        expect(tail.exitDeck - pieces[0].entryDeck).toBeCloseTo(SPEC.waterfallStepMm, 3);
+    });
+
+    test('isStandardParams flags forks of the part library', () => {
+        expect(isStandardParams({})).toBe(true);
+        expect(isStandardParams({ slopeDeg: STANDARD.slopeDeg, curveRadius: STANDARD.curveRadius, innerWidth: 48 })).toBe(true);
+        expect(isStandardParams({ slopeDeg: 11 })).toBe(false);
+        expect(isStandardParams({ curveRadius: 150 })).toBe(false);
     });
 });

@@ -3,13 +3,29 @@
   "version": 1,
   "name": "Tight Radius (layout-violation demo)",
   "description": "A 100 mm curve radius, below the 120 mm rigid-body minimum. The point-mass dynamics happily complete the run, but the layout validator flags that a real rectangular figure would wedge front-inner/rear-outer against the walls — a geometry failure the physics trace alone cannot see.",
-  "sequence": ["straight", "curveL", "curveL", "straight"],
-  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 100 },
+  "sequence": [
+    "straight",
+    "curveL",
+    "curveL",
+    "straight"
+  ],
+  "params": {
+    "slopeDeg": 11,
+    "innerWidth": 48,
+    "curveRadius": 100
+  },
   "surface": "washboard",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 30,
-    "layoutErrors": ["radius-too-tight"]
+    "layoutErrors": [
+      "radius-too-tight"
+    ]
   }
 }

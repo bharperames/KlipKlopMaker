@@ -8,14 +8,29 @@
     {
       "type": "switchL",
       "gate": "branch",
-      "main": ["straight", "straight"],
-      "branch": ["curveL", "straight"]
+      "main": [
+        "straight",
+        "straight"
+      ],
+      "branch": [
+        "curveL",
+        "straight"
+      ]
     }
   ],
   "scenery": [],
-  "params": { "slopeDeg": 11, "innerWidth": 48, "curveRadius": 150 },
+  "params": {
+    "slopeDeg": 11.2167,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
   "surface": "washboard",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 20,

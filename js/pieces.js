@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
-import { SPEC, stationsForPiece } from './track.js';
+import { SPEC, STANDARD, stationsForPiece } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan,
@@ -430,6 +430,37 @@ export function buildPillarGeometry(heightMm, spec = SPEC) {
         { y: heightMm + spec.socket.depth - 2, af: TENON_AF },
         { y: heightMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }  // insertion lead-in
     ]));
+}
+
+/**
+ * STANDARD SUPPORT SYSTEM — no more cut-to-height "magic" pillars. A support
+ * is one FOOT (flared base, 15 mm) plus stacked RISERS (15/30/60/120 mm),
+ * all sharing the hex tenon/socket interlock. Any 15 mm-grid height is
+ * reachable from five reusable part designs.
+ */
+export function buildSupportFootGeometry(spec = SPEC) {
+    return toBufferGeometry(stackedHex([
+        { y: 0, af: 24.8 },                                  // elephant-foot chamfer
+        { y: 0.6, af: 26 },
+        { y: 4, af: 26 },
+        { y: 4, af: 15 },
+        { y: STANDARD.footHeight, af: 15 },
+        { y: STANDARD.footHeight, af: TENON_AF },
+        { y: STANDARD.footHeight + spec.socket.depth - 2, af: TENON_AF },
+        { y: STANDARD.footHeight + spec.socket.depth - 1, af: TENON_AF - 1.4 }
+    ]));
+}
+
+/** Stackable riser: hex tube with a socket below and a tenon above. Needs initCSG. */
+export function buildRiserGeometry(sizeMm, spec = SPEC) {
+    const body = toBufferGeometry(stackedHex([
+        { y: 0, af: 15 },
+        { y: sizeMm, af: 15 },
+        { y: sizeMm, af: TENON_AF },
+        { y: sizeMm + spec.socket.depth - 2, af: TENON_AF },
+        { y: sizeMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }
+    ]));
+    return csgChain(body, [{ op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) }]);
 }
 
 /**

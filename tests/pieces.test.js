@@ -183,3 +183,14 @@ describe('figure styles', () => {
         expect(knight.slice(-10)).toEqual(classic.slice(-10));
     });
 });
+
+describe('standard support parts', () => {
+    test('foot and every riser size are watertight and stack to grid heights', async () => {
+        const { buildSupportFootGeometry, buildRiserGeometry } = await import('../js/pieces.js');
+        const { STANDARD } = await import('../js/track.js');
+        expectWatertight(buildSupportFootGeometry(), 'support foot');
+        for (const size of STANDARD.riserSizes) {
+            expectWatertight(buildRiserGeometry(size), `riser ${size}`);
+        }
+    });
+});

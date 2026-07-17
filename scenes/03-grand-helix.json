@@ -2,11 +2,36 @@
   "format": "klipklop-scene",
   "version": 1,
   "name": "Grand Helix",
-  "description": "Three full spiral tiers at a wider 165 mm radius and a gentler 10.5° pitch, with straight approach and run-out. The tallest stock scene (~740 mm of drop).",
-  "sequence": ["straight", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "curveR", "straight", "straight"],
-  "params": { "slopeDeg": 10.5, "innerWidth": 48, "curveRadius": 165 },
+  "description": "Three full spiral tiers on the standard geometry, with straight approach and run-out. The tallest stock scene (~600 mm of drop) — its supports are stacks of standard risers.",
+  "sequence": [
+    "straight",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "straight",
+    "straight"
+  ],
+  "params": {
+    "slopeDeg": 11.2167,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
   "surface": "washboard",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 60,

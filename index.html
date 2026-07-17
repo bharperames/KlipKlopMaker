@@ -146,7 +146,7 @@ select {
 #piece-list .wt { margin-left: auto; color: var(--ink-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 #parts-heading .wt { color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
 .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
-.tabs button { flex: 1; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; background: var(--panel-2); }
+.tabs button { flex: 1; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; background: var(--panel-2); white-space: nowrap; font-size: 12.5px; padding: 6px 4px; }
 .tabs button.active { border-bottom-color: var(--accent); font-weight: 700; background: var(--panel); }
 .card {
     background: var(--panel-2);
@@ -203,6 +203,9 @@ progress { width: 100%; height: 8px; accent-color: var(--accent); }
     padding: 4px 8px; border-radius: 6px;
 }
 .footspread { margin-left: auto; }
+aside a { color: var(--track-gold); text-decoration-color: #8a6842; }
+aside a:visited { color: #dba24f; }
+aside a:hover { color: #ffd76b; text-decoration-color: var(--track-gold); }
 kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
 #parts-overlay {
     position: fixed; inset: 0; z-index: 40;
@@ -329,10 +332,10 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
 <aside id="build-panel">
     <div class="tabs">
-        <button id="tab-build" class="active">🔨 Build</button>
-        <button id="tab-physics">🧪 Physics</button>
-        <button id="tab-export">🖨 Print</button>
-        <button id="tab-refs">📚 Refs</button>
+        <button id="tab-build" class="active">Build</button>
+        <button id="tab-physics">Physics</button>
+        <button id="tab-export">Print</button>
+        <button id="tab-refs">Refs</button>
     </div>
     <div id="pane-build">
     <h2>Build path <span id="active-end-label" style="text-transform:none;letter-spacing:0"></span></h2>
@@ -376,7 +379,19 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     </div>
 
     <details class="acc">
-        <summary>Track parameters <span title="Locked to the passive-walker physics envelope">🔒</span></summary>
+        <summary>Track parameters · <span id="params-mode">STANDARD 🔒</span></summary>
+        <div class="card" id="standard-card">
+            <b>The Klip Klop Standard</b> — locked so every printed part
+            interoperates: slope <b>11.22°</b> (each tile drops exactly 30 mm
+            incl. the waterfall seam), curves <b>R 143.6 mm</b> (45 mm drop),
+            channel <b>48 mm</b>. All support heights land on a 15 mm grid of
+            stackable risers.
+            <label style="display:flex;gap:6px;margin-top:8px;cursor:pointer">
+                <input type="checkbox" id="in-custom"> 🔓 Unlock custom parameters
+                <span style="color:var(--warning)">(parts won't fit standard prints)</span>
+            </label>
+        </div>
+        <div id="custom-sliders" style="display:none">
         <div class="slider-row">
             <label>Slope (green zone 10–12°) <output id="out-slope">11°</output></label>
             <input type="range" id="in-slope" min="8" max="14" step="0.5" value="11">
@@ -388,6 +403,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <div class="slider-row">
             <label>Curve radius (min 120) <output id="out-radius">150 mm</output></label>
             <input type="range" id="in-radius" min="120" max="220" step="5" value="150">
+        </div>
         </div>
     </details>
 

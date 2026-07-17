@@ -20,6 +20,59 @@
  *    exception to gravity-only, flagged with `isLift`)
  */
 
+/**
+ * THE KLIP KLOP STANDARD — locked track parameters, derived so that every
+ * printed part interoperates forever:
+ *  - Each running tile drops a whole number of 15 mm grid units INCLUDING its
+ *    0.25 mm waterfall seam: straights/lifts = 30 mm, curves = 45 mm.
+ *  - Therefore ramp slope = atan(29.75/150) = 11.217° (dead center of the
+ *    10–12° passive-walker green zone) and curve radius = 143.64 mm (above
+ *    the 120 mm rigid-body minimum).
+ *  - Every deck boundary — and every support rim — lands on the 15 mm grid,
+ *    so supports are STACKS OF STANDARD RISERS (15/30/60/120 mm on a common
+ *    foot), not one-off cut-to-height pillars.
+ *  - Loops close exactly: 6 lift tiles buy what 4 curves spend (180 mm).
+ * Deviating from these values forks your part library — the UI treats custom
+ * parameters as an explicit, warned, non-interoperable mode.
+ */
+export const STANDARD = {
+    gridMm: 15,
+    tileDropMm: 30,
+    curveDropMm: 45,
+    slopeDeg: Math.atan(29.75 / 150) * 180 / Math.PI,        // 11.2167°
+    liftSlopeDeg: Math.atan(30.25 / 150) * 180 / Math.PI,    // 11.4045° (powered)
+    curveRadius: (44.75 / (29.75 / 150)) / (Math.PI / 2),    // 143.637 mm
+    innerWidth: 48,
+    riserSizes: [120, 60, 30, 15],
+    footHeight: 15
+};
+
+/** Does a parameter set match the interoperable standard? */
+export function isStandardParams(p = {}) {
+    const slope = p.slopeDeg ?? STANDARD.slopeDeg;
+    const radius = p.curveRadius ?? STANDARD.curveRadius;
+    const width = p.innerWidth ?? STANDARD.innerWidth;
+    return Math.abs(slope - STANDARD.slopeDeg) < 0.02
+        && Math.abs(radius - STANDARD.curveRadius) < 0.5
+        && Math.abs(width - STANDARD.innerWidth) < 0.01;
+}
+
+/**
+ * Decomposes a support height (a 15 mm-grid rim) into standard parts:
+ * one foot + risers. Returns null when the height is off-grid (custom mode).
+ */
+export function decomposeSupport(heightMm) {
+    const units = Math.round(heightMm / STANDARD.gridMm);
+    if (Math.abs(heightMm - units * STANDARD.gridMm) > 0.1 || units < 1) return null;
+    let rest = heightMm - STANDARD.footHeight;
+    const risers = [];
+    for (const size of STANDARD.riserSizes) {
+        while (rest >= size - 0.1) { risers.push(size); rest -= size; }
+    }
+    if (rest > 0.1) return null;
+    return { foot: 1, risers };
+}
+
 export const SPEC = {
     slope: { hardMin: 8, greenMin: 10, greenMax: 12, hardMax: 14, default: 11 },
     innerWidth: { min: 46, max: 50, default: 48 },
@@ -152,9 +205,9 @@ function segmentPlan(kind, entry, params) {
  */
 export function layoutTrack(sequence, params = {}) {
     const p = {
-        slopeDeg: SPEC.slope.default,
-        innerWidth: SPEC.innerWidth.default,
-        curveRadius: SPEC.defaultCurveRadius,
+        slopeDeg: STANDARD.slopeDeg,
+        innerWidth: STANDARD.innerWidth,
+        curveRadius: STANDARD.curveRadius,
         tileLen: SPEC.tileLen,
         platformLen: SPEC.platformLen,
         waterfall: SPEC.waterfallStepMm,
@@ -175,12 +228,16 @@ export function layoutTrack(sequence, params = {}) {
     }
 
     const tanSlope = Math.tan(degToRad(p.slopeDeg));
+    // powered lifts climb a hair steeper so a lift tile NETS exactly one
+    // 30 mm grid step after its waterfall seam (standard mode only)
+    const liftSlopeDeg = p.liftSlopeDeg ?? (isStandardParams(p) ? STANDARD.liftSlopeDeg : p.slopeDeg);
+    const tanLift = Math.tan(degToRad(liftSlopeDeg));
     const pieces = [];
     const openEnds = [];
     const switches = [];
     let pieceCounter = 0;
 
-    const makePiece = (kind, node, cursor, entryDeck, meta) => {
+    const makePiece = (kind, node, cursor, entryDeck, meta, hasEntrySeam = true) => {
         let plan, drop, slopeDeg, isLift = false, innerWidth = p.innerWidth;
         if (kind === 'start' || kind === 'end') {
             plan = segmentPlan('straightish', cursor, { len: p.platformLen });
@@ -190,7 +247,7 @@ export function layoutTrack(sequence, params = {}) {
             drop = plan.planLen * tanSlope; slopeDeg = p.slopeDeg;
         } else if (kind === 'lift') {
             plan = segmentPlan('straightish', cursor, { len: p.tileLen });
-            drop = -plan.planLen * tanSlope; slopeDeg = -p.slopeDeg; isLift = true;
+            drop = -plan.planLen * tanLift; slopeDeg = -liftSlopeDeg; isLift = true;
         } else { // curveL / curveR / switchBranch
             const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
             plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
@@ -198,6 +255,11 @@ export function layoutTrack(sequence, params = {}) {
             innerWidth = p.innerWidth + SPEC.curveWidenMm;
         }
         const exitDeck = entryDeck - drop;
+        // Rim anchors to the GRID BOUNDARY at the piece's low end (exit
+        // boundary when descending; the uphill seam boundary for lifts and
+        // platforms). Keeps every support height on one grid family — the
+        // skirt is 11.75 mm instead of 12 on climbing/flat pieces.
+        const lowBoundary = drop > 0 ? exitDeck : entryDeck + (hasEntrySeam ? p.waterfall : 0);
         const ridge = effectiveRidgePitch(plan.planLen, p.ridgePitch);
         const piece = {
             type: kind, index: pieceCounter++,
@@ -205,7 +267,7 @@ export function layoutTrack(sequence, params = {}) {
             entry: { ...cursor }, exit: { ...plan.exit },
             planLen: plan.planLen, radius: plan.radius, center: plan.center, turn: plan.turn,
             slopeDeg, drop, entryDeck, exitDeck,
-            rimY: Math.min(entryDeck, exitDeck) - p.skirtDepth,
+            rimY: lowBoundary - p.skirtDepth,
             innerWidth, isLift,
             ridgePitch: ridge.pitch, ridgeCount: ridge.count,
             ...meta
@@ -288,7 +350,7 @@ export function layoutTrack(sequence, params = {}) {
             }
         }
     } else {
-        const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true });
+        const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true }, false);
         walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
     }
 

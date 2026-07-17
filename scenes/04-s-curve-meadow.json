@@ -3,10 +3,27 @@
   "version": 1,
   "name": "S-Curve Meadow",
   "description": "A low, sprawling layout that exercises alternating left/right curves (the S-bend of the original castle playset) at the steep end of the green zone.",
-  "sequence": ["straight", "curveL", "curveR", "straight", "curveR", "curveL", "straight"],
-  "params": { "slopeDeg": 12, "innerWidth": 50, "curveRadius": 150 },
+  "sequence": [
+    "straight",
+    "curveL",
+    "curveR",
+    "straight",
+    "curveR",
+    "curveL",
+    "straight"
+  ],
+  "params": {
+    "slopeDeg": 11.2167,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
   "surface": "washboard",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 25,

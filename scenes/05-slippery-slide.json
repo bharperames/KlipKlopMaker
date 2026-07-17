@@ -3,15 +3,30 @@
   "version": 1,
   "name": "Slippery Slide (failure demo)",
   "description": "16° on a smooth PLA floor: tan(16°) exceeds the grip budget, so the hooves never catch — the figure skis the whole track like a toboggan and brakes to a stop in the corral. Demonstrates the SLIDE regime and why the washboard floor exists.",
-  "sequence": ["straight", "curveL", "straight"],
-  "params": { "slopeDeg": 16, "innerWidth": 48, "curveRadius": 150 },
+  "sequence": [
+    "straight",
+    "curveL",
+    "straight"
+  ],
+  "params": {
+    "slopeDeg": 16,
+    "innerWidth": 48,
+    "curveRadius": 150
+  },
   "surface": "smooth",
-  "walker": { "alphaDeg": 18, "legLenMm": 26, "efficiency": 0.26, "massG": 45 },
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
   "expect": {
     "outcome": "arrived",
     "maxTimeS": 20,
     "maxWalkedFraction": 0.05,
     "minMaxV": 300,
-    "layoutErrors": ["slope-out-of-range"]
+    "layoutErrors": [
+      "slope-out-of-range"
+    ]
   }
 }
