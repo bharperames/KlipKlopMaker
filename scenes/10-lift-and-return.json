@@ -2,7 +2,7 @@
   "format": "klipklop-scene",
   "version": 2,
   "geometry": "1.0.0",
-  "name": "Perpetual Motion Ring",
+  "name": "Perpetual Spiral Track",
   "description": "A closed loop perpetual motion track utilizing powered lifts and turns.",
   "sequence": [
     "curveR",
