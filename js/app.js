@@ -1025,7 +1025,6 @@ function refreshPieceList() {
     const ul = $('piece-list');
     ul.innerHTML = '';
     const issues = issueSet();
-    const weights = pieceWeightsG();
     state.layout.pieces.forEach((piece, i) => {
         if (piece.role === 'branch') return; // listed with its switch
         const li = document.createElement('li');
@@ -1039,20 +1038,13 @@ function refreshPieceList() {
         const label = piece.type === 'switchMain'
             ? `${piece.name} (gate→${piece.gateOpen ? 'main' : 'branch'})`
             : piece.name;
-        const g = weights.get(i);
         li.innerHTML = `<span>${icon}</span><span>${label}</span>` +
             (issues.has(i) ? '<span class="flag" title="clearance conflict">⚠️</span>' : '') +
-            (piece.active ? '' : '<span class="flag" title="not on the current ride path">◌</span>') +
-            (g ? `<span class="wt" title="estimated printed weight (PLA, project print settings)">≈${g.toFixed(0)} g</span>` : '');
+            (piece.active ? '' : '<span class="flag" title="not on the current ride path">◌</span>');
         li.addEventListener('click', () => selectPiece(i));
         ul.appendChild(li);
     });
-    // print-job footer: whole-build filament estimate
-    const total = printJobTotalG(weights);
-    const spoolPct = (total / 1000) * 100;
-    $('parts-heading').innerHTML =
-        `Parts list <span class="wt">· print job ≈ ${total >= 1000 ? (total / 1000).toFixed(2) + ' kg' : total.toFixed(0) + ' g'} PLA ` +
-        `(${spoolPct.toFixed(0)}% of a 1 kg spool, ≈$${(total / 1000 * 20).toFixed(2)} filament)</span>`;
+    $('parts-heading').innerHTML = 'Parts list';
 }
 
 function selectPiece(i) {
@@ -1633,10 +1625,13 @@ function refreshPrintPartsList() {
     if (!list) return;
     list.innerHTML = '';
     gallery.parts = assembleParts().parts;
+    
+    let totalWeight = 0;
     gallery.parts.forEach((part, i) => {
         const li = document.createElement('li');
         const countLabel = part.count > 1 ? ` (x${part.count})` : '';
         const wt = getPartWeight(part, part.sig);
+        totalWeight += wt * part.count;
         const wtText = wt > 0 ? `${wt.toFixed(0)}g` : '...';
         li.innerHTML = `<span>🧩 ${part.name}${countLabel}</span><span class="wt">${wtText} 🔍</span>`;
         li.addEventListener('click', () => {
@@ -1644,6 +1639,13 @@ function refreshPrintPartsList() {
         });
         list.appendChild(li);
     });
+
+    const spoolPct = (totalWeight / 1000) * 100;
+    const heading = $('printable-parts-heading');
+    if (heading) {
+        heading.innerHTML = `Printable parts <span class="wt" style="color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 13px;">` +
+            `· print job ≈ ${totalWeight.toFixed(0)}g PLA (${spoolPct.toFixed(0)}% of a 1kg spool, ≈$${(totalWeight / 1000 * 20).toFixed(2)} filament)</span>`;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2817,6 +2819,13 @@ function resize() {
     camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
+window.addEventListener('beforeunload', (e) => {
+    if (designDirty && state.sequence.length) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+    }
+});
 
 let last = performance.now();
 function animate(now) {
