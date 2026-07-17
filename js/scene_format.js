@@ -7,7 +7,7 @@
  * (flat string arrays) load unchanged — a string is a valid tree node.
  */
 
-import { SIMPLE_TYPES, isSwitchNode } from './track.js';
+import { SIMPLE_TYPES, isSwitchNode, STANDARD, GEOMETRY_VERSION, isStandardParams } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER } from './physics.js';
 import { FIGURE_STYLES } from './geometry.js';
 
@@ -21,6 +21,7 @@ export function serializeScene(state, meta = {}) {
     return {
         format: SCENE_FORMAT,
         version: SCENE_VERSION,
+        geometry: GEOMETRY_VERSION,
         name: meta.name ?? state.name ?? 'Untitled track',
         description: meta.description ?? state.description ?? '',
         sequence: cloneNodes(state.sequence),
@@ -28,9 +29,9 @@ export function serializeScene(state, meta = {}) {
         figureStyle: state.figureStyle ?? 'classic',
         figureOpacity: typeof state.figureOpacity === 'number' ? state.figureOpacity : 1,
         params: {
-            slopeDeg: state.slopeDeg,
-            innerWidth: state.innerWidth,
-            curveRadius: state.curveRadius
+            slopeDeg: +STANDARD.slopeDeg.toFixed(4),
+            innerWidth: STANDARD.innerWidth,
+            curveRadius: +STANDARD.curveRadius.toFixed(2)
         },
         surface: state.muKey,
         walker: { ...state.walker },
@@ -71,10 +72,6 @@ export function validateScene(obj) {
         problems.push(`unsupported version ${obj.version} (this app reads ≤ ${SCENE_VERSION})`);
     }
     validateNodes(obj.sequence ?? null, problems, 'sequence');
-    const p = obj.params ?? {};
-    if (typeof p.slopeDeg !== 'number') problems.push('params.slopeDeg missing');
-    if (typeof p.innerWidth !== 'number') problems.push('params.innerWidth missing');
-    if (typeof p.curveRadius !== 'number') problems.push('params.curveRadius missing');
     if (obj.surface && !FRICTION_PRESETS[obj.surface]) problems.push(`unknown surface "${obj.surface}"`);
     for (const [i, s] of (obj.scenery ?? []).entries()) {
         if (!SCENERY_KINDS.includes(s.kind)) problems.push(`scenery[${i}]: unknown kind "${s.kind}"`);
@@ -94,9 +91,14 @@ export function deserializeScene(obj) {
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
         figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'classic',
         figureOpacity: typeof obj.figureOpacity === 'number' ? Math.min(1, Math.max(0.3, obj.figureOpacity)) : 1,
-        slopeDeg: obj.params.slopeDeg,
-        innerWidth: obj.params.innerWidth,
-        curveRadius: obj.params.curveRadius,
+        // parameters are CONSTANT: every design lays out on the canonical
+        // geometry; legacy/custom params in the file are reported, not obeyed
+        slopeDeg: +STANDARD.slopeDeg.toFixed(4),
+        innerWidth: STANDARD.innerWidth,
+        curveRadius: +STANDARD.curveRadius.toFixed(2),
+        geometryOfFile: obj.geometry ?? null,
+        nonStandard: (obj.geometry != null && obj.geometry !== GEOMETRY_VERSION)
+            || (obj.params != null && !isStandardParams(obj.params)),
         muKey: obj.surface && FRICTION_PRESETS[obj.surface] ? obj.surface : 'washboard',
         walker: { ...DEFAULT_WALKER, ...(obj.walker ?? {}) },
         expect: obj.expect

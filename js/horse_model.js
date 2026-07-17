@@ -14,7 +14,7 @@
  * arched neck, big head (muzzle, nostrils, ears, forelock), blue chanfron,
  * brown bridle + reins, red scalloped caparison, chainmail pad, blue
  * saddle, saddlebag, swoosh tail, and Mike (armor, pauldrons, helmet,
- * red plume, yellow feather, face + fringe).
+ * back-mounted red plume holder, face + fringe).
  *
  * Coordinates: body frame, z forward / y up / x left-right, mm.
  */
@@ -186,77 +186,80 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     ell(body, tanM, 0, 29, -16, W2 * 0.74, 11, 9);          // rump roundness
 
     // Neck: three blended lobes climbing steeply off the withers
-    ell(body, tanM, 0, 31, 7, W2 * 0.41, 8, 8, true);
-    ell(body, tanM, 0, 38, 11, W2 * 0.38, 8, 7.5);
-    ell(body, tanM, 0, 44, 14.5, W2 * 0.35, 7, 6.5);
+    ell(body, tanM, 0, 31.5, 6.5, W2 * 0.44, 8, 8, true);
+    ell(body, tanM, 0, 39, 10.5, W2 * 0.4, 7.5, 7);
+    ell(body, tanM, 0, 45, 13.5, W2 * 0.36, 6.5, 6);
 
     // Head: big cranium with wide cheeks, muzzle carried forward-down
     const head = new THREE.Group();
     body.add(head);
-    ell(head, tanM, 0, 48, 17, W2 * 0.46, 7.5, 8, true);    // cranium + cheeks
-    ell(head, tanM, 0, 40, 22.4, W2 * 0.34, 5.8, 5.2);      // muzzle
-    ell(head, tanM, 0, 36.5, 19.5, W2 * 0.3, 4.2, 4.8);     // jaw/chin
-    ell(head, tanM, 3, 40.5, 26.6, 1.1, 1.5, 1.1);          // nostrils
-    ell(head, tanM, -3, 40.5, 26.6, 1.1, 1.5, 1.1);
-    for (const s of [1, -1]) {                               // ears
-        const ear = new THREE.Mesh(new THREE.ConeGeometry(2.8, 7, 10), tanM);
-        ear.position.set(s * 4.6, 55, 12);
-        ear.rotation.set(-0.22, 0, s * -0.3);
+    ell(head, tanM, 0, 47.5, 16, W2 * 0.44, 7, 7.8, true);  // cranium + cheeks
+    ell(head, tanM, 0, 38.6, 23.4, W2 * 0.32, 5.4, 4.8);    // muzzle, long and low
+    ell(head, tanM, 0, 35, 20.4, W2 * 0.27, 4, 4.6);        // jaw/chin
+    ell(head, tanM, 0, 38, 17, W2 * 0.26, 5, 5.5);          // throat fill
+    ell(head, tanM, 2.8, 38.4, 27.7, 1.1, 1.5, 1.1);        // nostrils
+    ell(head, tanM, -2.8, 38.4, 27.7, 1.1, 1.5, 1.1);
+    ell(head, mat(C.tanDark), 0, 34.9, 27, 2.6, 0.35, 0.9); // molded mouth slit
+    for (const s of [1, -1]) {                               // ears splayed beside the chanfron
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(2.8, 6.5, 10), tanM);
+        ear.position.set(s * 6.2, 53.5, 12);
+        ear.rotation.set(-0.25, 0, s * -0.45);
         ear.renderOrder = 2;
         head.add(ear);
     }
     const eyeM = mat(C.black);
-    ell(head, eyeM, 6.6, 47.5, 23, 1.8, 2.2, 0.9);          // big friendly dot eyes
-    ell(head, eyeM, -6.6, 47.5, 23, 1.8, 2.2, 0.9);
+    ell(head, eyeM, 4.2, 48, 23.6, 1.6, 2, 0.8);            // front-facing dot eyes
+    ell(head, eyeM, -4.2, 48, 23.6, 1.6, 2, 0.8);
 
     // Forelock swept across the brow, under the chanfron's front edge
     const maneM = mat(C.mane);
-    ell(head, maneM, 0, 52.3, 17.2, 6.6, 3, 4.4);
-    ell(head, maneM, 3.4, 50.8, 19, 3.6, 2.3, 2.8);
+    ell(head, maneM, 0, 51.5, 16.8, 6.2, 2.8, 4);
+    ell(head, maneM, 3.2, 50.2, 18.4, 3.2, 2.1, 2.6);
 
     // Blue chanfron plate on the crown, between the ears
     const chanfron = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(C.blue, { side: THREE.DoubleSide }));
-    chanfron.position.set(0, 51.3, 12);
-    chanfron.scale.set(W2 * 0.38, 7, 8);
-    chanfron.rotation.x = 0.35;
+    chanfron.position.set(0, 50.8, 13.8);
+    chanfron.scale.set(W2 * 0.34, 6, 7);
+    chanfron.rotation.x = 0.42;
     chanfron.renderOrder = 2;
     head.add(chanfron);
-    const crestFin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.4, 7), mat(C.blue));
-    crestFin.position.set(0, 57.4, 10.4);
-    crestFin.rotation.x = 0.35;
+    const crestFin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3, 6.5), mat(C.blue));
+    crestFin.position.set(0, 55.2, 12.4);
+    crestFin.rotation.x = 0.42;
     crestFin.renderOrder = 2;
     head.add(crestFin);
 
     // Bridle: noseband, cheek straps, reins back to the rider's hands
     const bridleM = mat(C.bridle);
-    const noseband = new THREE.Mesh(new THREE.TorusGeometry(6.6, 0.85, 8, 20), bridleM);
-    noseband.position.set(0, 40.5, 21.3);
-    noseband.scale.set(1.15, 1, 1);
-    noseband.rotation.x = Math.PI / 2 - 0.42;
+    // ring plane perpendicular to the muzzle axis (nose pitches down ~20°)
+    const noseband = new THREE.Mesh(new THREE.TorusGeometry(5.8, 0.8, 8, 20), bridleM);
+    noseband.position.set(0, 38.2, 23.6);
+    noseband.scale.set(1.25, 1, 1);
+    noseband.rotation.x = -0.35;
     noseband.renderOrder = 2;
     head.add(noseband);
     for (const s of [1, -1]) {
-        strap(head, bridleM, [s * 7, 41.5, 20.4], [s * 5.8, 51, 13.5], 0.8);
-        tube(body, bridleM, [
-            [s * 7.2, 40.5, 21], [s * 8, 42.5, 13], [s * 6.8, 43, 6.5], [s * 5.2, 42.8, 5]
+        strap(head, bridleM, [s * 6.6, 40.5, 22], [s * 5.4, 50.5, 14], 0.8);
+        tube(body, bridleM, [                                // reins from the bit, slack under the cheeks
+            [s * 6.4, 36.5, 19.5], [s * 7, 36.5, 13], [s * 6.6, 38.5, 8], [s * 7.3, 41.4, 5]
         ], 0.7);
     }
 
     // Red scalloped caparison collar hugging the neck base
     const capM = mat(C.red, { side: THREE.DoubleSide });
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(8, 13, 8, 22, 1, true), capM);
-    cap.position.set(0, 33.5, 8.5);
-    cap.scale.set(0.9, 1, 0.85);
-    cap.rotation.x = -0.4;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(9, 15, 9, 22, 1, true), capM);
+    cap.position.set(0, 34, 9.5);
+    cap.scale.set(1.1, 1, 0.9);
+    cap.rotation.x = -0.42;
     cap.renderOrder = 2;
     body.add(cap);
     for (let i = 0; i < 11; i++) {                           // scallop dots along the hem
         const a = (i / 11) * Math.PI * 2;
         // children of the collar inherit its tilt + squash, so they hug the hem
         const dot = new THREE.Mesh(sphereGeo, capM);
-        dot.position.set(12.6 * Math.sin(a), -4, 12.6 * Math.cos(a));
-        dot.scale.set(1.6 / 0.9, 1.7, 1.6 / 0.85);
+        dot.position.set(14.6 * Math.sin(a), -4.5, 14.6 * Math.cos(a));
+        dot.scale.set(1.6 / 1.1, 1.7, 1.6 / 0.9);
         dot.renderOrder = 2;
         cap.add(dot);
     }
@@ -271,12 +274,9 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     const cantle = ell(body, blueM, 0, 44.5, -13, W2 * 0.44, 5.5, 2.4, true);
     cantle.rotation.x = 0.3;
     ell(body, blueM, 0, 42.5, 0.5, W2 * 0.28, 2.8, 2.2);
-    const girthPts = [];                                     // ring around the barrel
-    for (let i = 0; i < 20; i++) {
-        const a = (i / 20) * Math.PI * 2;
-        girthPts.push([Math.sin(a) * W2 * 0.92, 28.5 + Math.cos(a) * 13, 1]);
+    for (const s of [1, -1]) {                               // girth straps on the flanks
+        strap(body, deepM, [s * W2 * 0.8, 33, -2], [s * W2 * 0.84, 22, -1.5], 1.3);
     }
-    tube(body, deepM, girthPts, 1.4, false, true);
     tube(body, deepM, [                                      // breast band around the chest
         [W2 * 0.8, 31, 0], [W2 * 0.66, 28, 12], [0, 26, 20.8], [-W2 * 0.66, 28, 12], [-W2 * 0.8, 31, 0]
     ], 1.4);
@@ -315,10 +315,10 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     ell(mike, chainmailMat, 0, 47.5, -1.2, 6, 6.5, 3);       // chainmail chest
     for (const s of [1, -1]) {                               // arms reaching the reins
         tube(mike, blueM, [
-            [s * 8.2, 52, -4.5], [s * 7.8, 46.5, 0.5], [s * 5.2, 42.8, 4.8]
-        ], 2.5, true);
-        ell(mike, chainmailMat, s * 8.4, 52.5, -4.5, 3.3, 3.3, 3.3); // pauldrons
-        ell(mike, blueM, s * 5, 42.5, 5.2, 2.7, 2.7, 2.7);   // gauntlet mitts
+            [s * 7.4, 51, -3.5], [s * 8.2, 46, 0], [s * 7.5, 41.8, 4.2]
+        ], 2.6, true);
+        ell(mike, chainmailMat, s * 7.4, 50.5, -3.8, 3.2, 3.2, 3.2); // pauldrons
+        ell(mike, blueM, s * 7.4, 41.5, 4.6, 2.7, 2.7, 2.7); // mitts resting on the neck
     }
     // Head: face, fringe, dot eyes, smile
     const skinM = mat(C.skin);
@@ -335,7 +335,7 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     ell(mike, maneM, -5.5, 58, -0.2, 1.4, 3, 2.2);
 
     // Helmet: dome shell with a real face opening, cheek guards, red plume
-    const helmGeo = new THREE.SphereGeometry(9.6, 30, 18, Math.PI * 0.18, Math.PI * 1.64, 0, Math.PI * 0.8);
+    const helmGeo = new THREE.SphereGeometry(9.6, 30, 18, Math.PI * 0.3, Math.PI * 1.4, 0, Math.PI * 0.8);
     helmGeo.rotateY(Math.PI / 2);                            // face the opening forward
     const helm = new THREE.Mesh(helmGeo, mat(C.blue, { side: THREE.DoubleSide }));
     helm.position.set(0, 60, -4.5);
@@ -346,38 +346,23 @@ export function buildKnightHorseModel({ halfWidth = 22, opacity = 1 } = {}) {
     mike.add(helm);
     ell(mike, blueM, 6.6, 55.6, 1, 2, 3.6, 2.6);             // cheek guards
     ell(mike, blueM, -6.6, 55.6, 1, 2, 3.6, 2.6);
-    const plumeShape = new THREE.Shape();
-    for (let i = 0; i <= 10; i++) {                          // outer arc, swept back
-        const t = -Math.PI * 0.45 + (i / 10) * Math.PI * 0.87;
-        const r = 13 + 2.5 * Math.max(0, -t);
-        const p = [-r * Math.sin(t), r * Math.cos(t)];
-        i ? plumeShape.lineTo(...p) : plumeShape.moveTo(...p);
-    }
-    for (let i = 10; i >= 0; i--) {                          // inner arc hugging the dome
-        const t = -Math.PI * 0.45 + (i / 10) * Math.PI * 0.87;
-        plumeShape.lineTo(-9 * Math.sin(t), 9 * Math.cos(t));
-    }
-    const plumeGeo = new THREE.ExtrudeGeometry(plumeShape, {
-        depth: 2.2, bevelEnabled: true, bevelThickness: 0.4, bevelSize: 0.4, bevelOffset: -0.4, bevelSegments: 1
-    });
-    plumeGeo.rotateY(Math.PI / 2);
-    const plume = new THREE.Mesh(plumeGeo, mat(C.plume));
-    plume.position.set(-1.1, 60, -4.5);
-    plume.rotation.x = -0.12;
-    plume.castShadow = true;
-    plume.renderOrder = 2;
-    mike.add(plume);
-
-    // Curled yellow feather tucked at Mike's back (toy detail)
-    const featherShape = new THREE.Shape();
-    [[0, 0], [1.8, 2.2], [2.3, 5.5], [1.4, 8.6], [0, 10], [-1.1, 7.6], [-0.6, 4], [-0.8, 1]]
-        .forEach(([x, y], i) => (i ? featherShape.lineTo(x, y) : featherShape.moveTo(x, y)));
-    const featherGeo = new THREE.ExtrudeGeometry(featherShape, { depth: 1.2, bevelEnabled: false });
-    const feather = new THREE.Mesh(featherGeo, mat(C.yellow, { side: THREE.DoubleSide }));
-    feather.position.set(3, 50.5, -11.5);
-    feather.rotation.set(0.45, 0.35, -0.15);
-    feather.renderOrder = 2;
-    mike.add(feather);
+    // Red trumpet-style plume holder mounted at the helmet's back (this toy
+    // variant carries its plume behind the dome, not as a comb along the top)
+    const plumeM = mat(C.plume);
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 20, 12), plumeM);
+    shaft.position.set(0, 62, -11.8);
+    shaft.rotation.x = 0.12;                                 // leans back with the dome
+    shaft.castShadow = true;
+    shaft.renderOrder = 2;
+    mike.add(shaft);
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(3.1, 1.5, 4.5, 14), plumeM);
+    cup.position.set(0, 72.5, -13);
+    cup.rotation.x = 0.12;
+    cup.castShadow = true;
+    cup.renderOrder = 2;
+    mike.add(cup);
+    ell(mike, plumeM, 0, 75.8, -13.4, 2, 3, 2, true);        // plume tuft
+    ell(mike, plumeM, 0, 52, -10.2, 2.4, 2.2, 1.8);          // socket collar at Mike's back
 
     // -----------------------------------------------------------------------
     // PENDULUM group (rear leg skirt) — local origin at the axle; app.js

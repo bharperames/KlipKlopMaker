@@ -35,6 +35,13 @@
  * Deviating from these values forks your part library — the UI treats custom
  * parameters as an explicit, warned, non-interoperable mode.
  */
+/**
+ * Geometry semver: stamped into scene files and export jobs. Bump MAJOR when
+ * printed parts stop mating (joint/socket/grid changes), MINOR for additive
+ * compatible geometry, PATCH for cosmetic-only changes.
+ */
+export const GEOMETRY_VERSION = '1.0.0';
+
 export const STANDARD = {
     gridMm: 15,
     tileDropMm: 30,

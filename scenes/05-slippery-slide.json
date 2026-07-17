@@ -1,19 +1,19 @@
 {
   "format": "klipklop-scene",
   "version": 1,
-  "name": "Slippery Slide (failure demo)",
-  "description": "16° on a smooth PLA floor: tan(16°) exceeds the grip budget, so the hooves never catch — the figure skis the whole track like a toboggan and brakes to a stop in the corral. Demonstrates the SLIDE regime and why the washboard floor exists.",
+  "name": "Dusty Slide (failure demo)",
+  "description": "Canonical geometry, but the floor has worn smooth and dusty (μs≈0.22): tan(11.22°) exceeds the grip budget, the hooves never catch, and the figure skis the track like a toboggan before braking in the corral. The SLIDE regime — and why the washboard floor matters.",
   "sequence": [
     "straight",
     "curveL",
     "straight"
   ],
   "params": {
-    "slopeDeg": 16,
+    "slopeDeg": 11.2167,
     "innerWidth": 48,
-    "curveRadius": 150
+    "curveRadius": 143.64
   },
-  "surface": "smooth",
+  "surface": "dusty",
   "walker": {
     "alphaDeg": 18,
     "legLenMm": 26,
@@ -22,11 +22,10 @@
   },
   "expect": {
     "outcome": "arrived",
-    "maxTimeS": 20,
+    "maxTimeS": 25,
     "maxWalkedFraction": 0.05,
-    "minMaxV": 300,
-    "layoutErrors": [
-      "slope-out-of-range"
-    ]
-  }
+    "minMaxV": 250,
+    "layoutErrors": []
+  },
+  "geometry": "1.0.0"
 }

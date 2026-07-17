@@ -14,7 +14,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import * as fflate from 'fflate';
 
 import {
-    SPEC, STANDARD, isStandardParams, decomposeSupport,
+    SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions
 } from './track.js';
@@ -23,7 +23,7 @@ import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
 import { createHistory } from './history.js';
-import { solveClosureForLayout, describeGap } from './connect.js';
+import { createClosureSolver, chainEnds, describeGap } from './connect.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
@@ -132,6 +132,14 @@ function saveState() {
 }
 function applyScene(scene) {
     const s = deserializeScene(scene);
+    if (s.nonStandard) {
+        showDialog({
+            title: '⚠️ Non-standard geometry in this file',
+            html: `This design was authored with <b>${s.geometryOfFile ? 'geometry v' + s.geometryOfFile : 'pre-standard custom parameters'}</b>. ` +
+                `It has been re-laid on the canonical geometry <b>v${GEOMETRY_VERSION}</b> — the layout may shift slightly, ` +
+                `and parts printed from the old file will <b>not</b> mate with canonical prints.`
+        });
+    }
     state.sequence = s.sequence;
     state.scenery = s.scenery;
     state.figureStyle = s.figureStyle ?? 'classic';
@@ -549,24 +557,50 @@ for (const btn of document.querySelectorAll('[data-spiral]')) {
 }
 $('btn-undo').addEventListener('click', doUndo);
 $('btn-redo').addEventListener('click', doRedo);
-$('btn-clear').addEventListener('click', () => {
-    if (designDirty && state.sequence.length &&
-        !confirm('⚠️ CLEAR THE WHOLE DESIGN?\n\nYou have unsaved changes — they will be wiped from the canvas.\n(Undo can still bring it back afterwards, and Save design exports it first.)')) {
-        return;
+$('btn-clear').addEventListener('click', async () => {
+    if (designDirty && state.sequence.length) {
+        const ok = await showDialog({
+            title: '🗑 Clear the whole design?',
+            html: 'You have <b>unsaved changes</b> — the canvas will be wiped.<br>Undo can bring it back afterwards, and <b>Save design</b> exports it first.',
+            buttons: [
+                { label: 'Cancel', value: false },
+                { label: 'Clear design', value: true, danger: true }
+            ]
+        });
+        if (!ok) return;
     }
     recordEdit();
     state.sequence = []; state.scenery = [];
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
     rebuild();
 });
-$('btn-connect').addEventListener('click', () => {
+$('btn-connect').addEventListener('click', async () => {
     if (state.layout.isCircuit) { toast('🔁 Already a closed circuit.'); return; }
-    const sol = solveClosureForLayout(state.layout);
+    const ends = chainEnds(state.layout);
+    if (!ends) { toast('🧲 Nothing to connect — root chains with switches cannot auto-close.'); return; }
+    $('btn-connect').disabled = true;
+    const solver = createClosureSolver(ends.tail, ends.head, state.layout.params ?? {});
+    let r;
+    // chunked search: yield to the event loop between batches so the page
+    // never freezes, with live progress in the toast
+    for (;;) {
+        r = solver.step(4000);
+        if (r.done) break;
+        toast(`🧲 Searching standard tiles… ${(r.expanded / 1000).toFixed(0)}k layouts considered`);
+        await new Promise(res => setTimeout(res));
+    }
+    $('btn-connect').disabled = false;
+    const sol = r.result;
     if (!sol) {
         const gap = describeGap(state.layout);
-        toast(gap
-            ? `🧲 No closing path found for this gap (${gap.distMm.toFixed(0)} mm away, ${gap.turnQuarters * 90}° turn, ${gap.deckMm >= 0 ? gap.deckMm.toFixed(0) + ' mm above' : Math.abs(gap.deckMm).toFixed(0) + ' mm below'} the start) within 26 tiles.`
-            : '🧲 Nothing to connect — root chains with switches cannot auto-close.');
+        await showDialog({
+            title: '🧲 No closing path found',
+            html: gap
+                ? `The gap measures <b>${gap.distMm.toFixed(0)} mm</b> with a <b>${gap.turnQuarters * 90}°</b> heading difference, ` +
+                  `ending <b>${Math.abs(gap.deckMm).toFixed(0)} mm ${gap.deckMm >= 0 ? 'above' : 'below'}</b> the start. ` +
+                  `No combination of up to 26 canonical tiles lands on a legal seam — try removing a piece near the tail and reconnecting.`
+                : 'This chain has no open ends to connect.'
+        });
         return;
     }
     recordEdit();
@@ -574,8 +608,8 @@ $('btn-connect').addEventListener('click', () => {
     state.selected = -1;
     rebuild();
     fitView();
-    const parts = Object.entries(sol.summary).map(([k, v]) => `${v}× ${k}`).join(', ');
-    toast(`🧲 Ends connected with ${sol.moves.length} standard tiles (${parts}) — the design is now a circuit`);
+    const partsTxt = Object.entries(sol.summary).map(([k, v]) => `${v}× ${k}`).join(', ');
+    toast(`🧲 Ends connected with ${sol.moves.length} standard tiles (${partsTxt}) — the design is now a circuit`);
 });
 
 /** RCT ghost preview: hypothetical next piece rendered translucent. */
@@ -655,7 +689,7 @@ const scenePicker = $('scene-picker');
     opt.value = ''; opt.textContent = '📚 Example scenes…';
     scenePicker.appendChild(opt);
     for (const n of ['01-first-ramp', '02-demo-tower', '03-grand-helix', '04-s-curve-meadow',
-        '05-slippery-slide', '06-too-shallow-stall', '07-cliffhanger-tumble', '08-tight-radius-jam',
+        '05-slippery-slide', '06-too-shallow-stall', '07-cliffhanger-tumble',
         '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '13-grand-circuit']) {
         const o = document.createElement('option');
         o.value = n; o.textContent = n.replace(/^\d+-/, '').replace(/-/g, ' ');
@@ -693,30 +727,10 @@ function bindSlider(id, outId, key, fmt, isWalker = false) {
     });
     el.addEventListener('change', () => history.endGesture());
 }
-bindSlider('in-slope', 'out-slope', 'slopeDeg', v => `${(+v).toFixed(1)}°`);
-bindSlider('in-width', 'out-width', 'innerWidth', v => `${v} mm`);
-bindSlider('in-radius', 'out-radius', 'curveRadius', v => `${(+v).toFixed(0)} mm`);
-
-const customToggle = $('in-custom');
+// Parameters are CONSTANT (canonical geometry, semver-stamped) — no sliders.
 function refreshParamsMode() {
-    const std = usingStandard();
-    $('params-mode').textContent = std ? 'STANDARD 🔒' : 'CUSTOM ⚠️';
-    $('custom-sliders').style.display = customToggle.checked ? '' : 'none';
+    $('params-mode').textContent = `STANDARD v${GEOMETRY_VERSION} 🔒`;
 }
-customToggle.addEventListener('change', () => {
-    if (customToggle.checked) {
-        toast('🔓 Custom parameters unlocked — parts printed here will NOT fit standard prints or standard supports');
-    } else {
-        recordEdit();
-        state.slopeDeg = +STANDARD.slopeDeg.toFixed(4);
-        state.curveRadius = +STANDARD.curveRadius.toFixed(2);
-        state.innerWidth = STANDARD.innerWidth;
-        syncControls();
-        rebuild();
-        toast('🔒 Back on the Klip Klop Standard — parts interoperate again');
-    }
-    refreshParamsMode();
-});
 bindSlider('in-eff', 'out-eff', 'efficiency', v => v.toFixed(2), true);
 bindSlider('in-alpha', 'out-alpha', 'alphaDeg', v => `${v}°`, true);
 bindSlider('in-leg', 'out-leg', 'legLenMm', v => `${v} mm`, true);
@@ -785,7 +799,7 @@ function printJobTotalG(weights) {
     }
     const sceneryG = { tower: 165, palm: 95, patio: 130 }; // per-kind printed grams
     for (const s of state.scenery) total += sceneryG[s.kind] ?? 0;
-    total += printedWeightG(figureVolumeEstimate(state.innerWidth - 4, state.figureStyle), 'figure') + 12; // figure + pendulum/keys/plugs
+    total += 2; // connector keys
     return total;
 }
 
@@ -1627,6 +1641,28 @@ window.__frameHorse = (theta = Math.PI / 4, phi = 1.25, dist = 160) => {
     return true;
 };
 
+/** Styled modal dialog replacing native alert/confirm. Resolves a button value. */
+function showDialog({ title, html, buttons = [{ label: 'OK', value: true, primary: true }] }) {
+    return new Promise((resolve) => {
+        $('dialog-title').textContent = title;
+        $('dialog-body').innerHTML = html;
+        const bar = $('dialog-buttons');
+        bar.innerHTML = '';
+        for (const b of buttons) {
+            const el = document.createElement('button');
+            el.textContent = b.label;
+            if (b.primary) el.classList.add('primary');
+            if (b.danger) el.classList.add('danger');
+            el.addEventListener('click', () => {
+                $('dialog-overlay').style.display = 'none';
+                resolve(b.value);
+            });
+            bar.appendChild(el);
+        }
+        $('dialog-overlay').style.display = '';
+    });
+}
+
 let toastTimer = null;
 function toast(msg) {
     const t = $('toast');
@@ -1720,11 +1756,8 @@ function assembleParts() {
         }
     }
 
-    const figOpts = { style: state.figureStyle };
-    parts.push({ name: `figure_body_${state.figureStyle}_print_on_side`, note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth, figOpts).body) });
-    parts.push({ name: 'figure_pendulum_print_on_side', note: note.figure, build: () => rotForSide(buildFigureGeometries(state.innerWidth, figOpts).pendulum) });
-    parts.push({ name: 'figure_plugs', note: 'Choke-hazard covers — glue every one at assembly.', build: () => buildFigureGeometries(state.innerWidth, figOpts).plugSet });
-
+    // figures are stock Klip Klop toys, not printed parts — the print job is
+    // track construction only (the Figure lab in Physics is for the curious)
     return { parts, joints, switchCount: switchPairs.size };
 }
 
@@ -1773,16 +1806,22 @@ function initGallery() {
     gallery.scene.add(grid);
 
     $('parts-shading').addEventListener('change', () => { gallery.style = $('parts-shading').value; applyGalleryStyle(); });
+    $('parts-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('parts-rotate').checked; });
     $('parts-wire').addEventListener('change', () => { gallery.showWire = $('parts-wire').checked; applyGalleryStyle(); });
     $('parts-dims').addEventListener('change', () => { gallery.showDims = $('parts-dims').checked; applyGalleryStyle(); });
 }
 
-/** Engineering-style dimension lines (L/W/H in mm) around the part's bbox. */
+/**
+ * Engineering-style dimensions: witness (extension) lines run FROM the part's
+ * bounding corners out to the dimension line, so callouts visually attach to
+ * the part instead of floating in space. Small fixed offset regardless of size.
+ */
 function makeDimGroup(box) {
     const g = new THREE.Group();
     const mat = new THREE.LineBasicMaterial({ color: 0x9ec5ff });
     const size = box.getSize(new THREE.Vector3());
-    const off = Math.max(14, size.length() * 0.05);
+    const off = 7;               // dimension line sits this far off the part
+    const ext = off + 3;         // witness lines overshoot it slightly
     const mkLine = (a, b) => {
         const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
         g.add(new THREE.Line(geo, mat));
@@ -1797,27 +1836,30 @@ function makeDimGroup(box) {
         ctx.fillText(text, 128, 46);
         const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
         sp.position.copy(pos);
-        const s = Math.max(30, size.length() * 0.14);
+        const s = Math.min(46, Math.max(16, size.length() * 0.09));
         sp.scale.set(s, s / 4, 1);
         g.add(sp);
     };
     const { min, max } = box;
-    const tick = off * 0.25;
-    // X (length) along the front-bottom edge
-    mkLine(new THREE.Vector3(min.x, min.y, max.z + off), new THREE.Vector3(max.x, min.y, max.z + off));
-    mkLine(new THREE.Vector3(min.x, min.y, max.z + off - tick), new THREE.Vector3(min.x, min.y, max.z + off + tick));
-    mkLine(new THREE.Vector3(max.x, min.y, max.z + off - tick), new THREE.Vector3(max.x, min.y, max.z + off + tick));
-    mkLabel(`${size.x.toFixed(1)} mm`, new THREE.Vector3((min.x + max.x) / 2, min.y + off * 0.4, max.z + off * 1.6));
-    // Z (depth) along the right-bottom edge
-    mkLine(new THREE.Vector3(max.x + off, min.y, min.z), new THREE.Vector3(max.x + off, min.y, max.z));
-    mkLine(new THREE.Vector3(max.x + off - tick, min.y, min.z), new THREE.Vector3(max.x + off + tick, min.y, min.z));
-    mkLine(new THREE.Vector3(max.x + off - tick, min.y, max.z), new THREE.Vector3(max.x + off + tick, min.y, max.z));
-    mkLabel(`${size.z.toFixed(1)} mm`, new THREE.Vector3(max.x + off * 1.6, min.y + off * 0.4, (min.z + max.z) / 2));
-    // Y (height) up the front-right corner
-    mkLine(new THREE.Vector3(max.x + off, min.y, max.z + off), new THREE.Vector3(max.x + off, max.y, max.z + off));
-    mkLine(new THREE.Vector3(max.x + off - tick, min.y, max.z + off), new THREE.Vector3(max.x + off + tick, min.y, max.z + off));
-    mkLine(new THREE.Vector3(max.x + off - tick, max.y, max.z + off), new THREE.Vector3(max.x + off + tick, max.y, max.z + off));
-    mkLabel(`${size.y.toFixed(1)} mm`, new THREE.Vector3(max.x + off * 1.4, (min.y + max.y) / 2 + off * 0.5, max.z + off * 1.4));
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+    // X (length): witness lines from the front-bottom corners, dim line between
+    mkLine(V(min.x, min.y, max.z), V(min.x, min.y, max.z + ext));
+    mkLine(V(max.x, min.y, max.z), V(max.x, min.y, max.z + ext));
+    mkLine(V(min.x, min.y, max.z + off), V(max.x, min.y, max.z + off));
+    mkLabel(`${size.x.toFixed(1)} mm`, V((min.x + max.x) / 2, min.y + 3, max.z + off + 5));
+
+    // Z (depth): witness from the right-bottom corners
+    mkLine(V(max.x, min.y, min.z), V(max.x + ext, min.y, min.z));
+    mkLine(V(max.x, min.y, max.z), V(max.x + ext, min.y, max.z));
+    mkLine(V(max.x + off, min.y, min.z), V(max.x + off, min.y, max.z));
+    mkLabel(`${size.z.toFixed(1)} mm`, V(max.x + off + 5, min.y + 3, (min.z + max.z) / 2));
+
+    // Y (height): witness from the front-right edge, vertical dim beside it
+    mkLine(V(max.x, min.y, max.z), V(max.x + ext, min.y, max.z + ext));
+    mkLine(V(max.x, max.y, max.z), V(max.x + ext, max.y, max.z + ext));
+    mkLine(V(max.x + off, min.y, max.z + off), V(max.x + off, max.y, max.z + off));
+    mkLabel(`${size.y.toFixed(1)} mm`, V(max.x + off + 4, (min.y + max.y) / 2, max.z + off + 4));
     return g;
 }
 
@@ -1835,7 +1877,7 @@ function applyGalleryStyle() {
     if (gallery.showWire) {
         gallery.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(gallery.geo),
-            new THREE.LineBasicMaterial({ color: 0x120f0a, transparent: true, opacity: 0.32 })
+            new THREE.LineBasicMaterial({ color: 0x2bff6a, transparent: true, opacity: 0.55 })
         );
         gallery.scene.add(gallery.wire);
     }
@@ -2056,7 +2098,7 @@ async function doExport(format) {
         const blob = new Blob([zipped], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_track_${state.slopeDeg}deg_${parts.length}parts_${format}.zip`;
+        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${parts.length}parts_${format}.zip`;
         a.click();
         toast(`⬇ Exported ${parts.length} watertight parts (${format.toUpperCase()})`);
     } catch (err) {
@@ -2082,6 +2124,7 @@ function exportReadme(joints, switchCount) {
         : '  (none placed)';
     return `KLIP KLOP MAKER — print & assembly notes
 =========================================
+CANONICAL GEOMETRY v${GEOMETRY_VERSION} — parts from any same-major export mate.
 Design: "${state.name}" — slope ${state.slopeDeg}°, channel ${state.innerWidth} mm, curves R${state.curveRadius} mm.
 All meshes are watertight (Manifold CSG kernel) and pre-oriented for printing —
 no supports needed anywhere.
@@ -2149,9 +2192,6 @@ function animate(now) {
 }
 
 function syncControls() {
-    $('in-slope').value = state.slopeDeg; $('out-slope').textContent = `${state.slopeDeg}°`;
-    $('in-width').value = state.innerWidth; $('out-width').textContent = `${state.innerWidth} mm`;
-    $('in-radius').value = state.curveRadius; $('out-radius').textContent = `${state.curveRadius} mm`;
     $('in-eff').value = state.walker.efficiency; $('out-eff').textContent = state.walker.efficiency.toFixed(2);
     $('in-alpha').value = state.walker.alphaDeg; $('out-alpha').textContent = `${state.walker.alphaDeg}°`;
     $('in-leg').value = state.walker.legLenMm; $('out-leg').textContent = `${state.walker.legLenMm} mm`;
@@ -2168,7 +2208,6 @@ function syncControls() {
     await initCSG(); // switch display meshes and scenery need booleans
     await loadState();
     syncControls();
-    customToggle.checked = !usingStandard();
     rebuild();
     resize();
     fitView();

@@ -33,6 +33,7 @@ const SLIP_SAFETY = 0.85;
  * friction — modeled as the top preset.
  */
 export const FRICTION_PRESETS = {
+    dusty:         { label: 'Dusty/worn smooth floor',             mu: 0.22 },
     smooth:        { label: 'Smooth floor (no ridges)',            mu: 0.32 },
     perpendicular: { label: 'Perpendicular layer lines',           mu: 0.45 },
     washboard:     { label: 'Washboard ridges (generated)',        mu: 0.60 }

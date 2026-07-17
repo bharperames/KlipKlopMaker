@@ -241,6 +241,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     font-size: 11.8px; line-height: 1.45; color: #d9c9a6;
 }
 #parts-standard b { color: #ffd98a; }
+#parts-standard ul { margin: 6px 0 6px 18px; }
 #parts-list {
     flex: 1; min-height: 0;
     list-style: none; overflow-y: auto;
@@ -282,6 +283,25 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 #sim-hud .hudmode.slide { background: var(--chip-crit-bg); color: #ff9d9d; }
 #sim-hud .hudmode.lift { background: var(--chip-warn-bg); color: #ffd76b; }
 #sim-hud .hudnote { color: var(--ink-3); font-size: 11px; }
+#dialog-overlay {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(20, 14, 8, .6);
+    display: grid; place-items: center;
+}
+#dialog-panel {
+    width: min(460px, 92vw);
+    background: var(--panel); color: var(--ink);
+    border: 1px solid #8a6842; border-top: 4px solid var(--accent2);
+    border-radius: 14px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, .5);
+    padding: 16px 18px;
+}
+#dialog-title { font-weight: 800; font-size: 15px; margin-bottom: 8px; }
+#dialog-body { font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+#dialog-body b { color: var(--ink); }
+#dialog-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+#dialog-buttons button { min-width: 90px; }
+#dialog-buttons button.danger { background: var(--critical); border-color: transparent; color: #fff; font-weight: 700; }
 #doc-overlay, #refs-overlay {
     position: fixed; inset: 0; z-index: 50;
     background: rgba(20, 16, 10, .55);
@@ -331,15 +351,15 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     </div>
     <div id="parts-side">
         <div id="parts-standard">
-            <b>🔒 The interoperability standard</b><br>
-            Every part is one of four exact grid transforms — straight: +150 mm,
-            deck −30 · lift: +150 mm, deck +30 · curves: ±90° at R 143.6, deck
-            −45 — so every deck boundary lands on a 15 mm height grid, supports
-            stack from five reusable riser designs, and closing any gap becomes
-            a clean search: <b>🧲 Connect ends</b> finds the cheapest patch of
-            standard tiles in milliseconds, auto-balancing elevation by raising
-            with lifts and spending with ramps and curves. Parts printed today
-            mate with parts printed next year.
+            <b>🔒 Canonical geometry v1.0.0</b>
+            <ul>
+                <li><b>Straight</b> +150 mm, drops 30</li>
+                <li><b>Lift</b> +150 mm, climbs 30</li>
+                <li><b>Curve</b> ±90° at R 143.6, drops 45</li>
+            </ul>
+            Every height lands on a <b>15 mm grid</b>, so supports stack from
+            five reusable risers — and <b>🧲 Connect ends</b> can always search
+            its way home. Parts printed today mate with parts printed next year.
         </div>
         <ul id="parts-list"></ul>
     </div>
@@ -353,6 +373,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             </select>
             <label><input type="checkbox" id="parts-wire"> tessellation</label>
             <label><input type="checkbox" id="parts-dims" checked> dimensions</label>
+            <label><input type="checkbox" id="parts-rotate" checked> auto-rotate</label>
         </div>
         <div id="parts-caption"></div>
     </div>
@@ -399,31 +420,14 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     </div>
 
     <details class="acc">
-        <summary>Track parameters · <span id="params-mode">STANDARD 🔒</span></summary>
-        <div class="card" id="standard-card">
-            <b>The Klip Klop Standard</b> — locked so every printed part
-            interoperates: slope <b>11.22°</b> (each tile drops exactly 30 mm
-            incl. the waterfall seam), curves <b>R 143.6 mm</b> (45 mm drop),
-            channel <b>48 mm</b>. All support heights land on a 15 mm grid of
-            stackable risers.
-            <label style="display:flex;gap:6px;margin-top:8px;cursor:pointer">
-                <input type="checkbox" id="in-custom"> 🔓 Unlock custom parameters
-                <span style="color:var(--warning)">(parts won't fit standard prints)</span>
-            </label>
-        </div>
-        <div id="custom-sliders" style="display:none">
-        <div class="slider-row">
-            <label>Slope (green zone 10–12°) <output id="out-slope">11°</output></label>
-            <input type="range" id="in-slope" min="8" max="14" step="0.5" value="11">
-        </div>
-        <div class="slider-row">
-            <label>Channel inner width <output id="out-width">48 mm</output></label>
-            <input type="range" id="in-width" min="46" max="50" step="1" value="48">
-        </div>
-        <div class="slider-row">
-            <label>Curve radius (min 120) <output id="out-radius">150 mm</output></label>
-            <input type="range" id="in-radius" min="120" max="220" step="5" value="150">
-        </div>
+        <summary>Track geometry · <span id="params-mode">STANDARD v1.0.0 🔒</span></summary>
+        <div class="card">
+            <b>Canonical part geometry</b> (semver <b id="geo-version">1.0.0</b>) —
+            constant by design so every part ever printed interoperates:
+            slope <b>11.22°</b> (30 mm drop per tile incl. the waterfall seam),
+            curves <b>R 143.6 mm</b> (45 mm), channel <b>48 mm</b>, supports on a
+            15 mm riser grid. Designs from files with other geometry are re-laid
+            on this standard and flagged.
         </div>
     </details>
 
@@ -446,7 +450,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <select id="in-mu"></select>
         </div>
 
-        <details class="acc">
+        <details class="acc" open>
             <summary>Figure lab — for the curious (figures are stock toys, not printed)</summary>
             <div class="card" style="margin-top:8px">
                 The simulated figure models a real Klip Klop toy as a rimless-wheel
@@ -584,6 +588,14 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         </div>
     </div>
         </div>
+    </div>
+</div>
+
+<div id="dialog-overlay" style="display:none">
+    <div id="dialog-panel">
+        <div id="dialog-title"></div>
+        <div id="dialog-body"></div>
+        <div id="dialog-buttons"></div>
     </div>
 </div>
 

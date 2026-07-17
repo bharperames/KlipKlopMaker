@@ -31,5 +31,6 @@
     "minClacks": 30,
     "minWalkedFraction": 0.9,
     "layoutErrors": []
-  }
+  },
+  "geometry": "1.0.0"
 }

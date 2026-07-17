@@ -22,8 +22,9 @@ building, gait physics simulation, and watertight STL/3MF export.
 
 - **Pure modules** (`track.js`, `physics.js`, `geometry.js`, `mesh_utils.js`,
   `export_3mf.js`) must stay free of DOM and Three.js imports — they are
-  Jest-tested directly. `pieces.js` (Three.js + manifold-3d WASM) and `app.js`
-  (DOM) are the only impure layers.
+  Jest-tested directly. `pieces.js` (Three.js + manifold-3d WASM),
+  `horse_model.js` (Three.js, display-only knight figure) and `app.js` (DOM)
+  are the only impure layers.
 - **CSG goes through manifold-3d**, never three-bvh-csg (it leaves
   T-junction open edges). `initCSG()` must be awaited before any
   `build*ExportGeometry` call. Manifold guarantees watertight booleans.

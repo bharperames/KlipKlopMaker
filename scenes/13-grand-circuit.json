@@ -46,5 +46,6 @@
     "maxTimeS": 160,
     "minClacks": 120,
     "layoutErrors": []
-  }
+  },
+  "geometry": "1.0.0"
 }

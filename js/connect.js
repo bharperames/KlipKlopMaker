@@ -58,7 +58,12 @@ const hIdx = (h) => ((Math.round(h / (Math.PI / 2)) % 4) + 4) % 4;
  * aligned, and a closure step-down anywhere in the legal waterfall window.
  * @returns {{ moves: string[], summary: object } | null}
  */
-export function solveClosure(tail, head, params = {}, opts = {}) {
+/**
+ * Incremental solver: call step(budget) repeatedly; between calls the caller
+ * can yield to the event loop and show progress (the search runs on the main
+ * thread — a blocking multi-second solve froze the browser).
+ */
+export function createClosureSolver(tail, head, params = {}, opts = {}) {
     const M = movesFromParams(params);
     const posTol = opts.posTol ?? 5;
     const maxPieces = opts.maxPieces ?? 26;
@@ -88,34 +93,51 @@ export function solveClosure(tail, head, params = {}, opts = {}) {
     const seen = new Map();
     let expanded = 0;
 
-    while (open.length && expanded < maxExpand) {
-        let bi = 0;
-        for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
-        const cur = open.splice(bi, 1)[0];
-        expanded++;
+    return {
+        get expanded() { return expanded; },
+        /** Runs up to `budget` expansions. Returns {done, result?, expanded}. */
+        step(budget = 4000) {
+            let n = 0;
+            while (open.length && expanded < maxExpand && n < budget) {
+                let bi = 0;
+                for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+                const cur = open.splice(bi, 1)[0];
+                expanded++; n++;
 
-        const st = cur.st;
-        const step = st.deck - head.deck;
-        if (Math.hypot(head.x - st.x, head.z - st.z) <= posTol
-            && hIdx(st.h) === goalH
-            && step >= stepMin && step <= stepMax
-            && cur.moves.length > 0) {
-            const counts = {};
-            for (const m of cur.moves) counts[m] = (counts[m] ?? 0) + 1;
-            return { moves: cur.moves, summary: counts };
-        }
-        if (cur.moves.length >= maxPieces) continue;
+                const st = cur.st;
+                const step = st.deck - head.deck;
+                if (Math.hypot(head.x - st.x, head.z - st.z) <= posTol
+                    && hIdx(st.h) === goalH
+                    && step >= stepMin && step <= stepMax
+                    && cur.moves.length > 0) {
+                    const counts = {};
+                    for (const m of cur.moves) counts[m] = (counts[m] ?? 0) + 1;
+                    return { done: true, result: { moves: cur.moves, summary: counts }, expanded };
+                }
+                if (cur.moves.length >= maxPieces) continue;
 
-        for (const type of ['straight', 'lift', 'curveL', 'curveR']) {
-            const nst = applyMove(st, type, M);
-            const g = cur.moves.length + 1;
-            const k = key(nst);
-            if (seen.has(k) && seen.get(k) <= g) continue;
-            seen.set(k, g);
-            open.push({ st: nst, moves: [...cur.moves, type], f: g + heuristic(nst) });
+                for (const type of ['straight', 'lift', 'curveL', 'curveR']) {
+                    const nst = applyMove(st, type, M);
+                    const g = cur.moves.length + 1;
+                    const k = key(nst);
+                    if (seen.has(k) && seen.get(k) <= g) continue;
+                    seen.set(k, g);
+                    open.push({ st: nst, moves: [...cur.moves, type], f: g + heuristic(nst) });
+                }
+            }
+            const exhausted = !open.length || expanded >= maxExpand;
+            return { done: exhausted, result: null, expanded };
         }
+    };
+}
+
+/** Synchronous convenience wrapper over the stepper (tests, scripts). */
+export function solveClosure(tail, head, params = {}, opts = {}) {
+    const solver = createClosureSolver(tail, head, params, opts);
+    for (;;) {
+        const r = solver.step(1e9);
+        if (r.done) return r.result;
     }
-    return null;
 }
 
 /** The root chain's tail/head poses of an open layout (null when unusable). */

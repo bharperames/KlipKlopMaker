@@ -1,0 +1,38 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "name": "First Ramp",
+  "description": "",
+  "sequence": [
+    "straight",
+    "straight",
+    "curveR",
+    "curveR",
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "lift",
+    "curveR",
+    "curveR",
+    "lift",
+    "lift"
+  ],
+  "scenery": [],
+  "figureStyle": "knight",
+  "figureOpacity": 0.5,
+  "params": {
+    "slopeDeg": 14,
+    "innerWidth": 48,
+    "curveRadius": 190
+  },
+  "surface": "washboard",
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  }
+}

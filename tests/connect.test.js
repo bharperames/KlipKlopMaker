@@ -47,3 +47,26 @@ describe('solveClosureForLayout', () => {
         expect(a.moves).toEqual(b.moves);
     });
 });
+
+describe('the standard grid makes closure guaranteed arithmetic', () => {
+    // the user's "easy autocomplete challenge": down, U-turn, lift back past
+    // the start, U-turn again — tail sits 3 tiles behind the head, 30 mm up
+    const CHALLENGE = ['straight', 'straight', 'curveR', 'curveR',
+        'lift', 'lift', 'lift', 'lift', 'lift', 'lift', 'lift',
+        'curveR', 'curveR', 'lift', 'lift'];
+
+    test('closes in exactly 3 tiles at standard parameters', () => {
+        const layout = layoutTrack(CHALLENGE);
+        const sol = solveClosureForLayout(layout);
+        expect(sol).not.toBeNull();
+        expect(sol.moves.length).toBe(3);
+        const closed = layoutTrack([...CHALLENGE, ...sol.moves]);
+        expect(closed.isCircuit).toBe(true);
+    });
+
+    test('the same shape at custom 14°/R190 has no legal closure (why the standard exists)', () => {
+        const layout = layoutTrack(CHALLENGE, { slopeDeg: 14, curveRadius: 190 });
+        const sol = solveClosureForLayout(layout);
+        expect(sol).toBeNull();
+    }, 30000);
+});
