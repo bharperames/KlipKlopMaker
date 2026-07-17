@@ -258,7 +258,7 @@ export function layoutTrack(sequence, params = {}) {
         } else if (kind === 'elevator') {
             const height = node && typeof node === 'object' ? (node.height ?? 90) : 90;
             plan = segmentPlan('straightish', cursor, { len: p.tileLen });
-            drop = -height;
+            drop = -(height + p.waterfall);
             slopeDeg = -radToDeg(Math.asin(Math.min(0.99, height / p.tileLen)));
             isLift = true;
         } else { // curveL / curveR / switchBranch
@@ -346,11 +346,22 @@ export function layoutTrack(sequence, params = {}) {
         let deck = 0;
         const tanL = tanLift;
         for (const node of sequence) {
-            const isLift = node === 'lift';
-            const plan = (node === 'straight' || node === 'lift')
-                ? segmentPlan('straightish', cur, { len: p.tileLen })
-                : segmentPlan('curve', cur, { radius: p.curveRadius, turnSign: node === 'curveL' ? 1 : -1 });
-            const drop = isLift ? -plan.planLen * tanL : plan.planLen * tanSlope;
+            const kind = typeof node === 'string' ? node : node.type;
+            let plan, drop;
+            if (kind === 'straight' || kind === 'lift' || kind === 'elevator') {
+                plan = segmentPlan('straightish', cur, { len: p.tileLen });
+                if (kind === 'elevator') {
+                    const height = typeof node === 'object' ? (node.height ?? 90) : 90;
+                    drop = -(height + p.waterfall);
+                } else if (kind === 'lift') {
+                    drop = -plan.planLen * tanL;
+                } else {
+                    drop = plan.planLen * tanSlope;
+                }
+            } else {
+                plan = segmentPlan('curve', cur, { radius: p.curveRadius, turnSign: kind === 'curveL' ? 1 : -1 });
+                drop = plan.planLen * tanSlope;
+            }
             deck = (deck - p.waterfall) - drop;
             cur = plan.exit;
         }

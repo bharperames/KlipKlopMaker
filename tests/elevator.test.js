@@ -14,13 +14,13 @@ describe('Elevator Track Piece', () => {
         const elStr = piecesStr[1];
         expect(elStr.type).toBe('elevator');
         expect(elStr.planLen).toBe(150);
-        expect(elStr.drop).toBe(-90); // climbs 90mm by default
+        expect(elStr.drop).toBe(-90.25); // climbs 90mm by default, plus waterfall adjustment
 
         // Object form with custom height
         const { pieces: piecesObj } = layoutTrack([{ type: 'elevator', height: 120 }]);
         const elObj = piecesObj[1];
         expect(elObj.type).toBe('elevator');
-        expect(elObj.drop).toBe(-120); // custom climbing height
+        expect(elObj.drop).toBe(-120.25); // custom climbing height, plus waterfall adjustment
     });
 
     test('deckYAt implements flat-climb-flat profile correctly', () => {

@@ -635,12 +635,19 @@ $('btn-connect').addEventListener('click', async () => {
     const sol = r.result;
     if (!sol) {
         const gap = describeGap(state.layout);
+        let hintHtml = '';
+        if (gap) {
+            hintHtml = `<br><br><span style="font-size:12.5px;color:var(--ink-2);display:block;line-height:1.4">` +
+                `💡 <b>Grid alignment tip:</b> Each straight ramp or powered lift drops/climbs 30 mm, and each curve drops 45 mm. ` +
+                `If your height is off, try swapping curves for straights (or vice-versa) to shift the height in 15 mm increments, ` +
+                `or click on your elevator to adjust its climbing height in the left panel.</span>`;
+        }
         await showDialog({
             title: '🧲 No closing path found',
             html: gap
                 ? `The gap measures <b>${gap.distMm.toFixed(0)} mm</b> with a <b>${gap.turnQuarters * 90}°</b> heading difference, ` +
                   `ending <b>${Math.abs(gap.deckMm).toFixed(0)} mm ${gap.deckMm >= 0 ? 'above' : 'below'}</b> the start. ` +
-                  `No combination of up to 26 canonical tiles lands on a legal seam — try removing a piece near the tail and reconnecting.`
+                  `No combination of up to 26 canonical tiles lands on a legal seam — try removing a piece near the tail and reconnecting.${hintHtml}`
                 : 'This chain has no open ends to connect.'
         });
         return;
