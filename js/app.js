@@ -229,8 +229,8 @@ const MAT = {
     curve: new THREE.MeshLambertMaterial({ color: 0xe0a52f }),
     lift: new THREE.MeshLambertMaterial({ color: 0xc95a3c }),
     switch: new THREE.MeshLambertMaterial({ color: 0xd8983b }),
-    start: new THREE.MeshLambertMaterial({ color: 0x74b06c }),
-    end: new THREE.MeshLambertMaterial({ color: 0xb9b3a4 }),
+    start: new THREE.MeshLambertMaterial({ color: 0x74b06c, transparent: true, opacity: 0.6 }),
+    end: new THREE.MeshLambertMaterial({ color: 0xb9b3a4, transparent: true, opacity: 0.6 }),
     pillar: new THREE.MeshLambertMaterial({ color: 0x7a5230 }),
     issue: new THREE.MeshLambertMaterial({ color: 0xd03b3b }),
     ghost: new THREE.MeshLambertMaterial({ color: 0x4a90d9, transparent: true, opacity: 0.45, depthWrite: false }),
@@ -801,7 +801,7 @@ function generateTrackSvg(pieces) {
     const vy = cy - boxSize / 2;
 
     return `<svg viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${boxSize.toFixed(1)} ${boxSize.toFixed(1)}" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="${pathD}" stroke="var(--track-gold)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="${pathD}" stroke="#ffd76b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="${pathD}" stroke="#ffffff" stroke-width="1.6" stroke-dasharray="3,3" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 }
@@ -825,8 +825,24 @@ if (sceneGrid && btnScenePicker && sceneGridDropdown) {
     const repositionDropdown = () => {
         if (sceneGridDropdown.style.display === 'block') {
             const rect = btnScenePicker.getBoundingClientRect();
-            sceneGridDropdown.style.top = `${rect.bottom + 4}px`;
-            sceneGridDropdown.style.left = `${rect.left}px`;
+            const spaceBelow = window.innerHeight - rect.bottom - 12;
+            const spaceAbove = rect.top - 12;
+            
+            if (spaceBelow >= 250 || spaceBelow >= spaceAbove) {
+                sceneGridDropdown.style.top = `${rect.bottom + 4}px`;
+                sceneGridDropdown.style.bottom = '';
+                sceneGridDropdown.style.maxHeight = `${Math.min(400, spaceBelow - 4)}px`;
+            } else {
+                sceneGridDropdown.style.top = '';
+                sceneGridDropdown.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+                sceneGridDropdown.style.maxHeight = `${Math.min(400, spaceAbove - 4)}px`;
+            }
+            
+            let left = rect.left;
+            if (left + 480 > window.innerWidth) {
+                left = Math.max(8, window.innerWidth - 488);
+            }
+            sceneGridDropdown.style.left = `${left}px`;
         }
     };
 
@@ -1040,7 +1056,7 @@ function refreshPieceList() {
         li.style.paddingLeft = `${6 + depth * 14}px`;
         const icon = {
             start: '🏁', end: '🎪', straight: '⬆', curveL: '⟲', curveR: '⟳',
-            lift: '⛓', switchMain: '⑂'
+            lift: '⛓', elevator: '🛗', powered: '⚡', switchMain: '⑂'
         }[piece.type] ?? '·';
         const label = piece.type === 'switchMain'
             ? `${piece.name} (gate→${piece.gateOpen ? 'main' : 'branch'})`

@@ -347,4 +347,24 @@ describe('the Klip Klop Standard', () => {
         expect(isStandardParams({ slopeDeg: 11 })).toBe(false);
         expect(isStandardParams({ curveRadius: 150 })).toBe(false);
     });
+
+    test('powered track is flat, has zero drop, and has isLift=true', () => {
+        const { pieces } = layoutTrack(['powered']);
+        const poweredPiece = pieces[1];
+        expect(poweredPiece.type).toBe('powered');
+        expect(poweredPiece.drop).toBe(0);
+        expect(poweredPiece.slopeDeg).toBe(0);
+        expect(poweredPiece.isLift).toBe(true);
+        expect(poweredPiece.exitDeck).toBe(poweredPiece.entryDeck);
+    });
+
+    test('generates loop closure warnings for close but unaligned ends', () => {
+        const { isCircuit, issues } = layoutTrack(['elevator', 'curveL', 'curveL', 'powered', 'curveL', 'curveL']);
+        expect(isCircuit).toBe(false);
+        const warning = issues.find(i => i.code === 'circuit-mismatch');
+        expect(warning).toBeDefined();
+        expect(warning.level).toBe('warn');
+        expect(warning.msg).toContain('height is too low by');
+    });
 });
+

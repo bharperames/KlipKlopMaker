@@ -1,0 +1,53 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "geometry": "1.0.0",
+  "name": "Elevator Ascent",
+  "description": "",
+  "sequence": [
+    "elevator",
+    "curveL",
+    "curveL",
+    "curveL",
+    "straight",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "straight",
+    "straight",
+    "elevator",
+    "elevator",
+    "elevator",
+    "elevator",
+    "elevator",
+    "elevator",
+    "curveR",
+    "straight",
+    "curveR",
+    "curveR",
+    "curveL",
+    "straight",
+    "straight",
+    "lift",
+    "lift",
+    "lift"
+  ],
+  "scenery": [],
+  "figureStyle": "knight",
+  "knightVariant": "trumpet",
+  "figureOpacity": 1,
+  "params": {
+    "slopeDeg": 11.2181,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
+  "surface": "washboard",
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  }
+}

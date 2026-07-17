@@ -122,7 +122,7 @@ export function ridgeOffset(s, pitch, height) {
 // Tree helpers (pure editing API used by the app)
 // ---------------------------------------------------------------------------
 
-export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift', 'elevator'];
+export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift', 'elevator', 'powered'];
 export const isSwitchNode = (n) => typeof n === 'object' && n !== null && (n.type === 'switchL' || n.type === 'switchR');
 
 /** Array a `containerPath` refers to: [] = root; [i,'main',...] descends switches. */
@@ -261,6 +261,9 @@ export function layoutTrack(sequence, params = {}) {
             drop = -(height + p.waterfall);
             slopeDeg = -radToDeg(Math.asin(Math.min(0.99, height / p.tileLen)));
             isLift = true;
+        } else if (kind === 'powered') {
+            plan = segmentPlan('straightish', cursor, { len: p.tileLen });
+            drop = 0; slopeDeg = 0; isLift = true;
         } else { // curveL / curveR / switchBranch
             const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
             plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
@@ -348,13 +351,15 @@ export function layoutTrack(sequence, params = {}) {
         for (const node of sequence) {
             const kind = typeof node === 'string' ? node : node.type;
             let plan, drop;
-            if (kind === 'straight' || kind === 'lift' || kind === 'elevator') {
+            if (kind === 'straight' || kind === 'lift' || kind === 'elevator' || kind === 'powered') {
                 plan = segmentPlan('straightish', cur, { len: p.tileLen });
                 if (kind === 'elevator') {
                     const height = typeof node === 'object' ? (node.height ?? 90) : 90;
                     drop = -(height + p.waterfall);
                 } else if (kind === 'lift') {
                     drop = -plan.planLen * tanL;
+                } else if (kind === 'powered') {
+                    drop = 0;
                 } else {
                     drop = plan.planLen * tanSlope;
                 }
@@ -369,6 +374,27 @@ export function layoutTrack(sequence, params = {}) {
         const stepDown = deck - (-p.waterfall); // tail exit vs head entry (0 − wf)
         isCircuit = Math.hypot(cur.x, cur.z) <= 5 && dh <= 0.04
             && stepDown >= p.waterfall - 0.05 && stepDown <= 3;
+
+        if (!isCircuit && Math.hypot(cur.x, cur.z) <= 160) {
+            let msg = 'Loop is close but cannot close: ';
+            const details = [];
+            const dhDeg = dh * 180 / Math.PI;
+            if (dh > 0.04) {
+                details.push(`heading mismatch of ${Math.round(dhDeg)}°`);
+            }
+            if (stepDown < p.waterfall - 0.05 || stepDown > 3) {
+                const diff = stepDown - p.waterfall;
+                if (diff < 0) {
+                    details.push(`height is too low by ${Math.abs(diff).toFixed(1)} mm`);
+                } else {
+                    details.push(`height is too high by ${diff.toFixed(1)} mm`);
+                }
+            }
+            if (details.length > 0) {
+                msg += details.join(' and ') + '.';
+                issues.push({ level: 'warn', code: 'circuit-mismatch', msg });
+            }
+        }
     }
 
     if (isCircuit) {

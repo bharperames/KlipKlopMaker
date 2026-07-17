@@ -123,7 +123,7 @@ h2.h2row { display: flex; align-items: center; gap: 6px; }
 h2.h2row .h2tools { margin-left: auto; display: flex; gap: 4px; }
 h2.h2row .h2tools button { padding: 2px 8px; font-size: 13px; line-height: 1.2; border-radius: 6px; }
 .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.btn-grid button {
+.btn-grid button, .file-btn-row button {
     display: flex; align-items: center; gap: 8px;
     text-align: left; font-size: 12.5px; font-weight: 600;
     background: linear-gradient(180deg, #77563a, #5d4128);
@@ -132,12 +132,20 @@ h2.h2row .h2tools button { padding: 2px 8px; font-size: 13px; line-height: 1.2; 
     box-shadow: 0 2px 0 #3a2814, 0 3px 6px rgba(0, 0, 0, .35);
     padding: 8px 10px;
 }
-.btn-grid button svg { flex: 0 0 auto; width: 22px; height: 22px; }
-.btn-grid button:hover { border-color: var(--track-gold); box-shadow: 0 2px 0 #3a2814, 0 4px 9px rgba(0, 0, 0, .45); transform: translateY(-1px); }
-.btn-grid button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 0 0 #3a2814, inset 0 2px 4px rgba(0, 0, 0, .35); }
-.btn-grid button:disabled { box-shadow: none; transform: none; }
-.btn-grid button.primary { background: linear-gradient(180deg, #3f82e8, #2b62b8); border-color: #6ba0ea; box-shadow: 0 2px 0 #1c3f76, 0 3px 6px rgba(0, 0, 0, .4); }
-.btn-grid button.danger { background: linear-gradient(180deg, #e55c5c, #c03939); border-color: #f77b7b; box-shadow: 0 2px 0 #6e1c1c, 0 3px 6px rgba(0, 0, 0, .4); color: #fff; }
+.file-btn-row button {
+    justify-content: center;
+    text-align: center;
+    flex: 1 1 0;
+    min-width: 0;
+}
+.file-btn-row { display: flex; gap: 7px; align-items: center; }
+.file-btn-row .spacer { width: 14px; flex: 0 0 auto; }
+.btn-grid button svg, .file-btn-row button svg { flex: 0 0 auto; width: 22px; height: 22px; }
+.btn-grid button:hover, .file-btn-row button:hover { border-color: var(--track-gold); box-shadow: 0 2px 0 #3a2814, 0 4px 9px rgba(0, 0, 0, .45); transform: translateY(-1px); }
+.btn-grid button:active:not(:disabled), .file-btn-row button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 0 0 #3a2814, inset 0 2px 4px rgba(0, 0, 0, .35); }
+.btn-grid button:disabled, .file-btn-row button:disabled { box-shadow: none; transform: none; }
+.btn-grid button.primary, .file-btn-row button.primary { background: linear-gradient(180deg, #3f82e8, #2b62b8); border-color: #6ba0ea; box-shadow: 0 2px 0 #1c3f76, 0 3px 6px rgba(0, 0, 0, .4); }
+.btn-grid button.danger, .file-btn-row button.danger { background: linear-gradient(180deg, #e55c5c, #c03939); border-color: #f77b7b; box-shadow: 0 2px 0 #6e1c1c, 0 3px 6px rgba(0, 0, 0, .4); color: #fff; }
 .btn-grid .wide { grid-column: span 2; }
 .fig-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
 .fig-choice-grid button {
@@ -197,7 +205,7 @@ h2.h2row .h2tools button { padding: 2px 8px; font-size: 13px; line-height: 1.2; 
     background: #412d1c;
     border: 2px solid #8a6842;
     border-radius: 10px;
-    padding: 8px;
+    padding: 0;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     width: 480px;
     max-height: 400px;
@@ -211,8 +219,7 @@ h2.h2row .h2tools button { padding: 2px 8px; font-size: 13px; line-height: 1.2; 
     grid-template-columns: 1fr 1fr;
     gap: 7px;
     overflow-y: auto;
-    padding-right: 4px;
-    padding-bottom: 8px;
+    padding: 8px 4px 8px 8px;
     flex: 1;
 }
 .scene-grid::-webkit-scrollbar {
@@ -580,6 +587,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <button id="add-straight" data-add="straight"><svg viewBox="0 0 24 24" fill="none"><path d="M3 19 L21 8 L21 13 L3 24 Z" fill="#f2b632" stroke="#3a2814"/><path d="M3 19 L21 8" stroke="#3a2814" stroke-width="1.4"/></svg><span>Straight ramp</span></button>
         <button id="add-lift" data-add="lift"><svg viewBox="0 0 24 24" fill="none"><path d="M3 21 L21 10 L21 15 L3 26 Z" fill="#e05a2b" stroke="#3a2814"/><path d="M9 10 L12 5 L15 10 M12 5 V14" stroke="#f9eed6" stroke-width="1.8" stroke-linecap="round"/></svg><span>Powered lift</span></button>
         <button id="add-elevator" data-add="elevator" title="Add a conveyor-belt forklift elevator"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20 L20 20 M12 20 V6 M12 6 L9 10 M12 6 L15 10" stroke="#e05a2b" stroke-width="2.5" stroke-linecap="round"/><rect x="8" y="11" width="8" height="3" fill="#f2b632" stroke="#3a2814" stroke-width="1.2" rx="0.5"/></svg><span>Elevator</span></button>
+        <button id="add-powered" data-add="powered" title="Add a flat motorized conveyor/powered track"><svg viewBox="0 0 24 24" fill="none"><path d="M3 16 L21 16 L21 20 L3 20 Z" fill="#e05a2b" stroke="#3a2814"/><path d="M3 16 L21 16" stroke="#3a2814" stroke-width="1.4"/><path d="M7 16 L9 13 M11 16 L13 13 M15 16 L17 13" stroke="#f9eed6" stroke-width="1.5" stroke-linecap="round"/></svg><span>Powered track</span></button>
         <button id="add-curveL" data-add="curveR"><svg viewBox="0 0 24 24" fill="none"><path d="M20 21 A17 17 0 0 0 3 4 L3 10 A11 11 0 0 1 14 21 Z" fill="#f2b632" stroke="#3a2814"/></svg><span>Curve left</span></button>
         <button id="add-curveR" data-add="curveL"><svg viewBox="0 0 24 24" fill="none"><path d="M4 21 A17 17 0 0 1 21 4 L21 10 A11 11 0 0 0 10 21 Z" fill="#f2b632" stroke="#3a2814"/></svg><span>Curve right</span></button>
         <button id="add-switchL" data-switch="switchR"><svg viewBox="0 0 24 24" fill="none"><path d="M10.5 22 V13 L4 5 M13.5 22 V13 L20 5" stroke="#f2b632" stroke-width="3.4" stroke-linecap="round"/><path d="M10.5 22 V13 L4 5" stroke="#e05a2b" stroke-width="3.4" stroke-linecap="round"/></svg><span>Switch left</span></button>
@@ -595,10 +603,11 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     <div id="editor-card" class="card" style="display:none"></div>
 
     <h2>Design file</h2>
-    <div class="btn-grid">
-        <button id="btn-save">💾 Save design</button>
-        <button id="btn-open">📂 Open design</button>
-        <button id="btn-clear" class="danger">🗑 Clear design</button>
+    <div class="file-btn-row">
+        <button id="btn-save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Save</button>
+        <button id="btn-open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><polygon points="22 10 2 10 6 21 22 21"></polygon></svg>Open</button>
+        <div class="spacer"></div>
+        <button id="btn-clear" class="danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>Clear</button>
         <input type="file" id="file-open" accept=".json,application/json" style="display:none">
     </div>
 

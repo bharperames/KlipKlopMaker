@@ -29,6 +29,7 @@ function movesFromParams(p) {
         tile, R,
         net: {
             straight: -(tile * tan + WF),
+            powered: -WF,
             lift: tile * tanL - WF,
             curveL: -(arc * tan + WF),
             curveR: -(arc * tan + WF)
@@ -38,7 +39,7 @@ function movesFromParams(p) {
 
 function applyMove(st, type, M) {
     const { x, z, h, deck } = st;
-    if (type === 'straight' || type === 'lift') {
+    if (type === 'straight' || type === 'lift' || type === 'powered') {
         return { x: x + Math.cos(h) * M.tile, z: z + Math.sin(h) * M.tile, h, deck: deck + M.net[type] };
     }
     const turn = type === 'curveL' ? Math.PI / 2 : -Math.PI / 2;
@@ -116,7 +117,7 @@ export function createClosureSolver(tail, head, params = {}, opts = {}) {
                 }
                 if (cur.moves.length >= maxPieces) continue;
 
-                for (const type of ['straight', 'lift', 'curveL', 'curveR']) {
+                for (const type of ['straight', 'lift', 'curveL', 'curveR', 'powered']) {
                     const nst = applyMove(st, type, M);
                     const g = cur.moves.length + 1;
                     const k = key(nst);

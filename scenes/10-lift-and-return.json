@@ -2,19 +2,29 @@
   "format": "klipklop-scene",
   "version": 2,
   "name": "Lift & Return",
-  "description": "Three powered lift sections haul the figure ~90 mm uphill (externally driven conveyor — the one exception to gravity), then a 180° descent brings it trotting home. Demonstrates the LIFT regime and the energy-budget reset at powered spans.",
+  "description": "A closed circuit using the powered lift to haul the figure uphill, curves to turn it around, and flat powered conveyor tracks to return it horizontally to the start.",
   "sequence": [
     "lift",
     "lift",
     "lift",
+    "lift",
+    "lift",
+    "lift",
     "curveL",
     "curveL",
-    "straight",
-    "straight"
+    "powered",
+    "powered",
+    "powered",
+    "powered",
+    "powered",
+    "powered",
+    "curveL",
+    "curveL"
   ],
   "scenery": [],
   "params": {
     "slopeDeg": 11.2167,
+    "liftSlopeDeg": 11.4045,
     "innerWidth": 48,
     "curveRadius": 143.64
   },
@@ -27,9 +37,9 @@
   },
   "expect": {
     "outcome": "arrived",
-    "maxTimeS": 35,
-    "minClacks": 30,
-    "minWalkedFraction": 0.9,
+    "maxTimeS": 40,
+    "minClacks": 50,
+    "minWalkedFraction": 0.3,
     "layoutErrors": []
   },
   "geometry": "1.0.0"
