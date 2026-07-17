@@ -137,6 +137,7 @@ h2.h2row .h2tools button { padding: 2px 8px; font-size: 13px; line-height: 1.2; 
 .btn-grid button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 0 0 #3a2814, inset 0 2px 4px rgba(0, 0, 0, .35); }
 .btn-grid button:disabled { box-shadow: none; transform: none; }
 .btn-grid button.primary { background: linear-gradient(180deg, #3f82e8, #2b62b8); border-color: #6ba0ea; box-shadow: 0 2px 0 #1c3f76, 0 3px 6px rgba(0, 0, 0, .4); }
+.btn-grid button.danger { background: linear-gradient(180deg, #e55c5c, #c03939); border-color: #f77b7b; box-shadow: 0 2px 0 #6e1c1c, 0 3px 6px rgba(0, 0, 0, .4); color: #fff; }
 .btn-grid .wide { grid-column: span 2; }
 .fig-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
 .fig-choice-grid button {
@@ -588,8 +589,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <button data-scenery="tower" title="Scenery: stackable tower — doubles as a track support"><svg viewBox="0 0 24 24" fill="none"><path d="M8 22 V8 H16 V22 Z" fill="#8a6134" stroke="#3a2814"/><path d="M6 8 H18 M8 8 V4 H10 V8 M14 8 V4 H16 V8" stroke="#3a2814" stroke-width="1.6"/></svg><span>Tower</span></button>
         <button data-scenery="palm" title="Scenery: palm island"><svg viewBox="0 0 24 24" fill="none"><path d="M11 22 C11 15 12 11 13 8" stroke="#8a6134" stroke-width="2.6" stroke-linecap="round"/><path d="M13 8 C10 4 6 4 4 6 M13 8 C13 3 17 2 20 4 M13 8 C16 5 20 7 21 10" stroke="#58c04d" stroke-width="2.2" stroke-linecap="round"/></svg><span>Palm island</span></button>
         <button data-scenery="patio" title="Scenery: patio (figure parking)"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="12" rx="1.5" fill="#c9b48a" stroke="#3a2814"/><circle cx="8" cy="12" r="1.4" fill="#3a2814"/><circle cx="16" cy="12" r="1.4" fill="#3a2814"/><circle cx="8" cy="17" r="1.4" fill="#3a2814"/><circle cx="16" cy="17" r="1.4" fill="#3a2814"/></svg><span>Patio</span></button>
-        <button id="btn-clear">🗑 Clear</button>
         <button id="btn-connect" class="wide" title="Brio-style auto-close: finds the standard ramps, lifts and curves that bring the tail back to the head — the design becomes a circuit because its geometry closes">🧲 Connect ends (auto-close the circuit)</button>
+        <button id="btn-clear" class="wide danger">🗑 Clear design</button>
     </div>
 
     <div id="editor-card" class="card" style="display:none"></div>
