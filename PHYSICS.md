@@ -126,3 +126,24 @@ on a **15 mm height grid**, so supports are stacks of five reusable designs
 cut-to-height pillars; and closed loops balance exactly (6 lift tiles buy
 what 4 curves spend). Custom parameters remain available behind an explicit
 unlock, clearly marked as producing a non-interoperable print batch.
+
+## 7. Ground-truth validation against a proven community set
+
+Measured directly from the mesh of a known-working community print
+(`klip-klop-set-v8-new.3mf`, ramp + peg stacker):
+
+| Metric | Community set (measured) | This project | Agreement |
+|---|---|---|---|
+| Ramp slope | **12.0°** (tan 0.213, least-squares fit of 215 crest samples) | 11.22° locked (green 10–12°) | ✓ both inside the derived green zone |
+| Transverse floor ribs | present: ~1.0 mm pitch × ~0.15 mm | 2.5 mm × 0.6 mm (research spec 2–3 × 0.5–0.8) | ✓ concept independently converged; ours is deeper per the spec sheet |
+| Guide channel | ≈ 39.5 mm recessed groove | 48 mm walled channel (spec 46–50) | different philosophy: tight groove vs walled channel + clearance |
+| Rail/shoulder height | ≈ 7.3 mm | 14 mm | ours guards leaning figures more |
+| Tile | 128 mm long, 24.2 mm drop | 150 mm, 30 mm drop | same class |
+| Vertical module | 21.4 mm stacker + 12 mm pegs (Ø10.5 friction fit) | 15 mm grid risers, hex 9 AF interlock | both quantize height into reusable modules |
+
+Running the community set's measured 12.0° through this project's rimless-wheel
+model predicts a healthy gait (8.9 steps/s, 143 mm/s, slide margin
+tan 12° = 0.213 « 0.85·μs) — i.e., **our physics engine predicts that the
+known-working design works**, the strongest external check available without
+printing. Interlocks are not cross-compatible (round pegs vs hex sockets), but
+figures interoperate across all systems.
