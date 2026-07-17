@@ -1588,6 +1588,45 @@ function setTab(t) {
     }
 }
 
+const partWeightCache = new Map();
+
+function getPartWeight(part, sig) {
+    if (!sig) return 0;
+    if (partWeightCache.has(sig)) {
+        return partWeightCache.get(sig);
+    }
+    try {
+        const mesh = part.build();
+        const report = analyzeMesh(mesh.positions, mesh.indices);
+        const cat = /^pillar/.test(part.name) ? 'pillar'
+            : /^scenery/.test(part.name) ? 'scenery'
+            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
+            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
+        const wt = printedWeightG(report.volumeMm3, cat);
+        partWeightCache.set(sig, wt);
+        return wt;
+    } catch (e) {
+        console.error("Failed to compute weight for", part.name, e);
+        return 0;
+    }
+}
+
+function transformMeshToLocalFrame(mesh, piece) {
+    if (!piece || !piece.entry) return mesh;
+    const { positions } = mesh;
+    const h = piece.entry.h;
+    const cos = Math.cos(-h);
+    const sin = Math.sin(-h);
+    for (let i = 0; i < positions.length; i += 3) {
+        const tx = positions[i] - piece.entry.x;
+        const tz = positions[i + 2] - piece.entry.z;
+        positions[i] = tx * cos - tz * sin;
+        positions[i + 2] = tx * sin + tz * cos;
+        positions[i + 1] = positions[i + 1] - piece.entryDeck;
+    }
+    return mesh;
+}
+
 function refreshPrintPartsList() {
     const list = $('print-parts-list');
     if (!list) return;
@@ -1596,7 +1635,9 @@ function refreshPrintPartsList() {
     gallery.parts.forEach((part, i) => {
         const li = document.createElement('li');
         const countLabel = part.count > 1 ? ` (x${part.count})` : '';
-        li.innerHTML = `<span>🧩 ${part.name}${countLabel}</span><span class="wt">inspect 🔍</span>`;
+        const wt = getPartWeight(part, part.sig);
+        const wtText = wt > 0 ? `${wt.toFixed(0)}g` : '...';
+        li.innerHTML = `<span>🧩 ${part.name}${countLabel}</span><span class="wt">${wtText} 🔍</span>`;
         li.addEventListener('click', () => {
             selectGalleryPart(i);
         });
@@ -2144,7 +2185,6 @@ function assembleParts() {
             sigParts.push(support.mode);
             sigParts.push(support.s.toFixed(1));
             sigParts.push(support.side ?? '0');
-            sigParts.push(support.h.toFixed(3));
         } else {
             sigParts.push('no-support');
         }
@@ -2170,15 +2210,33 @@ function assembleParts() {
         const baseName = pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
-            parts.push({ name: baseName, count, note: note.switch, build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
+            parts.push({
+                name: baseName,
+                count,
+                sig,
+                note: note.switch,
+                build: () => {
+                    const mesh = buildSwitchExportGeometry(pair.main, pair.branch, { support });
+                    return transformMeshToLocalFrame(mesh, pair.main);
+                }
+            });
         } else {
-            parts.push({ name: baseName, count, note: note.piece, build: () => buildPieceExportGeometry(pc, { support }) });
+            parts.push({
+                name: baseName,
+                count,
+                sig,
+                note: note.piece,
+                build: () => {
+                    const mesh = buildPieceExportGeometry(pc, { support });
+                    return transformMeshToLocalFrame(mesh, pc);
+                }
+            });
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, note: note.gate, build: () => buildGateGeometry() });
+        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, sig: 'gate_paddle_print', note: note.gate, build: () => buildGateGeometry() });
     }
-    parts.push({ name: 'connector_key_print', count: joints, note: note.key, build: () => buildKeyGeometry() });
+    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', note: note.key, build: () => buildKeyGeometry() });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -2192,25 +2250,25 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (feet) parts.push({ name: 'support_foot_print', count: feet, note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
+        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm_print`, count, note: note.pillar, build: () => buildRiserGeometry(r) });
+            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, note: note.pillar, build: () => buildRiserGeometry(r) });
         }
     } else {
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
-            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, count: 1, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, count: 1, sig: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
         }
     }
 
     const kinds = [...new Set(state.scenery.map(s => s.kind))];
     for (const kind of kinds) {
         const count = state.scenery.filter(s => s.kind === kind).length;
-        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, note: note.scenery, build: () => buildTowerGeometry(100) });
-        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, note: note.scenery, build: () => buildPatioGeometry() });
+        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, sig: 'scenery_tower_print', note: note.scenery, build: () => buildTowerGeometry(100) });
+        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, sig: 'scenery_patio_print', note: note.scenery, build: () => buildPatioGeometry() });
         if (kind === 'palm') {
-            parts.push({ name: 'scenery_palm_island_print', count, note: note.scenery, build: () => buildPalmIslandGeometries().island });
-            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
+            parts.push({ name: 'scenery_palm_island_print', count, sig: 'scenery_palm_island_print', note: note.scenery, build: () => buildPalmIslandGeometries().island });
+            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, sig: 'scenery_palm_tree_print_crown_down', note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
         }
     }
 
