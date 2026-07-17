@@ -130,7 +130,7 @@ describe('LIFT regime', () => {
         expect(r.outcome).toBe('arrived');
         const liftSamples = r.trace.filter(s => s.mode === 'lift' && s.t > 1);
         expect(liftSamples.length).toBeGreaterThan(10);
-        for (const s of liftSamples) expect(Math.abs(s.v - 55)).toBeLessThan(6);
+        for (const s of liftSamples) expect(Math.abs(s.v - 110)).toBeLessThan(12);
         // figure gains height during the lift
         const first = r.trace[0], peak = Math.max(...r.trace.map(s => s.y));
         expect(peak).toBeGreaterThan(first.y + 30);

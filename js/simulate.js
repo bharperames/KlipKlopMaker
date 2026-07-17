@@ -64,7 +64,7 @@ export function simulateRun(pieces, opts = {}) {
     const maxT = opts.maxT ?? 180;
     const traceEvery = opts.traceEvery ?? 0.02;
 
-    const liftSpeed = opts.liftSpeedMmS ?? 55;
+    const liftSpeed = opts.liftSpeedMmS ?? 110;
     const sampler = makePathSampler(pieces, 4);
     const assess = pieces.map(pc =>
         pc.isLift

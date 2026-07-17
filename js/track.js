@@ -101,7 +101,7 @@ export const SPEC = {
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: { neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12 },
-    liftSpeedMmS: 55
+    liftSpeedMmS: 110
 };
 
 const rot2 = (x, z, a) => [x * Math.cos(a) - z * Math.sin(a), x * Math.sin(a) + z * Math.cos(a)];
@@ -122,7 +122,7 @@ export function ridgeOffset(s, pitch, height) {
 // Tree helpers (pure editing API used by the app)
 // ---------------------------------------------------------------------------
 
-export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift'];
+export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift', 'elevator'];
 export const isSwitchNode = (n) => typeof n === 'object' && n !== null && (n.type === 'switchL' || n.type === 'switchR');
 
 /** Array a `containerPath` refers to: [] = root; [i,'main',...] descends switches. */
@@ -255,6 +255,12 @@ export function layoutTrack(sequence, params = {}) {
         } else if (kind === 'lift') {
             plan = segmentPlan('straightish', cursor, { len: p.tileLen });
             drop = -plan.planLen * tanLift; slopeDeg = -liftSlopeDeg; isLift = true;
+        } else if (kind === 'elevator') {
+            const height = node && typeof node === 'object' ? (node.height ?? 90) : 90;
+            plan = segmentPlan('straightish', cursor, { len: p.tileLen });
+            drop = -height;
+            slopeDeg = -radToDeg(Math.asin(Math.min(0.99, height / p.tileLen)));
+            isLift = true;
         } else { // curveL / curveR / switchBranch
             const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
             plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
@@ -276,6 +282,7 @@ export function layoutTrack(sequence, params = {}) {
             slopeDeg, drop, entryDeck, exitDeck,
             rimY: lowBoundary - p.skirtDepth,
             innerWidth, isLift,
+            isElevator: kind === 'elevator',
             ridgePitch: ridge.pitch, ridgeCount: ridge.count,
             ...meta
         };
@@ -311,7 +318,8 @@ export function layoutTrack(sequence, params = {}) {
                 walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck }, [...address, 'branch'], active && gate === 'branch');
                 return null;
             }
-            const piece = makePiece(node, node, cursor, entryDeck, { address, active });
+            const kind = typeof node === 'string' ? node : node.type;
+            const piece = makePiece(kind, node, cursor, entryDeck, { address, active });
             cursor = piece.exit;
             deck = piece.exitDeck;
         }
@@ -388,6 +396,14 @@ export function resolveRidePath(pieces) {
 }
 
 export function deckYAt(piece, s) {
+    if (piece.type === 'elevator' || piece.isElevator) {
+        const L = piece.planLen;
+        const h = -piece.drop;
+        if (s < 40) return piece.entryDeck;
+        if (s > L - 40) return piece.exitDeck;
+        const t = (s - 40) / (L - 80);
+        return piece.entryDeck + t * h;
+    }
     const f = piece.planLen === 0 ? 0 : s / piece.planLen;
     return piece.entryDeck - piece.drop * f;
 }

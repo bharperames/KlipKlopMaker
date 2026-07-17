@@ -193,7 +193,7 @@ export function trackVerdict(pieces, opts = {}) {
             return { name: pc.name, status: 'platform', speedMmS: 0 };
         }
         if (pc.isLift) {
-            return { name: pc.name, status: 'lift', speedMmS: 55 };
+            return { name: pc.name, status: 'lift', speedMmS: 110 };
         }
         const r = assessSlope(pc.slopeDeg, opts);
         return { name: pc.name, status: r.status, speedMmS: r.speedMmS, stepHz: r.stepHz, detail: r.detail };

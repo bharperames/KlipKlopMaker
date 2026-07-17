@@ -122,7 +122,38 @@ function planToWorld(pts, face) {
 export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters) {
     const stations = stationsForPiece(piece, 6);
     const profiles = pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]);
-    return toBufferGeometry(sweepSolid(profiles, stations));
+    const shell = toBufferGeometry(sweepSolid(profiles, stations));
+    if (piece.type === 'elevator' || piece.isElevator) {
+        const Wo = piece.innerWidth / 2 + spec.wall;
+        const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
+        const right = [-Math.sin(piece.entry.h), Math.cos(piece.entry.h)];
+        const c40 = [piece.entry.x + dir[0] * 40, piece.entry.z + dir[1] * 40];
+        const c110 = [piece.entry.x + dir[0] * 110, piece.entry.z + dir[1] * 110];
+        const housingPoly = [
+            [c40[0] - right[0] * Wo, c40[1] - right[1] * Wo],
+            [c40[0] + right[0] * Wo, c40[1] + right[1] * Wo],
+            [c110[0] + right[0] * Wo, c110[1] + right[1] * Wo],
+            [c110[0] - right[0] * Wo, c110[1] - right[1] * Wo]
+        ];
+        const housingSolid = toBufferGeometry(extrudePolygonY(housingPoly, piece.rimY, piece.exitDeck - spec.floorThk + 0.5));
+        
+        const W_slot = 12;
+        const c15 = [piece.entry.x + dir[0] * 15, piece.entry.z + dir[1] * 15];
+        const c135 = [piece.entry.x + dir[0] * 135, piece.entry.z + dir[1] * 135];
+        const slotPoly = [
+            [c15[0] - right[0] * (W_slot/2), c15[1] - right[1] * (W_slot/2)],
+            [c15[0] + right[0] * (W_slot/2), c15[1] + right[1] * (W_slot/2)],
+            [c135[0] + right[0] * (W_slot/2), c135[1] + right[1] * (W_slot/2)],
+            [c135[0] - right[0] * (W_slot/2), c135[1] - right[1] * (W_slot/2)]
+        ];
+        const slotSolid = toBufferGeometry(extrudePolygonY(slotPoly, piece.rimY - 5, piece.exitDeck + 15));
+        
+        return toBufferGeometry(csgChain(shell, [
+            { op: ADDITION, geometry: housingSolid },
+            { op: SUBTRACTION, geometry: slotSolid }
+        ]));
+    }
+    return shell;
 }
 
 /**
@@ -277,8 +308,35 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const spec = opts.spec ?? SPEC;
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
-    const shell = fineShell(piece, spec, opts.support ? [opts.support.s] : undefined);
+    const shell = fineShell(piece, spec, (opts.support && opts.support.mode !== 'none') ? [opts.support.s] : undefined);
     const ops = [];
+    if (piece.type === 'elevator' || piece.isElevator) {
+        const Wo = piece.innerWidth / 2 + spec.wall;
+        const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
+        const right = [-Math.sin(piece.entry.h), Math.cos(piece.entry.h)];
+        const c40 = [piece.entry.x + dir[0] * 40, piece.entry.z + dir[1] * 40];
+        const c110 = [piece.entry.x + dir[0] * 110, piece.entry.z + dir[1] * 110];
+        const housingPoly = [
+            [c40[0] - right[0] * Wo, c40[1] - right[1] * Wo],
+            [c40[0] + right[0] * Wo, c40[1] + right[1] * Wo],
+            [c110[0] + right[0] * Wo, c110[1] + right[1] * Wo],
+            [c110[0] - right[0] * Wo, c110[1] - right[1] * Wo]
+        ];
+        const housingSolid = toBufferGeometry(extrudePolygonY(housingPoly, piece.rimY, piece.exitDeck - spec.floorThk + 0.5));
+        ops.push({ op: ADDITION, geometry: housingSolid });
+
+        const W_slot = 12;
+        const c15 = [piece.entry.x + dir[0] * 15, piece.entry.z + dir[1] * 15];
+        const c135 = [piece.entry.x + dir[0] * 135, piece.entry.z + dir[1] * 135];
+        const slotPoly = [
+            [c15[0] - right[0] * (W_slot/2), c15[1] - right[1] * (W_slot/2)],
+            [c15[0] + right[0] * (W_slot/2), c15[1] + right[1] * (W_slot/2)],
+            [c135[0] + right[0] * (W_slot/2), c135[1] + right[1] * (W_slot/2)],
+            [c135[0] - right[0] * (W_slot/2), c135[1] - right[1] * (W_slot/2)]
+        ];
+        const slotSolid = toBufferGeometry(extrudePolygonY(slotPoly, piece.rimY - 5, piece.exitDeck + 15));
+        ops.push({ op: SUBTRACTION, geometry: slotSolid });
+    }
     const Wi = piece.innerWidth / 2;
 
     if (piece.type === 'start') {
@@ -315,7 +373,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  */
 export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const spec = opts.spec ?? SPEC;
-    const shell = fineShell(mainPiece, spec, opts.support ? [opts.support.s] : undefined);
+    const shell = fineShell(mainPiece, spec, (opts.support && opts.support.mode !== 'none') ? [opts.support.s] : undefined);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
 
     // open the frog: neither route's rails may cross the other's channel
@@ -367,7 +425,7 @@ export function gatePinPosition(mainPiece) {
         // yaw of the blade (which extends forward from the hinge):
         // parked along the wall vs swung ~33° across the channel toward the branch
         yawParked: h,
-        yawDiverting: h + (mainPiece.switchType === 'switchL' ? 1 : -1) * 0.58
+        yawDiverting: h + (mainPiece.switchType === 'switchL' ? 1 : -1) * Math.asin(Math.min(0.99, (mainPiece.innerWidth - 4) / 50))
     };
 }
 

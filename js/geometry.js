@@ -8,7 +8,7 @@
  */
 
 import { signedMeshVolumeMm3 } from './mesh_utils.js';
-import { ridgeOffset } from './track.js';
+import { ridgeOffset, deckYAt } from './track.js';
 
 /** Shoelace signed area of a 2D polygon [[x,y],...]. Positive = CCW. */
 export function signedArea2D(pts) {
@@ -264,7 +264,7 @@ export function archedRimY(piece, s, spec, padCenters = []) {
     const w0 = FOOT / 2, w1 = unit - FOOT / 2;
     if (local <= w0 || local >= w1) return flat; // on a foot
     const rise = Math.min(local - w0, w1 - local);
-    const deckCap = (piece.entryDeck - piece.drop * (s / piece.planLen)) - 10;
+    const deckCap = deckYAt(piece, s) - 10;
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 

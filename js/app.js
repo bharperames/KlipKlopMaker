@@ -16,7 +16,8 @@ import * as fflate from 'fflate';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
-    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions
+    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions,
+    planPosAt, deckYAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
@@ -43,9 +44,10 @@ import { analyzeMesh } from './mesh_utils.js';
 const state = {
     sequence: [],
     scenery: [],
-    figureStyle: 'classic',
+    figureStyle: 'knight',
     knightVariant: 'trumpet', // helmet crest of the mirrored toy: trumpet | comb
     figureOpacity: 1,
+    simSpeed: 1.0,
     slopeDeg: +STANDARD.slopeDeg.toFixed(4),
     innerWidth: STANDARD.innerWidth,
     curveRadius: +STANDARD.curveRadius.toFixed(2),
@@ -97,7 +99,7 @@ function recordEdit(opKey = null) {
 function restoreSnapshot(s) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
-    state.figureStyle = s.figureStyle ?? 'classic';
+    state.figureStyle = s.figureStyle ?? 'knight';
     state.knightVariant = s.knightVariant === 'comb' ? 'comb' : 'trumpet';
     state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 1;
     state.slopeDeg = s.slopeDeg;
@@ -145,7 +147,7 @@ function applyScene(scene) {
     }
     state.sequence = s.sequence;
     state.scenery = s.scenery;
-    state.figureStyle = s.figureStyle ?? 'classic';
+    state.figureStyle = s.figureStyle ?? 'knight';
     state.knightVariant = s.knightVariant === 'comb' ? 'comb' : 'trumpet';
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
@@ -154,6 +156,7 @@ function applyScene(scene) {
     state.walker = s.walker;
     state.name = s.name;
     state.activeEndKey = '[]';
+    designDirty = false;
 }
 async function loadState() {
     const sceneName = new URLSearchParams(location.search).get('scene');
@@ -258,6 +261,7 @@ function materialFor(piece, hasIssue) {
 
 let pieceMeshes = [];   // one mesh per piece index (switch roles share a mesh)
 let arrowMeshes = [];
+let elevatorProngs = [];
 
 function issueSet() {
     const s = new Set();
@@ -281,6 +285,7 @@ function rebuild() {
     if (!placementKind) ghostGroup.clear(); // any rebuild invalidates a hover ghost
     pieceMeshes = new Array(pieces.length).fill(null);
     arrowMeshes = [];
+    elevatorProngs = [];
 
     // switch parts render as one merged mesh shared by both role pieces
     const switchPairs = new Map();
@@ -298,7 +303,8 @@ function rebuild() {
 
     for (const pc of pieces) {
         if (pc.role === 'branch') continue; // rendered with its main sibling
-        const pads = supportOf(pc.index) ? [supportOf(pc.index).s ?? pc.planLen / 2] : undefined;
+        const sup = supportOf(pc.index);
+        const pads = (sup && sup.mode !== 'none') ? [sup.s] : undefined;
         let mesh;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
@@ -316,6 +322,22 @@ function rebuild() {
         mesh.castShadow = mesh.receiveShadow = true;
         pieceMeshes[pc.index] = mesh;
         trackGroup.add(mesh);
+
+        if (pc.isElevator) {
+            const numProngs = 4;
+            const spacing = 240 / numProngs;
+            const prongMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.5 });
+            for (let k = 0; k < numProngs; k++) {
+                const prong = new THREE.Mesh(new THREE.BoxGeometry(10, 2, 6), prongMaterial);
+                prong.castShadow = true;
+                trackGroup.add(prong);
+                elevatorProngs.push({
+                    mesh: prong,
+                    piece: pc,
+                    offset: k * spacing
+                });
+            }
+        }
     }
     for (const sup of state.supports) {
         const pc = pieces[sup.pieceIndex];
@@ -327,7 +349,20 @@ function rebuild() {
             continue;
         }
         trackGroup.add(buildSupportObject(pc.rimY, sup.x, sup.z));
-        if (sup.mode === 'outrigger') {
+        if (sup.mode === 'center') {
+            const f = sup.s / pc.planLen;
+            const ceilY = (pc.entryDeck - pc.drop * f) - SPEC.floorThk;
+            const bossH = (ceilY + 0.5) - pc.rimY;
+            if (bossH > 0) {
+                const bossMesh = new THREE.Mesh(
+                    new THREE.CylinderGeometry(SPEC.socket.bossR, SPEC.socket.bossR, bossH, 16),
+                    materialFor(pc, false)
+                );
+                bossMesh.position.set(sup.x, pc.rimY + bossH / 2, sup.z);
+                bossMesh.castShadow = true;
+                trackGroup.add(bossMesh);
+            }
+        } else if (sup.mode === 'outrigger') {
             // arm reaches from the skirt wall out to the boss (lateral = local X)
             const right = [Math.sin(sup.h), -Math.cos(sup.h)];
             const arm = new THREE.Mesh(new THREE.BoxGeometry(26, 11, 22), MAT.pillar);
@@ -347,11 +382,11 @@ function rebuild() {
     for (const sw of switches) {
         const pair = switchPairs.get(sw.key);
         const pin = gatePinPosition(pair.main);
-        const vane = new THREE.BoxGeometry(2.6, SPEC.railHeight - 2, 62);
-        vane.translate(0, 0, 31); // hinge at one end
+        const vane = new THREE.BoxGeometry(2.6, SPEC.railHeight - 2, 52);
+        vane.translate(0, (SPEC.railHeight - 2) / 2, 24); // hinge at one end
         const paddle = new THREE.Mesh(vane, MAT.gate);
         const yaw = sw.gate === 'branch' ? pin.yawDiverting : pin.yawParked;
-        paddle.position.set(pin.x, pin.deckY + SPEC.railHeight / 2, pin.z);
+        paddle.position.set(pin.x, pin.deckY, pin.z);
         paddle.rotation.y = Math.PI / 2 - yaw;
         paddle.userData.switchKey = sw.key;
         paddle.userData.pieceIndex = pair.main.index;
@@ -385,6 +420,7 @@ function rebuild() {
     refreshEditorCard();
     refreshIdleHorse();
     refreshParamsMode();
+    refreshPrintPartsList();
     $('btn-connect').disabled = state.layout.isCircuit || !state.sequence.length || state.sequence.some(n => typeof n !== 'string');
     saveState();
 }
@@ -437,11 +473,12 @@ function refreshSelectionHighlight() {
         const base = materialFor(pc, issues.has(i));
         if (i === state.selected || (pc.switchKey && pieceIsSelectedSwitch(pc))) {
             m.material = base.clone();
-            m.material.emissive = new THREE.Color(0x553300);
+            m.material.emissive = new THREE.Color(0x118833);
         } else {
             m.material = base;
         }
     });
+    updateElevatorProngs(0);
 }
 const pieceIsSelectedSwitch = (pc) =>
     state.selected >= 0 && state.layout.pieces[state.selected]?.switchKey === pc.switchKey && pc.switchKey;
@@ -576,6 +613,7 @@ $('btn-clear').addEventListener('click', async () => {
     recordEdit();
     state.sequence = []; state.scenery = [];
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
+    resetSceneSelection();
     rebuild();
 });
 $('btn-connect').addEventListener('click', async () => {
@@ -679,6 +717,7 @@ $('file-open').addEventListener('change', async (e) => {
         applyScene(JSON.parse(await file.text()));
         syncControls();
         state.selected = -1;
+        resetSceneSelection();
         rebuild();
         fitView();
         toast(`📂 Loaded "${state.name}"`);
@@ -687,36 +726,199 @@ $('file-open').addEventListener('change', async (e) => {
     }
     e.target.value = '';
 });
-const scenePicker = $('scene-picker');
-{
-    const opt = document.createElement('option');
-    opt.value = ''; opt.textContent = '📚 Example scenes…';
-    scenePicker.appendChild(opt);
-    for (const n of ['01-first-ramp', '02-demo-tower', '03-grand-helix', '04-s-curve-meadow',
-        '05-slippery-slide', '06-too-shallow-stall', '07-cliffhanger-tumble',
-        '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '13-grand-circuit']) {
-        const o = document.createElement('option');
-        o.value = n; o.textContent = n.replace(/^\d+-/, '').replace(/-/g, ' ');
-        scenePicker.appendChild(o);
+function generateTrackSvg(pieces) {
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    // Isometric projection angle constants (30 degrees tilt, 45 degrees Y-rotation)
+    const cos45 = Math.cos(Math.PI / 4);
+    const sin45 = Math.sin(Math.PI / 4);
+    const sin30 = Math.sin(Math.PI / 6);
+
+    function project3D(x, y, z) {
+        const rotX = (x - z) * cos45;
+        const rotZ = (x + z) * sin45;
+        // In 3D, y is height (goes up).
+        // In SVG, y axis goes down, so we subtract height to move points UP.
+        const px = rotX;
+        const py = rotZ * sin30 - y * 0.8;
+        return { x: px, y: py };
+    }
+
+    function updateBounds(px, py) {
+        if (px < minX) minX = px;
+        if (px > maxX) maxX = px;
+        if (py < minY) minY = py;
+        if (py > maxY) maxY = py;
+    }
+
+    let pathD = '';
+
+    for (const pc of pieces) {
+        if (pc.radius) {
+            const steps = 16;
+            for (let i = 0; i <= steps; i++) {
+                const s = (pc.planLen * i) / steps;
+                const pos = planPosAt(pc, s);
+                const height = pc.entryDeck + (s / pc.planLen) * (pc.exitDeck - pc.entryDeck);
+                const proj = project3D(pos.x, height, pos.z);
+                updateBounds(proj.x, proj.y);
+                if (i === 0) {
+                    pathD += ` M ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
+                } else {
+                    pathD += ` L ${proj.x.toFixed(1)} ${proj.y.toFixed(1)}`;
+                }
+            }
+        } else {
+            const projEntry = project3D(pc.entry.x, pc.entryDeck, pc.entry.z);
+            const projExit = project3D(pc.exit.x, pc.exitDeck, pc.exit.z);
+            updateBounds(projEntry.x, projEntry.y);
+            updateBounds(projExit.x, projExit.y);
+            pathD += ` M ${projEntry.x.toFixed(1)} ${projEntry.y.toFixed(1)} L ${projExit.x.toFixed(1)} ${projExit.y.toFixed(1)}`;
+        }
+    }
+
+    if (pieces.length === 0) {
+        return `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="32" cy="32" r="10" stroke="var(--ink-3)" stroke-width="2"/></svg>`;
+    }
+
+    const w = maxX - minX;
+    const h = maxY - minY;
+    const size = Math.max(w, h, 10);
+    const margin = size * 0.15 + 10;
+    const cx = minX + w / 2;
+    const cy = minY + h / 2;
+
+    const boxSize = size + 2 * margin;
+    const vx = cx - boxSize / 2;
+    const vy = cy - boxSize / 2;
+
+    return `<svg viewBox="${vx.toFixed(1)} ${vy.toFixed(1)} ${boxSize.toFixed(1)} ${boxSize.toFixed(1)}" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="${pathD}" stroke="var(--track-gold)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="${pathD}" stroke="#ffffff" stroke-width="1.6" stroke-dasharray="3,3" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+}
+
+function resetSceneSelection() {
+    const btn = $('btn-scene-picker');
+    if (btn) btn.textContent = '📚 Select example scene…';
+    const grid = $('scene-grid');
+    if (grid) {
+        for (const child of grid.children) {
+            child.classList.remove('selected');
+        }
     }
 }
-scenePicker.addEventListener('change', async () => {
-    if (!scenePicker.value) return;
-    try {
-        const res = await fetch(`./scenes/${scenePicker.value}.json`);
-        const json = await res.json();
-        recordEdit();
-        applyScene(json);
-        syncControls();
-        state.selected = -1;
-        rebuild();
-        fitView();
-        toast(`📚 Loaded scene "${state.name}"`);
-    } catch (err) {
-        toast(`Could not load scene: ${err.message}`);
+
+const sceneGrid = $('scene-grid');
+const btnScenePicker = $('btn-scene-picker');
+const sceneGridDropdown = $('scene-grid-dropdown');
+
+if (sceneGrid && btnScenePicker && sceneGridDropdown) {
+    const repositionDropdown = () => {
+        if (sceneGridDropdown.style.display === 'block') {
+            const rect = btnScenePicker.getBoundingClientRect();
+            sceneGridDropdown.style.top = `${rect.bottom + 4}px`;
+            sceneGridDropdown.style.left = `${rect.left}px`;
+        }
+    };
+
+    btnScenePicker.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = sceneGridDropdown.style.display === 'block';
+        if (isOpen) {
+            sceneGridDropdown.style.display = 'none';
+        } else {
+            sceneGridDropdown.style.display = 'block';
+            repositionDropdown();
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.scene-picker-container') && !e.target.closest('#scene-grid-dropdown')) {
+            sceneGridDropdown.style.display = 'none';
+        }
+    });
+
+    window.addEventListener('resize', repositionDropdown);
+    const buildPanel = $('build-panel');
+    if (buildPanel) {
+        buildPanel.addEventListener('scroll', repositionDropdown);
     }
-    scenePicker.value = '';
-});
+
+    const sceneFiles = [
+        '01-first-ramp', '02-demo-tower', '03-grand-helix', '04-s-curve-meadow',
+        '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '13-grand-circuit'
+    ];
+
+    Promise.all(sceneFiles.map(async (filename) => {
+        try {
+            const res = await fetch(`./scenes/${filename}.json`);
+            const json = await res.json();
+            return { filename, json };
+        } catch (err) {
+            console.error(`Failed to load scene ${filename}:`, err);
+            return null;
+        }
+    })).then((results) => {
+        const validResults = results.filter(r => r !== null);
+        sceneGrid.innerHTML = '';
+        for (const { filename, json } of validResults) {
+            const card = document.createElement('div');
+            card.className = 'scene-card';
+            card.dataset.filename = filename;
+
+            const layout = layoutTrack(json.sequence, json.params);
+            const svgMarkup = generateTrackSvg(layout.pieces);
+
+            const title = json.name ?? filename.replace(/^\d+-/, '').replace(/-/g, ' ');
+            const desc = json.description ?? '';
+
+            card.innerHTML = `
+                <div class="scene-thumb">${svgMarkup}</div>
+                <div class="scene-info">
+                    <div class="scene-title">${title}</div>
+                    <div class="scene-desc" title="${desc}">${desc}</div>
+                </div>
+            `;
+
+            card.addEventListener('click', async () => {
+                if (designDirty && state.sequence.length) {
+                    const ok = await showDialog({
+                        title: '📚 Load example scene?',
+                        html: 'You have <b>unsaved changes</b> — the current canvas will be cleared and replaced.<br>Undo can bring it back afterwards.',
+                        buttons: [
+                            { label: 'Cancel', value: false },
+                            { label: 'Load scene', value: true, danger: true }
+                        ]
+                    });
+                    if (!ok) return;
+                }
+
+                for (const other of sceneGrid.children) {
+                    other.classList.remove('selected');
+                }
+                card.classList.add('selected');
+                btnScenePicker.textContent = `📚 Scene: ${title}`;
+                sceneGridDropdown.style.display = 'none';
+
+                try {
+                    recordEdit();
+                    applyScene(json);
+                    syncControls();
+                    state.selected = -1;
+                    rebuild();
+                    fitView();
+                    toast(`📚 Loaded scene "${state.name}"`);
+                } catch (err) {
+                    toast(`Could not load scene: ${err.message}`);
+                }
+            });
+
+            sceneGrid.appendChild(card);
+        }
+    });
+}
 
 function bindSlider(id, outId, key, fmt, isWalker = false) {
     const el = $(id);
@@ -765,6 +967,7 @@ $('in-opacity').addEventListener('input', () => {
 
 for (const btn of document.querySelectorAll('[data-figstyle]')) {
     btn.addEventListener('click', () => {
+        if (sim.running) return;
         if (state.figureStyle === btn.dataset.figstyle) {
             // re-clicking the knight cycles the real-toy helmet variant:
             // back-mounted trumpet plume (owner's) ↔ comb crest + feather (eBay)
@@ -777,7 +980,6 @@ for (const btn of document.querySelectorAll('[data-figstyle]')) {
         }
         syncControls();
         rebuild();
-        if (sim.running) { stopSim(); startSim(); } // swap the ridden figure live
         toast(state.figureStyle === 'knight'
             ? (state.knightVariant === 'comb'
                 ? '⚔️ Mike the Knight — comb-crest helmet (click again for trumpet plume)'
@@ -914,19 +1116,57 @@ function refreshEditorCard() {
         };
         return;
     }
-    const types = [['straight', '⬆ Straight'], ['curveL', '⟲ Left'], ['curveR', '⟳ Right'], ['lift', '⛓ Lift']];
+    const nodeType = typeof node === 'string' ? node : node.type;
+    const types = [
+        ['straight', '⬆ Straight'],
+        ['curveL', '⟲ Left'],
+        ['curveR', '⟳ Right'],
+        ['lift', '⛓ Lift'],
+        ['elevator', '⛶ Elevator']
+    ];
     const loopOrigin = state.layout?.isCircuit && pc.address.length === 1;
     card.innerHTML = `
         <b>Edit ${pc.name}</b>
         <div class="btn-grid" style="margin-top:8px">
             ${types.map(([t, l]) =>
-                `<button data-ed-type="${t}" ${t === node ? 'disabled' : ''}>${l}</button>`).join('')}
+                `<button data-ed-type="${t}" ${t === nodeType ? 'disabled' : ''}>${l}</button>`).join('')}
             <button id="ed-ins">＋ Insert straight before</button>
             <button id="ed-del" style="color:var(--critical)">🗑 Delete</button>
             ${loopOrigin ? '<button id="ed-origin" class="wide" title="Rotate the ring so this piece anchors at the world origin">🔁 Set as loop origin</button>' : ''}
         </div>
+        ${nodeType === 'elevator' ? `
+        <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; color: var(--ink-2)">Climb height:</span>
+            <select id="ed-elevator-height" style="font-size: 12px; padding: 4px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);">
+                <option value="60">60 mm</option>
+                <option value="75">75 mm</option>
+                <option value="90">90 mm (Default)</option>
+                <option value="105">105 mm</option>
+                <option value="120">120 mm</option>
+                <option value="135">135 mm</option>
+                <option value="150">150 mm</option>
+            </select>
+        </div>` : ''}
         <div style="color:var(--ink-2);margin-top:6px;font-size:11.5px">
             Changes re-lay the downstream track automatically (Auto-Z).</div>`;
+
+    if (nodeType === 'elevator') {
+        const heightVal = node.height ?? 90;
+        $('ed-elevator-height').value = String(heightVal);
+        $('ed-elevator-height').onchange = (e) => {
+            recordEdit();
+            const container = getContainer(state.sequence, pc.address.slice(0, -1));
+            const idx = pc.address[pc.address.length - 1];
+            const currentVal = container[idx];
+            if (typeof currentVal === 'string') {
+                container[idx] = { type: 'elevator', height: parseInt(e.target.value) };
+            } else {
+                container[idx].height = parseInt(e.target.value);
+            }
+            rebuild();
+        };
+    }
+
     if (loopOrigin) {
         $('ed-origin').onclick = () => {
             recordEdit();
@@ -942,7 +1182,8 @@ function refreshEditorCard() {
         b.onclick = () => {
             recordEdit();
             const container = getContainer(state.sequence, pc.address.slice(0, -1));
-            container[pc.address[pc.address.length - 1]] = b.dataset.edType;
+            const val = b.dataset.edType === 'elevator' ? { type: 'elevator', height: 90 } : b.dataset.edType;
+            container[pc.address[pc.address.length - 1]] = val;
             rebuild();
         };
     }
@@ -991,16 +1232,70 @@ function groundPointAt(e) {
     return raycaster.ray.intersectPlane(groundPlane, pt) ? pt : null;
 }
 
+function snapToHexGrid(x, z, D) {
+    const c_approx = Math.round(x / (D * Math.sqrt(3) / 2));
+    const r_approx = Math.round((z - (Math.abs(c_approx) % 2 === 1 ? D / 2 : 0)) / D);
+    let bestX = x, bestZ = z, minDist = Infinity;
+    for (let dc = -2; dc <= 2; dc++) {
+        for (let dr = -2; dr <= 2; dr++) {
+            const c = c_approx + dc;
+            const r = r_approx + dr;
+            const cx = c * D * Math.sqrt(3) / 2;
+            const cz = r * D + (Math.abs(c) % 2 === 1 ? D / 2 : 0);
+            const dx = x - cx;
+            const dz = z - cz;
+            const dist2 = dx * dx + dz * dz;
+            if (dist2 < minDist) {
+                minDist = dist2;
+                bestX = cx;
+                bestZ = cz;
+            }
+        }
+    }
+    return { x: bestX, z: bestZ };
+}
+
+function snapScenery(kind, pt) {
+    if (!pt) return { x: 0, z: 0 };
+    const SNAP_DIST = 15;
+    if (state.supports) {
+        for (const sup of state.supports) {
+            if (sup.mode === 'none') continue;
+            const dx = pt.x - sup.x;
+            const dz = pt.z - sup.z;
+            if (dx * dx + dz * dz < SNAP_DIST * SNAP_DIST) {
+                return { x: sup.x, z: sup.z };
+            }
+        }
+    }
+    if (kind === 'palm') {
+        return snapToHexGrid(pt.x, pt.z, 84);
+    } else if (kind === 'tower') {
+        return snapToHexGrid(pt.x, pt.z, 44);
+    } else if (kind === 'patio') {
+        return {
+            x: Math.round(pt.x / 75) * 75,
+            z: Math.round(pt.z / 75) * 75
+        };
+    }
+    return { x: Math.round(pt.x), z: Math.round(pt.z) };
+}
+
 renderer.domElement.addEventListener('pointermove', (e) => {
     if (placementKind && ghostScenery) {
         const pt = groundPointAt(e);
-        if (pt) ghostScenery.position.set(pt.x, 0, pt.z);
+        if (pt) {
+            const snapped = snapScenery(placementKind, pt);
+            ghostScenery.position.set(snapped.x, 0, snapped.z);
+        }
     }
     if (draggingScenery >= 0) {
         const pt = groundPointAt(e);
         if (pt) {
-            state.scenery[draggingScenery].x = Math.round(pt.x);
-            state.scenery[draggingScenery].z = Math.round(pt.z);
+            const item = state.scenery[draggingScenery];
+            const snapped = snapScenery(item.kind, pt);
+            item.x = snapped.x;
+            item.z = snapped.z;
             rebuildScenery();
         }
     }
@@ -1012,7 +1307,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
         const pt = groundPointAt(e);
         if (pt) {
             recordEdit();
-            state.scenery.push({ kind: placementKind, x: Math.round(pt.x), z: Math.round(pt.z), rot: 0 });
+            const snapped = snapScenery(placementKind, pt);
+            state.scenery.push({ kind: placementKind, x: snapped.x, z: snapped.z, rot: 0 });
             cancelPlacement();
             state.selectedScenery = state.scenery.length - 1;
             rebuildScenery();
@@ -1053,12 +1349,21 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
             toast('Drag to move · R rotate · ⌫ remove');
             return;
         }
+        const paddleHit = raycaster.intersectObjects(trackGroup.children, true)
+            .find(h => h.object.userData.switchKey !== undefined);
+        if (paddleHit) {
+            const idx = paddleHit.object.userData.pieceIndex;
+            const pc = state.layout.pieces[idx];
+            toggleGate(pc.address);
+            return;
+        }
+
         const hits = raycaster.intersectObjects(pieceMeshes.filter(Boolean), false);
         if (hits.length) {
             const idx = hits[0].object.userData.pieceIndex;
             const pc = state.layout.pieces[idx];
             if (pc.switchKey && state.selected === idx) {
-                toggleGate(pc.address); // second click on a selected switch flips it
+                toggleGate(pc.address);
             } else {
                 selectPiece(idx);
             }
@@ -1100,9 +1405,13 @@ document.addEventListener('keydown', (e) => {
         if (gallery.open) { closeGallery(); return; }
         cancelPlacement();
     }
-    if (e.key === ' ' && sim.running) {
+    if (e.key === ' ') {
         e.preventDefault();
-        togglePause();
+        if (sim.running) {
+            togglePause();
+        } else {
+            startSim();
+        }
         return;
     }
     if (e.key === 'r' || e.key === 'R') {
@@ -1242,7 +1551,7 @@ const MATRIX = [
 ];
 $('matrix').innerHTML = MATRIX.map(([sym, cause, fix]) => `
     <details class="matrix"><summary>${sym}</summary>
-        <div class="fix"><b>Cause:</b> ${cause}<br><b>Fix:</b> ${fix}</div>
+        <div class="fix"><b style="color: var(--critical);">Cause:</b> ${cause}<br><b style="color: var(--good);">Fix:</b> ${fix}</div>
     </details>`).join('');
 
 function refreshFooter() {
@@ -1258,15 +1567,41 @@ function refreshFooter() {
         : warns.length ? `⚠️ ${warns[0].msg}` : '✅ layout OK';
 }
 
-// tabs (single side panel: Build | Physics | Print; Parts opens the gallery,
-// Refs opens from the header toolbar)
-const TABS = ['build', 'physics', 'export'];
+// tabs (single side panel: Build | Print | Physics; Refs opens from the header toolbar)
+const TABS = ['build', 'export', 'physics'];
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => setTab(t));
 function setTab(t) {
     for (const k of TABS) {
         $(`pane-${k}`).style.display = k === t ? '' : 'none';
         $(`tab-${k}`).classList.toggle('active', k === t);
     }
+    if (t === 'export') {
+        refreshPrintPartsList();
+        initGallery();
+        gallery.open = true;
+        galleryResize();
+        if (gallery.parts && gallery.parts.length > 0) {
+            selectGalleryPart(0);
+        }
+    } else {
+        gallery.open = false;
+    }
+}
+
+function refreshPrintPartsList() {
+    const list = $('print-parts-list');
+    if (!list) return;
+    list.innerHTML = '';
+    gallery.parts = assembleParts().parts;
+    gallery.parts.forEach((part, i) => {
+        const li = document.createElement('li');
+        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
+        li.innerHTML = `<span>🧩 ${part.name}${countLabel}</span><span class="wt">inspect 🔍</span>`;
+        li.addEventListener('click', () => {
+            selectGalleryPart(i);
+        });
+        list.appendChild(li);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1299,6 +1634,39 @@ function clack(freq) {
 $('btn-sound').addEventListener('click', () => {
     state.soundOn = !state.soundOn;
     $('btn-sound').textContent = state.soundOn ? '🔊' : '🔇';
+});
+
+const SPEED_FACTORS = [0.75, 1.0, 2.0, 4.0];
+const SPEED_NAMES = ['Slow (0.75x)', 'Medium (1.0x)', 'Faster (2.0x)', 'Fastest (4.0x)'];
+let speedIdx = 1;
+
+function updateSpeedButton() {
+    const factor = SPEED_FACTORS[speedIdx];
+    const name = SPEED_NAMES[speedIdx];
+    const op1 = 1.0;
+    const op2 = speedIdx >= 1 ? 1.0 : 0.25;
+    const op3 = speedIdx >= 2 ? 1.0 : 0.25;
+    const op4 = speedIdx >= 3 ? 1.0 : 0.25;
+    
+    const btn = $('btn-speed');
+    if (btn) {
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="vertical-align: middle; margin-right: 4px;">
+                <rect x="3" y="14" width="3" height="6" rx="0.5" opacity="${op1}"/>
+                <rect x="8" y="10" width="3" height="10" rx="0.5" opacity="${op2}"/>
+                <rect x="13" y="6" width="3" height="14" rx="0.5" opacity="${op3}"/>
+                <rect x="18" y="2" width="3" height="18" rx="0.5" opacity="${op4}"/>
+            </svg>
+            <span style="font-size: 13px; font-weight: 600; line-height: 1;">${factor}x</span>
+        `;
+        btn.title = `Speed: ${name}`;
+    }
+    state.simSpeed = factor;
+}
+
+$('btn-speed').addEventListener('click', () => {
+    speedIdx = (speedIdx + 1) % SPEED_FACTORS.length;
+    updateSpeedButton();
 });
 
 // ---------------------------------------------------------------------------
@@ -1377,6 +1745,24 @@ function fadeStrikeMarkers(now) {
         const age = (now - d.userData.born) / 4000;
         if (age >= 1) strikeGroup.remove(d);
         else d.material.opacity = 0.85 * (1 - age);
+    }
+}
+function updateElevatorProngs(dt) {
+    if (!elevatorProngs.length) return;
+    const speed = 110; // mm/s
+    for (const p of elevatorProngs) {
+        p.offset = (p.offset + speed * dt) % 240;
+        const d = p.offset;
+        if (d < 120) {
+            p.mesh.visible = true;
+            const s = 15 + d;
+            const pos = planPosAt(p.piece, s);
+            const y = deckYAt(p.piece, s);
+            p.mesh.position.set(pos.x, y + 1.0, pos.z);
+            p.mesh.rotation.set(0, -pos.h, 0);
+        } else {
+            p.mesh.visible = false;
+        }
     }
 }
 
@@ -1493,14 +1879,24 @@ const OUTCOME_TOASTS = {
     timeout: '⏱ Simulation timed out'
 };
 
-$('btn-run').addEventListener('click', startSim);
+$('btn-run').addEventListener('click', () => {
+    if (sim.running) {
+        togglePause();
+    } else {
+        startSim();
+    }
+});
 $('btn-stop').addEventListener('click', stopSim);
 $('btn-record').addEventListener('click', startFilm);
-$('btn-pause').addEventListener('click', togglePause);
+
 function togglePause() {
     if (!sim.running) return;
     sim.paused = !sim.paused;
-    $('btn-pause').textContent = sim.paused ? '▶ Resume' : '⏸ Pause';
+    const btn = $('btn-run');
+    if (btn) {
+        btn.textContent = sim.paused ? '▶ Resume' : '⏸ Pause';
+        btn.classList.toggle('primary', sim.paused);
+    }
     toast(sim.paused ? '⏸ Ride paused — orbit around, then resume' : '▶ Resumed');
 }
 
@@ -1528,14 +1924,17 @@ function startSim() {
     sim.phase = 0;
     sim.cursor = 0;
     sim.paused = false;
-    $('btn-pause').textContent = '⏸ Pause';
-    $('btn-pause').disabled = false;
     sim.running = true;
+    for (const btn of document.querySelectorAll('[data-figstyle]')) btn.disabled = true;
     refreshIdleHorse();
     if (sim.run.events.some(e => e.type === 'mode' && e.detail.includes('slide'))) {
         toast('⛸ Hooves lose grip somewhere on this ride — watch it ski (see Physics lab)');
     }
-    $('btn-run').disabled = true;
+    const btn = $('btn-run');
+    if (btn) {
+        btn.textContent = '⏸ Pause';
+        btn.classList.remove('primary');
+    }
     $('btn-stop').disabled = false;
 }
 
@@ -1554,11 +1953,15 @@ function reallyStopSim() {
     sim.paused = false;
     if (sim.horse) { scene.remove(sim.horse); sim.horse = null; }
     $('sim-hud').style.display = 'none';
-    $('btn-run').disabled = false;
+    const btn = $('btn-run');
+    if (btn) {
+        btn.textContent = '▶ Test ride';
+        btn.classList.add('primary');
+        btn.disabled = false;
+    }
     $('btn-stop').disabled = true;
-    $('btn-pause').disabled = true;
-    $('btn-pause').textContent = '⏸ Pause';
     refreshIdleHorse();
+    for (const btn of document.querySelectorAll('[data-figstyle]')) btn.disabled = false;
 }
 
 /** Live telemetry: the numbers the physics engine is actually producing. */
@@ -1725,22 +2128,57 @@ function assembleParts() {
             switchPairs.set(pc.switchKey, pair);
         }
     }
+    
+    function getPieceSignature(pc, support) {
+        const sigParts = [
+            pc.type,
+            pc.innerWidth.toFixed(1),
+            pc.planLen.toFixed(1),
+            pc.drop.toFixed(3),
+            pc.slopeDeg.toFixed(3),
+            pc.ridgePitch ? pc.ridgePitch.toFixed(3) : '0',
+            pc.waterfall ? pc.waterfall.toFixed(3) : '0',
+            pc.switchType ?? ''
+        ];
+        if (support && support.mode !== 'none') {
+            sigParts.push(support.mode);
+            sigParts.push(support.s.toFixed(1));
+            sigParts.push(support.side ?? '0');
+            sigParts.push(support.h.toFixed(3));
+        } else {
+            sigParts.push('no-support');
+        }
+        return sigParts.join('|');
+    }
+
+    const uniqueParts = new Map();
     let joints = 0;
     for (const pc of pieces) {
         if (!pc.isImplicitStart && pc.role !== 'branch') joints++;
         if (pc.role === 'branch') continue;
         const support = (state.supports ?? []).find(s => s.pieceIndex === pc.index);
+        const sig = getPieceSignature(pc, support);
+        if (uniqueParts.has(sig)) {
+            uniqueParts.get(sig).count++;
+        } else {
+            uniqueParts.set(sig, { pc, support, count: 1 });
+        }
+    }
+
+    for (const [sig, item] of uniqueParts.entries()) {
+        const { pc, support, count } = item;
+        const baseName = pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
-            parts.push({ name: pc.name.replace('switchMain', 'switch'), note: note.switch, build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
+            parts.push({ name: baseName, count, note: note.switch, build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }) });
         } else {
-            parts.push({ name: pc.name, note: note.piece, build: () => buildPieceExportGeometry(pc, { support }) });
+            parts.push({ name: baseName, count, note: note.piece, build: () => buildPieceExportGeometry(pc, { support }) });
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: `gate_paddle_print_${switchPairs.size}x`, note: note.gate, build: () => buildGateGeometry() });
+        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, note: note.gate, build: () => buildGateGeometry() });
     }
-    parts.push({ name: `connector_key_print_${joints}x`, note: note.key, build: () => buildKeyGeometry() });
+    parts.push({ name: 'connector_key_print', count: joints, note: note.key, build: () => buildKeyGeometry() });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -1754,25 +2192,25 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (feet) parts.push({ name: `support_foot_print_${feet}x`, note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
+        if (feet) parts.push({ name: 'support_foot_print', count: feet, note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm_print_${count}x`, note: note.pillar, build: () => buildRiserGeometry(r) });
+            parts.push({ name: `support_riser_${r}mm_print`, count, note: note.pillar, build: () => buildRiserGeometry(r) });
         }
     } else {
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
-            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, count: 1, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
         }
     }
 
     const kinds = [...new Set(state.scenery.map(s => s.kind))];
     for (const kind of kinds) {
         const count = state.scenery.filter(s => s.kind === kind).length;
-        if (kind === 'tower') parts.push({ name: `scenery_tower_print_${count}x`, note: note.scenery, build: () => buildTowerGeometry(100) });
-        if (kind === 'patio') parts.push({ name: `scenery_patio_print_${count}x`, note: note.scenery, build: () => buildPatioGeometry() });
+        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, note: note.scenery, build: () => buildTowerGeometry(100) });
+        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, note: note.scenery, build: () => buildPatioGeometry() });
         if (kind === 'palm') {
-            parts.push({ name: `scenery_palm_island_print_${count}x`, note: note.scenery, build: () => buildPalmIslandGeometries().island });
-            parts.push({ name: `scenery_palm_tree_print_${count}x_crown_down`, note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
+            parts.push({ name: 'scenery_palm_island_print', count, note: note.scenery, build: () => buildPalmIslandGeometries().island });
+            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
         }
     }
 
@@ -1802,7 +2240,7 @@ const GALLERY_MATS = {
 
 function initGallery() {
     if (gallery.renderer) return;
-    const holder = $('parts-view');
+    const holder = $('print-part-view');
     gallery.renderer = new THREE.WebGLRenderer({ antialias: true });
     gallery.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     holder.appendChild(gallery.renderer.domElement);
@@ -1825,10 +2263,10 @@ function initGallery() {
     const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
     gallery.scene.add(grid);
 
-    $('parts-shading').addEventListener('change', () => { gallery.style = $('parts-shading').value; applyGalleryStyle(); });
-    $('parts-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('parts-rotate').checked; });
-    $('parts-wire').addEventListener('change', () => { gallery.showWire = $('parts-wire').checked; applyGalleryStyle(); });
-    $('parts-dims').addEventListener('change', () => { gallery.showDims = $('parts-dims').checked; applyGalleryStyle(); });
+    $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
+    $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
+    $('print-part-wire').addEventListener('change', () => { gallery.showWire = $('print-part-wire').checked; applyGalleryStyle(); });
+    $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').checked; applyGalleryStyle(); });
 }
 
 /**
@@ -1908,7 +2346,8 @@ function applyGalleryStyle() {
 }
 
 function galleryResize() {
-    const holder = $('parts-view');
+    const holder = $('print-part-view');
+    if (!holder || !gallery.renderer) return;
     const w = holder.clientWidth, h = holder.clientHeight;
     gallery.renderer.setSize(w, h);
     gallery.camera.aspect = w / h;
@@ -1916,34 +2355,18 @@ function galleryResize() {
 }
 
 function openGallery() {
-    $('parts-overlay').style.display = '';
-    initGallery();
-    galleryResize();
-    gallery.parts = assembleParts().parts;
-    $('parts-count').textContent = `${gallery.parts.length} unique parts in this design`;
-    const list = $('parts-list');
-    list.innerHTML = '';
-    gallery.parts.forEach((part, i) => {
-        const li = document.createElement('li');
-        li.textContent = part.name;
-        li.addEventListener('click', () => selectGalleryPart(i));
-        list.appendChild(li);
-    });
-    gallery.open = true;
-    selectGalleryPart(0);
+    setTab('export');
 }
 
 function closeGallery() {
-    gallery.open = false;
-    $('parts-overlay').style.display = 'none';
-    $('tab-parts').classList.remove('active');
+    setTab('build');
 }
 
 function selectGalleryPart(i) {
     const part = gallery.parts[i];
     if (!part) return;
-    [...$('parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
-    $('parts-caption').innerHTML = '⏳ building export geometry…';
+    [...$('print-parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
+    $('print-part-caption').innerHTML = '⏳ building export geometry…';
     setTimeout(() => {
         if (gallery.geo) gallery.geo.dispose();
         const mesh = recenter(part.build());
@@ -1960,16 +2383,15 @@ function selectGalleryPart(i) {
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
             : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
-        $('parts-caption').innerHTML =
-            `<b>${part.name}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
+        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
+        $('print-part-caption').innerHTML =
+            `<b>${part.name}${countLabel}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
             `${report.isManifold && report.isConsistent && report.windsOutward
                 ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
-            `<span style="opacity:.8">${part.note ?? ''} Auto-rotating — drag to inspect the interlocks.</span>`;
+            `<span style="opacity:.8">${part.note ?? ''} Drag in inspector to rotate.</span>`;
     }, 30);
 }
 
-$('tab-parts').addEventListener('click', () => { $('tab-parts').classList.add('active'); openGallery(); });
-$('parts-close').addEventListener('click', closeGallery);
 window.addEventListener('resize', () => { if (gallery.renderer) galleryResize(); });
 
 // ---------------------------------------------------------------------------
@@ -2098,13 +2520,14 @@ async function doExport(format) {
             const mesh = recenter(part.build());
             const report = analyzeMesh(mesh.positions, mesh.indices);
             const ok = report.isManifold && report.isConsistent && report.windsOutward;
-            log.innerHTML += `<div class="row"><span>${part.name}</span>` +
+            const fileName = part.count > 1 ? `${part.name}_${part.count}x` : part.name;
+            log.innerHTML += `<div class="row"><span>${fileName}</span>` +
                 `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span></span></div>`;
             if (format === 'stl') {
-                files[`${part.name}.stl`] = new Uint8Array(generateBinarySTL(mesh.positions, mesh.indices));
+                files[`${fileName}.stl`] = new Uint8Array(generateBinarySTL(mesh.positions, mesh.indices));
             } else {
                 const xml = generate3MFXML(mesh.positions, mesh.indices);
-                files[`${part.name}.3mf`] = fflate.zipSync({
+                files[`${fileName}.3mf`] = fflate.zipSync({
                     '[Content_Types].xml': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/3D/3dmodel.model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'), { level: 0 }],
                     '_rels/.rels': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'), { level: 0 }],
                     '3D/3dmodel.model': [fflate.strToU8(xml), { level: 6 }]
@@ -2197,7 +2620,11 @@ function animate(now) {
     requestAnimationFrame(animate);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
-    if (sim.running && !sim.paused) tickSim(dt);
+    if (sim.running && !sim.paused) {
+        const simDt = dt * (state.simSpeed ?? 1.0);
+        tickSim(simDt);
+        updateElevatorProngs(simDt);
+    }
     // bob the construction arrows
     const bob = Math.sin(now / 250) * 6;
     for (const a of arrowMeshes) a.position.y = a.userData.baseY + bob;
@@ -2219,6 +2646,7 @@ function syncControls() {
     muSel.value = state.muKey;
     for (const btn of document.querySelectorAll('[data-figstyle]')) {
         btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);
+        btn.disabled = sim.running;
     }
     $('in-opacity').value = state.figureOpacity ?? 1;
     $('out-opacity').textContent = `${Math.round((state.figureOpacity ?? 1) * 100)}%`;
@@ -2227,6 +2655,7 @@ function syncControls() {
 (async () => {
     await initCSG(); // switch display meshes and scenery need booleans
     await loadState();
+    updateSpeedButton();
     syncControls();
     rebuild();
     resize();

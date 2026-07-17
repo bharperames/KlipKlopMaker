@@ -26,7 +26,7 @@ export function serializeScene(state, meta = {}) {
         description: meta.description ?? state.description ?? '',
         sequence: cloneNodes(state.sequence),
         scenery: (state.scenery ?? []).map(s => ({ ...s })),
-        figureStyle: state.figureStyle ?? 'classic',
+        figureStyle: state.figureStyle ?? 'knight',
         knightVariant: state.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof state.figureOpacity === 'number' ? state.figureOpacity : 1,
         params: {
@@ -90,7 +90,7 @@ export function deserializeScene(obj) {
         description: obj.description ?? '',
         sequence: cloneNodes(obj.sequence),
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
-        figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'classic',
+        figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'knight',
         knightVariant: obj.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof obj.figureOpacity === 'number' ? Math.min(1, Math.max(0.3, obj.figureOpacity)) : 1,
         // parameters are CONSTANT: every design lays out on the canonical
