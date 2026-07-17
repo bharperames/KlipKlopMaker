@@ -1090,7 +1090,10 @@ function refreshEditorCard() {
     const node = nodeAt(state.sequence, pc.address);
     if (isSwitchNode(node)) {
         card.innerHTML = `
-            <b>⑂ ${pc.switchType === 'switchL' ? 'Left' : 'Right'} switch</b><br>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <b>Editing: ${pc.name}</b>
+                <button id="ed-close" style="font-size: 11px; padding: 2px 6px; border: none; background: transparent; color: var(--ink-2); cursor: pointer;" title="Stop editing (deselect)">✖</button>
+            </div>
             <span style="color:var(--ink-2)">gate feeds the <b>${node.gate}</b> route</span>
             <div class="btn-grid" style="margin-top:8px">
                 <button id="ed-gate">⇄ Flip gate</button>
@@ -1098,6 +1101,14 @@ function refreshEditorCard() {
             </div>
             <div style="color:var(--ink-2);margin-top:6px;font-size:11.5px">
                 Removing keeps the main route's pieces; the branch is discarded.</div>`;
+        $('ed-close').onclick = () => {
+            state.selected = -1;
+            state.selectedScenery = -1;
+            refreshSelectionHighlight();
+            refreshPieceList();
+            refreshEditorCard();
+            rebuildScenery();
+        };
         $('ed-gate').onclick = () => { toggleGate(pc.address); };
         $('ed-del').onclick = () => {
             recordEdit();
@@ -1119,7 +1130,10 @@ function refreshEditorCard() {
     ];
     const loopOrigin = state.layout?.isCircuit && pc.address.length === 1;
     card.innerHTML = `
-        <b>Edit ${pc.name}</b>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <b>Editing: ${pc.name}</b>
+            <button id="ed-close" style="font-size: 11px; padding: 2px 6px; border: none; background: transparent; color: var(--ink-2); cursor: pointer;" title="Stop editing (deselect)">✖</button>
+        </div>
         <div class="btn-grid" style="margin-top:8px">
             ${types.map(([t, l]) =>
                 `<button data-ed-type="${t}" ${t === nodeType ? 'disabled' : ''}>${l}</button>`).join('')}
@@ -1142,6 +1156,15 @@ function refreshEditorCard() {
         </div>` : ''}
         <div style="color:var(--ink-2);margin-top:6px;font-size:11.5px">
             Changes re-lay the downstream track automatically (Auto-Z).</div>`;
+
+    $('ed-close').onclick = () => {
+        state.selected = -1;
+        state.selectedScenery = -1;
+        refreshSelectionHighlight();
+        refreshPieceList();
+        refreshEditorCard();
+        rebuildScenery();
+    };
 
     if (nodeType === 'elevator') {
         const heightVal = node.height ?? 90;
