@@ -2,7 +2,7 @@
   "format": "klipklop-scene",
   "version": 2,
   "geometry": "1.0.0",
-  "name": "Elevator Ascent",
+  "name": "Elevator Showcase",
   "description": "An elevator ascent showcase circuit.",
   "sequence": [
     "elevator",

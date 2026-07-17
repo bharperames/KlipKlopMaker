@@ -871,7 +871,7 @@ if (sceneGrid && btnScenePicker && sceneGridDropdown) {
 
     const sceneFiles = [
         '01-first-ramp', '02-demo-tower', '03-grand-helix',
-        '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '15-elevator-ascent'
+        '09-switchyard', '10-lift-and-return', '11-palm-resort', '12-perpetual-motion', '15-elevator-showcase'
     ];
 
     Promise.all(sceneFiles.map(async (filename) => {
