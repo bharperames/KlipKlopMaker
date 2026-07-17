@@ -23,7 +23,7 @@ import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
 import { createHistory } from './history.js';
-import { solveClosureForLayout } from './connect.js';
+import { solveClosureForLayout, describeGap } from './connect.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
@@ -31,7 +31,8 @@ import {
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids
 } from './pieces.js';
-import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
+import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
+import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
 
@@ -43,7 +44,7 @@ const state = {
     sequence: [],
     scenery: [],
     figureStyle: 'classic',
-    figureOpacity: 0.5,
+    figureOpacity: 1,
     slopeDeg: +STANDARD.slopeDeg.toFixed(4),
     innerWidth: STANDARD.innerWidth,
     curveRadius: +STANDARD.curveRadius.toFixed(2),
@@ -95,7 +96,7 @@ function restoreSnapshot(s) {
     state.sequence = s.sequence;
     state.scenery = s.scenery;
     state.figureStyle = s.figureStyle ?? 'classic';
-    state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 0.5;
+    state.figureOpacity = s.figureOpacity ?? state.figureOpacity ?? 1;
     state.slopeDeg = s.slopeDeg;
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
@@ -558,16 +559,14 @@ $('btn-clear').addEventListener('click', () => {
     state.selected = -1; state.selectedScenery = -1; state.activeEndKey = '[]';
     rebuild();
 });
-$('btn-demo').addEventListener('click', () => {
-    recordEdit();
-    state.sequence = [...DEMO]; state.selected = -1; state.activeEndKey = '[]';
-    rebuild(); fitView();
-});
 $('btn-connect').addEventListener('click', () => {
     if (state.layout.isCircuit) { toast('🔁 Already a closed circuit.'); return; }
     const sol = solveClosureForLayout(state.layout);
     if (!sol) {
-        toast('🧲 No closing path found — root chains with switches, or gaps beyond ~26 tiles, cannot auto-close.');
+        const gap = describeGap(state.layout);
+        toast(gap
+            ? `🧲 No closing path found for this gap (${gap.distMm.toFixed(0)} mm away, ${gap.turnQuarters * 90}° turn, ${gap.deckMm >= 0 ? gap.deckMm.toFixed(0) + ' mm above' : Math.abs(gap.deckMm).toFixed(0) + ' mm below'} the start) within 26 tiles.`
+            : '🧲 Nothing to connect — root chains with switches cannot auto-close.');
         return;
     }
     recordEdit();
@@ -1068,6 +1067,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.key === 'Escape') {
         if ($('doc-overlay').style.display !== 'none') { $('doc-overlay').style.display = 'none'; return; }
+        if ($('refs-overlay').style.display !== 'none') { $('refs-overlay').style.display = 'none'; return; }
         if (gallery.open) { closeGallery(); return; }
         cancelPlacement();
     }
@@ -1229,8 +1229,9 @@ function refreshFooter() {
         : warns.length ? `⚠️ ${warns[0].msg}` : '✅ layout OK';
 }
 
-// tabs (single side panel: Build | Physics | Print | Refs)
-const TABS = ['build', 'physics', 'export', 'refs'];
+// tabs (single side panel: Build | Physics | Print; Parts opens the gallery,
+// Refs opens from the header toolbar)
+const TABS = ['build', 'physics', 'export'];
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => setTab(t));
 function setTab(t) {
     for (const k of TABS) {
@@ -1244,9 +1245,12 @@ function setTab(t) {
 // ---------------------------------------------------------------------------
 
 let audioCtx = null;
+// 48 kHz explicitly: Chrome's MP4/AAC muxer assumes 48 kHz — recording from a
+// device-default 44.1 kHz context makes the film's soundtrack play ~9% fast.
+const makeAudioCtx = () => new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
 function clack(freq) {
     if (!state.soundOn && !film.active) return;
-    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx ??= makeAudioCtx();
     const t = audioCtx.currentTime;
     const noise = audioCtx.createBufferSource();
     const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.03, audioCtx.sampleRate);
@@ -1280,36 +1284,39 @@ function buildHorse() {
     const group = new THREE.Group();
     const pivot = new THREE.Group();
     group.add(pivot);
-    const op = state.figureOpacity ?? 0.5;
-    const mat = (color) => new THREE.MeshLambertMaterial({
-        color,
-        transparent: op < 0.999,
-        opacity: op,
-        depthWrite: op >= 0.999
-    });
+    const op = state.figureOpacity ?? 1;
     const W2 = (state.innerWidth - 4) / 2;
-    const body = new THREE.Mesh(
-        toBufferGeometry(extrudeOutlineX(bodySideOutline(state.figureStyle), -W2, W2)),
-        mat(state.figureStyle === 'knight' ? 0xc68642 : 0xf5f0e8) // toy's caramel tan
-    );
-    body.castShadow = true;
-    body.renderOrder = 2;
-    pivot.add(body);
+    let pend;
     if (state.figureStyle === 'knight') {
-        // toy-matched colors: royal blue armor/helmet, red plume
-        const rider = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightRiderOutline(), -12, 12)), mat(0x2b62c4));
-        rider.renderOrder = 2;
-        const crest = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(knightCrestOutline(), -3, 3)), mat(0xd23c2a));
-        crest.renderOrder = 2;
-        pivot.add(rider, crest);
+        // sculpted Galahad + Mike (see horse_model.js); the rear leg skirt
+        // IS the pendulum — same axle, same swing contract as the red arm
+        const model = buildKnightHorseModel({ halfWidth: W2, opacity: op });
+        pivot.add(model.body);
+        pend = model.pend;
+        pend.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
+        pivot.add(pend);
+    } else {
+        const mat = (color) => new THREE.MeshLambertMaterial({
+            color,
+            transparent: op < 0.999,
+            opacity: op,
+            depthWrite: op >= 0.999
+        });
+        const body = new THREE.Mesh(
+            toBufferGeometry(extrudeOutlineX(bodySideOutline(state.figureStyle), -W2, W2)),
+            mat(0xf5f0e8)
+        );
+        body.castShadow = true;
+        body.renderOrder = 2;
+        pivot.add(body);
+        const pendMat = new THREE.MeshLambertMaterial({ color: 0xc0392b }); // pendulum pops through the ghost body
+        pend = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(
+            pendulumSideOutline().map(([z, y]) => [z - FIGURE.axle.z, y - FIGURE.axle.y]),
+            -FIGURE.pendulumW / 2, FIGURE.pendulumW / 2)), pendMat);
+        pend.castShadow = true;
+        pend.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
+        pivot.add(pend);
     }
-    const pendMat = new THREE.MeshLambertMaterial({ color: 0xc0392b }); // pendulum pops through the ghost body
-    const pend = new THREE.Mesh(toBufferGeometry(extrudeOutlineX(
-        pendulumSideOutline().map(([z, y]) => [z - FIGURE.axle.z, y - FIGURE.axle.y]),
-        -FIGURE.pendulumW / 2, FIGURE.pendulumW / 2)), pendMat);
-    pend.castShadow = true;
-    pend.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
-    pivot.add(pend);
     // axle marker + CoM bead: ties the animation to the physics story
     const axleDot = new THREE.Mesh(new THREE.SphereGeometry(2.4, 12, 8), new THREE.MeshBasicMaterial({ color: 0x2a2a2a }));
     axleDot.position.set(0, FIGURE.axle.y, FIGURE.axle.z);
@@ -1385,7 +1392,7 @@ function startFilm() {
     const stream = renderer.domElement.captureStream(60);
     // mix the synthesized klip-klop audio into the recording (even when the
     // speaker toggle is muted, the film still gets its soundtrack)
-    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    audioCtx ??= makeAudioCtx();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     film.audioDest = audioCtx.createMediaStreamDestination();
     const audioTrack = film.audioDest.stream.getAudioTracks()[0];
@@ -1602,6 +1609,23 @@ function refreshIdleHorse() {
         scene.add(idleHorse);
     } catch { /* empty/degenerate layouts have no place to stand */ }
 }
+
+// Dev hook for the Playwright smoke/screenshot scripts: orbit the camera
+// around the figure (idle or riding) at spherical angles theta/phi.
+window.__frameHorse = (theta = Math.PI / 4, phi = 1.25, dist = 160) => {
+    const h = sim.horse ?? idleHorse;
+    if (!h) return false;
+    const c = new THREE.Vector3();
+    new THREE.Box3().setFromObject(h).getCenter(c);
+    controls.target.copy(c);
+    const az = (Math.PI / 2 - h.rotation.y) + theta; // theta 0 = head-on, π = rear
+    camera.position.set(
+        c.x + dist * Math.sin(phi) * Math.cos(az),
+        c.y + dist * Math.cos(phi),
+        c.z + dist * Math.sin(phi) * Math.sin(az));
+    controls.update();
+    return true;
+};
 
 let toastTimer = null;
 function toast(msg) {
@@ -1850,6 +1874,7 @@ function openGallery() {
 function closeGallery() {
     gallery.open = false;
     $('parts-overlay').style.display = 'none';
+    $('tab-parts').classList.remove('active');
 }
 
 function selectGalleryPart(i) {
@@ -1881,7 +1906,7 @@ function selectGalleryPart(i) {
     }, 30);
 }
 
-$('btn-parts').addEventListener('click', openGallery);
+$('tab-parts').addEventListener('click', () => { $('tab-parts').classList.add('active'); openGallery(); });
 $('parts-close').addEventListener('click', closeGallery);
 window.addEventListener('resize', () => { if (gallery.renderer) galleryResize(); });
 
@@ -1953,6 +1978,8 @@ for (const a of document.querySelectorAll('.doc-link')) {
     });
 }
 $('doc-close').addEventListener('click', () => { $('doc-overlay').style.display = 'none'; });
+$('btn-refs').addEventListener('click', () => { $('refs-overlay').style.display = ''; });
+$('refs-close').addEventListener('click', () => { $('refs-overlay').style.display = 'none'; });
 
 function recenter(mesh) {
     const { positions } = mesh;
@@ -2133,8 +2160,8 @@ function syncControls() {
     for (const btn of document.querySelectorAll('[data-figstyle]')) {
         btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);
     }
-    $('in-opacity').value = state.figureOpacity ?? 0.5;
-    $('out-opacity').textContent = `${Math.round((state.figureOpacity ?? 0.5) * 100)}%`;
+    $('in-opacity').value = state.figureOpacity ?? 1;
+    $('out-opacity').textContent = `${Math.round((state.figureOpacity ?? 1) * 100)}%`;
 }
 
 (async () => {

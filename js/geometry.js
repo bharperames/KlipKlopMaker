@@ -365,7 +365,7 @@ export function circlePlan(r, segments = segmentsForCircle(r)) {
 // ---------------------------------------------------------------------------
 
 /** Samples y on a rocker-cam circle: center (cz, cy), radius R. */
-const camY = (z, cz, cy, R) => cy - Math.sqrt(Math.max(0, R * R - (z - cz) ** 2));
+export const camY = (z, cz, cy, R) => cy - Math.sqrt(Math.max(0, R * R - (z - cz) ** 2));
 
 /**
  * Outer body silhouettes. Every style shares the SAME physics chassis —
