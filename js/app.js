@@ -1360,6 +1360,15 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
             } else {
                 selectPiece(idx);
             }
+        } else {
+            if (state.selected >= 0 || state.selectedScenery >= 0) {
+                state.selected = -1;
+                state.selectedScenery = -1;
+                refreshSelectionHighlight();
+                refreshPieceList();
+                refreshEditorCard();
+                rebuildScenery();
+            }
         }
     };
     renderer.domElement.addEventListener('pointerup', up);
