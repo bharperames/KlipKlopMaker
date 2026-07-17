@@ -1402,7 +1402,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if ($('doc-overlay').style.display !== 'none') { $('doc-overlay').style.display = 'none'; return; }
         if ($('refs-overlay').style.display !== 'none') { $('refs-overlay').style.display = 'none'; return; }
-        if (gallery.open) { closeGallery(); return; }
+        if (lightbox.open) { closeLightbox(); return; }
         cancelPlacement();
     }
     if (e.key === ' ') {
@@ -2392,7 +2392,151 @@ function selectGalleryPart(i) {
     }, 30);
 }
 
-window.addEventListener('resize', () => { if (gallery.renderer) galleryResize(); });
+// ---------------------------------------------------------------------------
+// Lightbox overlay inspector (large preview)
+// ---------------------------------------------------------------------------
+
+const lightbox = {
+    open: false, renderer: null, scene: null, camera: null, controls: null,
+    mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
+    style: 'plastic', showWire: false, showDims: true, selectedIndex: 0
+};
+
+function initLightbox() {
+    if (lightbox.renderer) return;
+    const holder = $('parts-view');
+    lightbox.renderer = new THREE.WebGLRenderer({ antialias: true });
+    lightbox.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    holder.appendChild(lightbox.renderer.domElement);
+    lightbox.scene = new THREE.Scene();
+    lightbox.scene.background = new THREE.Color(0x1d1a16);
+    const pmrem = new THREE.PMREMGenerator(lightbox.renderer);
+    lightbox.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    lightbox.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
+    lightbox.controls = new OrbitControls(lightbox.camera, lightbox.renderer.domElement);
+    lightbox.controls.enableDamping = true;
+    lightbox.controls.autoRotate = true;
+    lightbox.controls.autoRotateSpeed = 1.6;
+    lightbox.controls.zoomSpeed = 3;
+    lightbox.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 0.55));
+    const key = new THREE.DirectionalLight(0xfff2d8, 1.1);
+    key.position.set(200, 350, 150);
+    lightbox.scene.add(key);
+    const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
+    lightbox.scene.add(grid);
+
+    $('parts-shading').addEventListener('change', () => { lightbox.style = $('parts-shading').value; applyLightboxStyle(); });
+    $('parts-rotate').addEventListener('change', () => { lightbox.controls.autoRotate = $('parts-rotate').checked; });
+    $('parts-wire').addEventListener('change', () => { lightbox.showWire = $('parts-wire').checked; applyLightboxStyle(); });
+    $('parts-dims').addEventListener('change', () => { lightbox.showDims = $('parts-dims').checked; applyLightboxStyle(); });
+}
+
+function applyLightboxStyle() {
+    for (const key of ['mesh', 'wire', 'dims']) {
+        if (lightbox[key]) {
+            lightbox.scene.remove(lightbox[key]);
+            lightbox[key] = null;
+        }
+    }
+    if (!lightbox.geo) return;
+    lightbox.mesh = new THREE.Mesh(lightbox.geo, GALLERY_MATS[lightbox.style]());
+    lightbox.scene.add(lightbox.mesh);
+    if (lightbox.showWire) {
+        lightbox.wire = new THREE.LineSegments(
+            new THREE.WireframeGeometry(lightbox.geo),
+            new THREE.LineBasicMaterial({ color: 0x2bff6a, transparent: true, opacity: 0.55 })
+        );
+        lightbox.scene.add(lightbox.wire);
+    }
+    if (lightbox.showDims) {
+        lightbox.dims = makeDimGroup(new THREE.Box3().setFromObject(lightbox.mesh));
+        lightbox.scene.add(lightbox.dims);
+    }
+}
+
+function lightboxResize() {
+    const holder = $('parts-view');
+    if (!holder || !lightbox.renderer) return;
+    const w = holder.clientWidth, h = holder.clientHeight;
+    lightbox.renderer.setSize(w, h);
+    lightbox.camera.aspect = w / h;
+    lightbox.camera.updateProjectionMatrix();
+}
+
+function selectLightboxPart(i) {
+    lightbox.selectedIndex = i;
+    const part = lightbox.parts[i];
+    if (!part) return;
+    [...$('parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
+    $('parts-caption').innerHTML = '⏳ building export geometry…';
+    setTimeout(() => {
+        if (lightbox.geo) lightbox.geo.dispose();
+        const mesh = recenter(part.build());
+        const report = analyzeMesh(mesh.positions, mesh.indices);
+        lightbox.geo = toBufferGeometry(mesh);
+        applyLightboxStyle();
+        const box = new THREE.Box3().setFromObject(lightbox.mesh);
+        const c = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        lightbox.controls.target.copy(c);
+        lightbox.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        const cat = /^pillar/.test(part.name) ? 'pillar'
+            : /^scenery/.test(part.name) ? 'scenery'
+            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
+            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
+        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
+        $('parts-caption').innerHTML =
+            `<b>${part.name}${countLabel}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
+            `${report.isManifold && report.isConsistent && report.windsOutward
+                ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
+            `<span style="opacity:.8">${part.note ?? ''} Drag in inspector to rotate.</span>`;
+    }, 30);
+}
+
+function openLightbox() {
+    $('parts-overlay').style.display = '';
+    initLightbox();
+    lightboxResize();
+    lightbox.parts = assembleParts().parts;
+    $('parts-count').textContent = `${lightbox.parts.length} unique parts in this design`;
+    const list = $('parts-list');
+    list.innerHTML = '';
+    lightbox.parts.forEach((part, i) => {
+        const li = document.createElement('li');
+        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
+        li.textContent = `${part.name}${countLabel}`;
+        li.addEventListener('click', () => selectLightboxPart(i));
+        list.appendChild(li);
+    });
+
+    let index = 0;
+    const inlineList = $('print-parts-list');
+    if (inlineList) {
+        const selectedLi = inlineList.querySelector('li.selected');
+        if (selectedLi) {
+            const siblings = [...inlineList.children];
+            index = siblings.indexOf(selectedLi);
+            if (index < 0) index = 0;
+        }
+    }
+
+    lightbox.open = true;
+    selectLightboxPart(index);
+}
+
+function closeLightbox() {
+    lightbox.open = false;
+    $('parts-overlay').style.display = 'none';
+    selectGalleryPart(lightbox.selectedIndex);
+}
+
+$('btn-open-lightbox').addEventListener('click', openLightbox);
+$('parts-close').addEventListener('click', closeLightbox);
+
+window.addEventListener('resize', () => {
+    if (gallery.renderer) galleryResize();
+    if (lightbox.renderer) lightboxResize();
+});
 
 // ---------------------------------------------------------------------------
 // In-app document viewer: renders the project's markdown docs (PHYSICS.md,
@@ -2635,6 +2779,10 @@ function animate(now) {
     if (gallery.open) {
         gallery.controls.update();
         gallery.renderer.render(gallery.scene, gallery.camera);
+    }
+    if (lightbox.open) {
+        lightbox.controls.update();
+        lightbox.renderer.render(lightbox.scene, lightbox.camera);
     }
 }
 

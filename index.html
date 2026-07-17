@@ -722,7 +722,10 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <ul id="print-parts-list" style="list-style: none; padding: 0; margin: 0;"></ul>
         </div>
 
-        <h2>3D Part Inspector</h2>
+        <h2 style="display: flex; justify-content: space-between; align-items: center;">
+            <span>3D Part Inspector</span>
+            <button id="btn-open-lightbox" style="font-size: 11px; padding: 2px 6px;">⛶ Expand</button>
+        </h2>
         <div id="print-part-view" style="height: 220px; background: #000; border: 1px solid var(--line); border-radius: 6px; position: relative; overflow: hidden; margin-bottom: 6px;"></div>
         <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
             <select id="print-part-shading" style="font-size: 11px; padding: 4px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);">
@@ -818,6 +821,35 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         </div>
     </div>
         </div>
+    </div>
+</div>
+
+<div id="parts-overlay" style="display:none">
+    <div id="parts-header">
+        <h2 style="margin:0; font-size:16px; color:#fbf3e2;">Watertight Parts Inspector</h2>
+        <span id="parts-count">0 unique parts</span>
+        <button id="parts-close">Close Inspector (Esc)</button>
+    </div>
+    <div id="parts-side">
+        <div id="parts-standard">
+            <b>Standard Parts Note</b><br>
+            All connection tabs/slots and pockets are generated from high-precision CSG subtraction boolean operations to guarantee clean sliding and snapping.
+        </div>
+        <ul id="parts-list"></ul>
+    </div>
+    <div id="parts-view">
+        <div id="parts-tools">
+            <select id="parts-shading">
+                <option value="plastic">✨ Injection plastic</option>
+                <option value="pla">🧵 Matte PLA</option>
+                <option value="clay">🏺 Clay</option>
+                <option value="normals">🧭 Normals inspector</option>
+            </select>
+            <label><input type="checkbox" id="parts-wire"> wire</label>
+            <label><input type="checkbox" id="parts-dims" checked> dims</label>
+            <label><input type="checkbox" id="parts-rotate" checked> spin</label>
+        </div>
+        <div id="parts-caption">Select a part from the list to preview.</div>
     </div>
 </div>
 
