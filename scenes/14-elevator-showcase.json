@@ -1,0 +1,34 @@
+{
+  "format": "klipklop-scene",
+  "version": 2,
+  "name": "Elevator Ascent",
+  "description": "An elevator lifts the figure vertically by 90 mm using moving conveyor prongs, after which it enters a 180° curved descent and rolls smoothly down to the exit bumper. Demonstrates the custom vertical transport mechanism.",
+  "sequence": [
+    "elevator",
+    "curveL",
+    "curveL",
+    "straight",
+    "straight"
+  ],
+  "scenery": [],
+  "params": {
+    "slopeDeg": 11.2167,
+    "innerWidth": 48,
+    "curveRadius": 143.64
+  },
+  "surface": "washboard",
+  "walker": {
+    "alphaDeg": 18,
+    "legLenMm": 26,
+    "efficiency": 0.26,
+    "massG": 45
+  },
+  "expect": {
+    "outcome": "arrived",
+    "maxTimeS": 35,
+    "minClacks": 30,
+    "minWalkedFraction": 0.9,
+    "layoutErrors": []
+  },
+  "geometry": "1.0.0"
+}
