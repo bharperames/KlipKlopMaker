@@ -1645,7 +1645,7 @@ function getPartWeight(part, sig) {
     try {
         const mesh = part.build();
         const report = analyzeMesh(mesh.positions, mesh.indices);
-        const cat = /^pillar/.test(part.name) ? 'pillar'
+        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
             : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
@@ -2494,7 +2494,7 @@ function selectGalleryPart(i) {
         gallery.controls.target.copy(c);
         // low three-quarter angle so undersides (pockets, sockets, ribs) show
         gallery.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
-        const cat = /^pillar/.test(part.name) ? 'pillar'
+        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
             : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
@@ -2595,7 +2595,7 @@ function selectLightboxPart(i) {
         const size = box.getSize(new THREE.Vector3()).length();
         lightbox.controls.target.copy(c);
         lightbox.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
-        const cat = /^pillar/.test(part.name) ? 'pillar'
+        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
             : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
