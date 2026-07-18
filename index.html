@@ -562,6 +562,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <button id="btn-fit" title="Frame the whole track">⌂ Fit view</button>
         <button id="btn-record" title="Record a follow-cam video of the whole ride (MP4/WebM)">🎥 Film ride</button>
         <button id="btn-sound" title="Klip-klop sound">🔊</button>
+        <button id="btn-render-mode" title="Toggle render mode (Solid / Hidden-line / Wireframe)" style="margin-left: 4px;">👁 Solid</button>
     </div>
     <div class="hdr-right">
         <button id="btn-refs" title="Research references & generated reports">📚 Reference Info</button>
@@ -575,6 +576,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <button id="tab-build" class="active">Build</button>
         <button id="tab-export">Print/Parts</button>
         <button id="tab-physics">Physics</button>
+        <button id="tab-joint">Joint Guide</button>
     </div>
     <div id="pane-build">
     <h2 class="h2row">Build path <span id="active-end-label" style="text-transform:none;letter-spacing:0"></span>
@@ -762,6 +764,71 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         </div>
     </div>
 
+    <div id="pane-joint" style="display:none">
+        <h2>Connection Guide</h2>
+        <div class="card" style="margin-bottom: 12px;">
+            <b style="font-size:13.5px; color:var(--accent);">Bowtie Joint Anatomy</b>
+            <p style="color:var(--ink-2); font-size:12.5px; line-height:1.4; margin-top:6px; margin-bottom: 6px;">
+                Track pieces connect using a separate, flat-printed <b>bowtie key</b>. This provides key benefits:
+            </p>
+            <ul style="color:var(--ink-2); font-size:12px; line-height:1.4; margin-left: 16px; margin-top: 4px; padding: 0;">
+                <li><b>Zero Overhangs:</b> Support-free printing for track pieces &amp; keys.</li>
+                <li><b>Wedge Action:</b> Tapered edges pull mating track pieces flush.</li>
+                <li><b>Seam Clamping:</b> Keeps track joints level so hooves run smoothly.</li>
+            </ul>
+        </div>
+        
+        <div class="card" style="margin-bottom: 12px;">
+            <b style="font-size:13px;">Connection Stages</b>
+            <div style="font-size:12px; line-height:1.4; margin-top: 6px;">
+                <div id="timeline-step-1" style="padding: 6px 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--line); background: var(--panel-2);">
+                    <b>1. Alignment:</b> Bring track ends face-to-face.
+                </div>
+                <div id="timeline-step-2" style="padding: 6px 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--line); background: var(--panel-2);">
+                    <b>2. Insertion:</b> Align the bowtie key underneath the seam.
+                </div>
+                <div id="timeline-step-3" style="padding: 6px 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--line); background: var(--panel-2);">
+                    <b>3. Wedge Lock:</b> Push key up. Tapered faces pull and lock seam.
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
+            <b style="font-size:13px; margin-bottom: 8px; display:block;">Tolerances &amp; Fits Spec</b>
+            <table style="width:100%; border-collapse:collapse; font-size:11px; color:var(--ink-2); line-height:1.35;">
+                <thead>
+                    <tr style="border-bottom:1.5px solid var(--line); text-align:left; color:var(--ink);">
+                        <th style="padding:4px 0; font-weight:600; font-size:11px;">Joint Type</th>
+                        <th style="padding:4px 0; font-weight:600; font-size:11px;">Female (Pocket/Socket)</th>
+                        <th style="padding:4px 0; font-weight:600; font-size:11px;">Male (Key/Tenon)</th>
+                        <th style="padding:4px 0; font-weight:600; font-size:11px; text-align:right;">Clearance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom:1px solid var(--line);">
+                        <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Bowtie Key</td>
+                        <td style="padding:6px 0; font-size:11px;">Height: 6.0 mm<br>Lateral: +0.25 mm</td>
+                        <td style="padding:6px 0; font-size:11px;">Height: 5.6 mm<br>Chamfer: 0.5 mm</td>
+                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.20 mm</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Pillar Hex</td>
+                        <td style="padding:6px 0; font-size:11px;">AF: 9.0 mm<br>Depth: 10.0 mm</td>
+                        <td style="padding:6px 0; font-size:11px;">AF: 8.6 mm<br>Length: 9.0 mm</td>
+                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.20 mm</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="font-size:10px; color:var(--ink-3); margin-top:8px; line-height:1.25;">
+                * <i>AF: Across-Flats width of the hex shape. Tolerances are calibrated for standard FDM printing using PLA.</i>
+            </div>
+        </div>
+
+        <div class="card" style="font-size:12px; line-height:1.4; color:var(--ink-2);">
+            💡 <b>Tip:</b> Orbit the camera in the main viewport (drag to rotate, scroll to zoom) to see the wedge geometry fit underneath the track.
+        </div>
+    </div>
+
 
 
 </aside>
@@ -800,6 +867,11 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         </div>
         <div class="card">
             <a href="./readme.md" class="doc-link" data-doc="readme.md">📘 readme.md — app &amp; architecture guide</a>
+        </div>
+        <div class="card">
+            <a href="https://claude.ai/code/artifact/18f938c9-d9e0-4ca1-9ff7-5e10759f06b1" target="_blank" rel="noopener">🐴 The Journey — development history</a><br>
+            <span style="color:var(--ink-2)">How the app came to be: the toy-physics inspiration, the rimless-wheel
+            research, the Klip Klop Standard, and every iteration of the founding sessions.</span>
         </div>
 
         <h2>Passive dynamic walking</h2>
