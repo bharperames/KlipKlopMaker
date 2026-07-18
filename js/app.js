@@ -1908,6 +1908,15 @@ function startFilm() {
     audioCtx ??= makeAudioCtx();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     film.audioDest = audioCtx.createMediaStreamDestination();
+    
+    // Create a continuous silent audio source to keep the stream active and synchronized
+    film.silentOsc = audioCtx.createOscillator();
+    film.silentGain = audioCtx.createGain();
+    film.silentGain.gain.value = 0;
+    film.silentOsc.connect(film.silentGain);
+    film.silentGain.connect(film.audioDest);
+    film.silentOsc.start(0);
+
     const audioTrack = film.audioDest.stream.getAudioTracks()[0];
     if (audioTrack) stream.addTrack(audioTrack);
     film.mime = mime;
@@ -1926,7 +1935,19 @@ function endFilm() {
     if (!film.active) return;
     film.active = false;
     if (film.media && film.media.state !== 'inactive') film.media.stop(); // finalize before the camera jumps back
+    
+    // Stop and clean up the silent oscillator
+    if (film.silentOsc) {
+        try { film.silentOsc.stop(); } catch(e) {}
+        film.silentOsc.disconnect();
+        film.silentOsc = null;
+    }
+    if (film.silentGain) {
+        film.silentGain.disconnect();
+        film.silentGain = null;
+    }
     film.audioDest = null;
+    
     $('btn-record').textContent = '🎥 Film ride';
     controls.enabled = true;
     arrowGroup.visible = true;
