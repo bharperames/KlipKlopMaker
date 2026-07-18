@@ -1902,7 +1902,7 @@ function startFilm() {
     const p0 = sim.sampler.at(sim.run.trace[0]?.dist ?? 0);
     camera.position.set(p0.x - Math.cos(p0.h) * 260, p0.y + 170, p0.z - Math.sin(p0.h) * 260);
 
-    const stream = renderer.domElement.captureStream(60);
+    const stream = renderer.domElement.captureStream(30);
     // mix the synthesized klip-klop audio into the recording (even when the
     // speaker toggle is muted, the film still gets its soundtrack)
     audioCtx ??= makeAudioCtx();
