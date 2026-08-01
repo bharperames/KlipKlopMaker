@@ -255,16 +255,31 @@ export function channelProfile(o) {
  * A flat top, where the rise is clipped by the cap, is fine: that is a bridge
  * between two flanks, which FDM handles.
  */
+export const ARCH = {
+    // 14 mm clears the 12 mm end rib, which is what the pad is actually for —
+    // the rib and its bowtie pocket must sit on the bed. 20 mm was arbitrary.
+    pad: 14,
+    // 0 = no pad under a socket boss. The boss is a Ø19 cylinder that already
+    // runs from the rim to the drumhead on its own, so it prints as a pier with
+    // the arcade passing over it. It never needed the surrounding skirt dropped
+    // to the bed with it — that was 24 mm of flat rim per piece doing nothing.
+    bossPad: 0,
+    foot: 8,        // mini-pad between adjacent windows
+    maxRise: 100,   // window height cap
+    band: 8,        // material kept under the deck above a window
+    targetW: 75,    // preferred window width; spans subdivide evenly
+    curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
+};
+
 export function archedRimY(piece, s, spec, padCenters = []) {
-    const PAD = 20;
-    const ARCH_MAX_RISE = 100;  // window height cap — keeps a sturdy band under the deck
-    const ARCH_TARGET_W = 75;   // preferred window width; spans subdivide evenly
-    const FOOT = 12;            // mini-pad between adjacent windows
-    const ARCH_CURVE = 1.0;     // 0 = straight 45° tent; >0 curves the flanks steeper
+    const { pad: PAD, foot: FOOT, maxRise: ARCH_MAX_RISE,
+            targetW: ARCH_TARGET_W, curve: ARCH_CURVE } = ARCH;
     const flat = piece.rimY;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;
     const pads = [[0, PAD], [piece.planLen - PAD, piece.planLen]];
-    for (const c of padCenters) pads.push([Math.max(0, c - 12), Math.min(piece.planLen, c + 12)]);
+    if (ARCH.bossPad > 0) {
+        for (const c of padCenters) pads.push([Math.max(0, c - ARCH.bossPad), Math.min(piece.planLen, c + ARCH.bossPad)]);
+    }
     pads.sort((a, b) => a[0] - b[0]);
     for (const [a, b] of pads) if (s >= a - 1e-9 && s <= b + 1e-9) return flat;
     // span between the surrounding pads
@@ -289,7 +304,7 @@ export function archedRimY(piece, s, spec, padCenters = []) {
     // — roughly 1 mm of horizontal overhang per 0.2 mm layer, which droops.
     // Held constant across the window it is a true horizontal bridge.
     const winCentre = s0 + (Math.floor((s - s0) / unit) + 0.5) * unit;
-    const deckCap = deckYAt(piece, winCentre) - 10;
+    const deckCap = deckYAt(piece, winCentre) - ARCH.band;
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 
