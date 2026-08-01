@@ -87,7 +87,12 @@ export const SPEC = {
     minCurveRadius: 120,
     defaultCurveRadius: 150,
     railHeight: 14,
-    wall: 2.4,
+    // 1.6 mm = exactly 4 perimeters at a 0.4 nozzle. Was 2.4 (6 perimeters),
+    // which printed visibly heavier than it needed to be: the shell is ~75% of
+    // all track plastic, so this alone is 15% off the whole job. 1.6 slices
+    // without gap fill; 1.2 would save more but leaves a 14 mm rail at three
+    // perimeters, too flimsy for a toy that gets handled.
+    wall: 1.6,
     floorThk: 2.0,
     filletR: 2.0,
     skirtDepth: 12,

@@ -280,9 +280,38 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
         clearance: spec.jointClearanceMm + 0.05
     }), face);
+    // Lightening windows either side of the pocket. The rib is a solid slab
+    // 50 x 12 mm by the full skirt-to-floor height — on an uphill face that is
+    // ~40 mm tall and the ribs together are 25% of all track plastic. Only
+    // three jobs actually need material: carrying the pocket, sealing the
+    // chamber end, and giving the end a flat pad to print on. The pocket
+    // already voids the middle, so the mass left is the two side slabs.
+    //
+    // Windows open DOWNWARD to the bed exactly like the pocket, so they add no
+    // overhang, and they stop short of z = pocket depth so the back wall that
+    // seals the chamber stays intact.
+    const WALL = 2.5;                       // material kept around each window
+    const winZ0 = 1.5, winZ1 = K.depth - 0.5;
+    const winInner = K.tipHalf + WALL;
+    const winOuter = Wi + 1 - WALL;
+    const ribTop = deckY - spec.floorThk + 0.5;
+    const windows = winOuter - winInner > 3
+        ? [-1, 1].map(sgn => ({
+            op: SUBTRACTION,
+            geometry: toBufferGeometry(extrudePolygonY(
+                planToWorld([
+                    [sgn * winInner, winZ0], [sgn * winOuter, winZ0],
+                    [sgn * winOuter, winZ1], [sgn * winInner, winZ1]
+                ], face),
+                rimY - 1, ribTop - WALL
+            ))
+        }))
+        : [];
+
     return [
-        { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(rib, rimY, deckY - spec.floorThk + 0.5)) },
-        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, seamDeckY - 3)) }
+        { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(rib, rimY, ribTop)) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, seamDeckY - 3)) },
+        ...windows
     ];
 }
 
@@ -305,6 +334,28 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
 }
 
 /**
+ * Upward bore that hollows a boss above its socket. Returns null when the boss
+ * is too short for a bore to be worth it (outrigger bosses are only 11 mm tall).
+ */
+function bossBoreSolid(cx, cz, piece, spec, ceilY) {
+    const rSock = spec.socket.hexAF / 2;          // inscribed in the hex: no ledge
+    const rBore = spec.socket.bossR - 3;          // leave a 3 mm wall
+    const yStart = piece.rimY + spec.socket.depth;
+    const flare = rBore - rSock;
+    if (ceilY - yStart < flare + 4) return null;
+    const levels = [
+        { y: yStart, r: rSock },
+        { y: yStart + flare, r: rBore },          // 45 deg — self-supporting
+        { y: ceilY + 0.5, r: rBore }
+    ];
+    const n = segmentsForCircle(rBore);
+    return toBufferGeometry(sweepSolid(
+        levels.map(l => circlePlan(l.r, n).map(([x, z]) => [cx + x, -(cz + z)])),
+        levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+    ));
+}
+
+/**
  * Pillar-socket boss ops. `support` comes from planPillarPositions (collision-
  * aware); without one, a center boss at the midpoint is used (ground pieces).
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
@@ -313,7 +364,7 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
-    let bx, bz;
+    let bx, bz, bossCeilY = null;
 
     if (!support || support.mode === 'center') {
         const s = support?.s ?? piece.planLen / 2;
@@ -326,6 +377,7 @@ function bossOps(piece, spec, support) {
             bx = m.origin[0]; bz = m.origin[2];
         }
         const ceilY = (piece.entryDeck - piece.drop * f) - spec.floorThk;
+        bossCeilY = ceilY;      // deck at the BOSS, not the piece's lowest deck
         ops.push({
             op: ADDITION,
             geometry: toBufferGeometry(extrudePolygonY(
@@ -363,6 +415,14 @@ function bossOps(piece, spec, support) {
         op: SUBTRACTION,
         geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec)
     });
+    // Core the boss out above the socket. It was a solid Ø19 post from the rim
+    // to the drumhead — on a tall piece that is ~6.6 cm3 of plastic doing no
+    // work, since only the socket walls carry the tenon. The bore continues the
+    // socket upward so the void stays open to the bed (no trapped cavity), and
+    // flares at 45 deg, which is self-supporting, rather than stepping out to a
+    // horizontal ledge that would need support.
+    const bore = bossCeilY == null ? null : bossBoreSolid(bx, bz, piece, spec, bossCeilY);
+    if (bore) ops.push({ op: SUBTRACTION, geometry: bore });
     return ops;
 }
 
