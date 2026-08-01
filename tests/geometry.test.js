@@ -243,3 +243,39 @@ describe('skirt arch windows print without support', () => {
         expect(peak).toBeGreaterThan(0);
     });
 });
+
+describe('bowtie pocket fits the key', () => {
+    test('clearance is uniform along the whole engagement', async () => {
+        const { bowtiePocketPlan, bowtieKeyPlan } = await import('../js/geometry.js');
+        const { SPEC } = await import('../js/track.js');
+        const K = SPEC.key, c = SPEC.jointClearanceMm;
+        const poc = bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: c });
+        const keyX = z => K.neckHalf + ((K.tipHalf - K.neckHalf) / K.depth) * z;
+
+        // pocket right wall, from its two right-hand vertices
+        const [z0, x0] = [poc[1][1], poc[1][0]];
+        const [z1, x1] = [poc[2][1], poc[2][0]];
+        const wall = z => x0 + ((x1 - x0) / (z1 - z0)) * (z - z0);
+
+        // The wall must be PARALLEL to the key flank. A mismatched slope binds
+        // at one end and gapes at the other, which is what it used to do:
+        // 0.153 mm at the tips (tighter than the proven 0.20) and 0.666 at the
+        // neck. Sampling both ends is not enough — check across the engagement.
+        for (let z = 0; z <= K.depth + 1e-9; z += 0.5) {
+            expect(wall(z) - keyX(z)).toBeCloseTo(c, 6);
+        }
+        // and the key's tip must still clear the pocket's far end
+        expect(z1).toBeGreaterThan(K.depth);
+    });
+
+    test('the key cannot be pulled straight out of the pocket', async () => {
+        const { bowtiePocketPlan } = await import('../js/geometry.js');
+        const { SPEC } = await import('../js/track.js');
+        const K = SPEC.key;
+        const poc = bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: SPEC.jointClearanceMm });
+        const mouthHalf = poc[1][0];
+        // the whole point of a bowtie: the tip is wider than the mouth it would
+        // have to pass through, so the joint locks in tension along the track
+        expect(K.tipHalf).toBeGreaterThan(mouthHalf);
+    });
+});

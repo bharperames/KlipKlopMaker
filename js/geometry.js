@@ -354,15 +354,32 @@ export function bowtieKeyPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance
  * One half of the bowtie pocket, opening at the end face (z=0 → z=depth
  * inward), with assembly clearance. Extended 0.5 mm past the face so the
  * boolean cuts cleanly through the rib's outer skin.
+ *
+ * Both vertices come off ONE line offset from the key's flank, so the gap is a
+ * constant `clearance` per side over the whole engagement. It used to build the
+ * two ends independently — the mouth was pushed OUT by half a flare instead of
+ * pulled in — which tilted the wall to slope 0.3875 against the key's 0.4444:
+ *
+ *     z      gap/side (before)   (now)
+ *     0        0.666 mm          0.20 mm
+ *     4.5      0.410 mm          0.20 mm
+ *     9        0.153 mm          0.20 mm
+ *
+ * That is the wrong way round on both counts. 0.153 mm at the tips is tighter
+ * than the 0.20 mm/side the printed hex joints are proven at, so the key binds
+ * on the taper before it seats; and 0.666 mm at the neck let the seam open
+ * ~0.8 mm before the taper caught, over three times the waterfall step. Contact
+ * was a line at the tip rather than a bearing surface, so the wedging action the
+ * joint is named for could not happen.
  */
 export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25 }) {
     const flare = (tipHalf - neckHalf) / depth;
-    const n = neckHalf + clearance + flare * 0.5; // width at z=-0.5, following the taper
-    const t = tipHalf + clearance;
+    const wall = (z) => neckHalf + clearance + flare * z;   // key flank, offset
+    const zFar = depth + clearance;
     return [
-        [-n, -0.5], [n, -0.5],
-        [t, depth + clearance],
-        [-t, depth + clearance]
+        [-wall(-0.5), -0.5], [wall(-0.5), -0.5],
+        [wall(zFar), zFar],
+        [-wall(zFar), zFar]
     ];
 }
 

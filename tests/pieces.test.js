@@ -260,3 +260,29 @@ describe('export decimation stays inside its error bound', () => {
         }
     });
 });
+
+describe('bowtie pocket detent retains the key', () => {
+    test('the detent is a ledge around the pocket, not a plug', async () => {
+        const { SPEC } = await import('../js/track.js');
+        const { computeMeshVolumeMm3 } = await import('../js/mesh_utils.js');
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const pc = pieces[1];
+        const vol = () => {
+            const g = buildPieceExportGeometry(pc);
+            return computeMeshVolumeMm3(g.positions, g.indices);
+        };
+        const on = vol();
+        const keep = SPEC.key.detentProud;
+        SPEC.key.detentProud = 0;
+        const off = vol();
+        SPEC.key.detentProud = keep;
+
+        const added = on - off;
+        expect(added).toBeGreaterThan(5);      // it exists at all
+        // A ledge is a thin ring. Filling the pocket section instead would add
+        // roughly pocketArea * detentTall * 2 faces — hundreds of mm3.
+        const pocketArea = (SPEC.key.neckHalf + SPEC.key.tipHalf) * SPEC.key.depth;
+        expect(added).toBeLessThan(pocketArea * SPEC.key.detentTall * 2 * 0.25);
+        expectWatertight(buildPieceExportGeometry(pc), 'piece with detent');
+    });
+});

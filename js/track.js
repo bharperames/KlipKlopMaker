@@ -105,7 +105,17 @@ export const SPEC = {
     socket: { hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7 },
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
-    key: { neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12 },
+    key: {
+        neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
+        // Retention. The pocket is a through-slot open to the rim, so a seated
+        // key had nothing under it and simply fell back out — the joint has
+        // never actually held itself together. These bumps narrow the pocket in
+        // a short band just below the seated key: it is pushed up past them and
+        // then rests on them. Kept short so it is a snap, not a press fit down
+        // the whole throat, and shallow enough to print as a 0.35 mm step.
+        detentProud: 0.35,
+        detentTall: 1.5
+    },
     liftSpeedMmS: 110
 };
 

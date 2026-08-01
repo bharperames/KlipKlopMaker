@@ -276,10 +276,34 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
         [[-Wi - 1, 0], [Wi + 1, 0], [Wi + 1, K.ribThk], [-Wi - 1, K.ribThk]],
         face
     );
+    // jointClearanceMm exactly — the +0.05 fudge that used to be here is not
+    // needed now the pocket wall is parallel to the key flank, and 0.20/side is
+    // the clearance the printed hex joints are proven at.
+    const pocketClearance = spec.jointClearanceMm;
     const pocket = planToWorld(bowtiePocketPlan({
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-        clearance: spec.jointClearanceMm + 0.05
+        clearance: pocketClearance
     }), face);
+
+    // Detent band: the pocket profile narrowed by detentProud, sitting just
+    // below where the key seats, so the key snaps past it and rests on it.
+    const keyH = K.height - 2 * spec.jointClearanceMm;
+    const pocketTop = seamDeckY - 3;
+    const detentTop = pocketTop - keyH - 0.1;          // 0.1 mm of play
+    const detentBot = detentTop - K.detentTall;
+    // The detent is a RING, not a plug: refill the band with the full pocket
+    // section, then cut the section narrowed by detentProud back out of it.
+    // What is left is a detentProud ledge around the pocket wall, with the void
+    // still continuous top to bottom so the key can be pushed through it.
+    const detentPlan = (c) => planToWorld(bowtiePocketPlan({
+        neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: c
+    }), face);
+    const detent = (K.detentProud > 0 && detentBot > rimY + 0.5)
+        ? [
+            { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance), detentBot, detentTop)) },
+            { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance - K.detentProud), detentBot - 0.5, detentTop + 0.5)) }
+        ]
+        : [];
     // Lightening windows either side of the pocket. The rib is a solid slab
     // 50 x 12 mm by the full skirt-to-floor height — on an uphill face that is
     // ~40 mm tall and the ribs together are 25% of all track plastic. Only
@@ -310,7 +334,8 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
 
     return [
         { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(rib, rimY, ribTop)) },
-        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, seamDeckY - 3)) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, pocketTop)) },
+        ...detent,          // added back AFTER the pocket is cut
         ...windows
     ];
 }
