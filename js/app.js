@@ -215,6 +215,16 @@ sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -900; sun.shadow.camera.right = 900;
 sun.shadow.camera.top = 900; sun.shadow.camera.bottom = -900;
 sun.shadow.camera.far = 3000;
+// The shadow camera spans 1800 mm across 2048 texels — 0.88 mm per texel — and
+// track pieces both cast AND receive. With no bias (the default is 0) a wall
+// thinner than a couple of texels has its front and back face land in the same
+// depth sample, so the lit face shadows itself: the diagonal checkering that
+// appeared on shaded walls once the wall dropped from 2.4 mm to 1.6.
+// normalBias offsets the lookup along the surface normal, which is the right
+// tool for thin geometry; ~1.5 texels is enough without detaching contact
+// shadows from the pillar feet.
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 1.3;
 scene.add(sun);
 
 const ground = new THREE.Mesh(
