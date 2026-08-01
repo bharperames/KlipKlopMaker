@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
-import { SPEC, STANDARD, stationsForPiece } from './track.js';
+import { SPEC, STANDARD, stationsForPiece, planPosAt } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
@@ -295,13 +295,23 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     // section, then cut the section narrowed by detentProud back out of it.
     // What is left is a detentProud ledge around the pocket wall, with the void
     // still continuous top to bottom so the key can be pushed through it.
-    const detentPlan = (c) => planToWorld(bowtiePocketPlan({
-        neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: c
-    }), face);
+    // NB: bowtiePocketPlan starts at z = -0.5 so the CUT passes cleanly through
+    // the rib's outer skin. That is right for a subtraction and wrong for the
+    // refill — it would add 0.5 mm of material PAST the end face, straight into
+    // the mating piece, and break the no-protrusion print rule. The refill
+    // therefore starts flush at z = 0.
+    const flareK = (K.tipHalf - K.neckHalf) / K.depth;
+    const detentPlan = (c, z0) => {
+        const wall = (z) => K.neckHalf + c + flareK * z;
+        const zFar = K.depth + c;
+        return planToWorld([
+            [-wall(z0), z0], [wall(z0), z0], [wall(zFar), zFar], [-wall(zFar), zFar]
+        ], face);
+    };
     const detent = (K.detentProud > 0 && detentBot > rimY + 0.5)
         ? [
-            { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance), detentBot, detentTop)) },
-            { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance - K.detentProud), detentBot - 0.5, detentTop + 0.5)) }
+            { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance, 0), detentBot, detentTop)) },
+            { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance - K.detentProud, -0.5), detentBot - 0.5, detentTop + 0.5)) }
         ]
         : [];
     // Lightening windows either side of the pocket. The rib is a solid slab
@@ -358,26 +368,69 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
+
+/**
+ * A cylinder whose TOP FOLLOWS THE DECK instead of being level.
+ *
+ * The boss sits under a floor that falls at the ramp slope — 0.198 mm/mm, so
+ * across a Ø19 boss the floor drops 3.8 mm. A flat-topped cylinder tall enough
+ * to meet the floor on its uphill side therefore overshoots the underside on
+ * its downhill side by 2.4 mm, and the floor is only 2 mm thick: the boss broke
+ * through the walking surface, and the bore inside it cut a hole right through.
+ * Raising or lowering a level top cannot fix that — one edge or the other is
+ * always wrong — so the top has to slope with the deck.
+ *
+ * Built as a loft: stations march along the track through the boss, each
+ * carrying the chord at that offset and its own top height. Ends are clamped to
+ * a sliver rather than a point, since a zero-width profile has no cap to
+ * triangulate.
+ */
+function slantedCylinder(bx, bz, heading, r, yBottom, topAt, segs = 28) {
+    const dir = [Math.cos(heading), Math.sin(heading)];
+    const right = [Math.sin(heading), -Math.cos(heading)];
+    const profiles = [], stations = [];
+    for (let i = 0; i <= segs; i++) {
+        const a = (Math.PI * i) / segs;
+        const ds = -r * Math.cos(a);
+        const w = Math.max(0.15, r * Math.sin(a));
+        const h = Math.max(0.2, topAt(ds) - yBottom);
+        profiles.push([[-w, 0], [w, 0], [w, h], [-w, h]]);
+        stations.push({
+            origin: [bx + dir[0] * ds, yBottom, bz + dir[1] * ds],
+            right: [right[0], 0, right[1]],
+            up: [0, 1, 0]
+        });
+    }
+    return toBufferGeometry(sweepSolid(profiles, stations));
+}
+
 /**
  * Upward bore that hollows a boss above its socket. Returns null when the boss
  * is too short for a bore to be worth it (outrigger bosses are only 11 mm tall).
  */
-function bossBoreSolid(cx, cz, piece, spec, ceilY) {
+function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
     const rSock = spec.socket.hexAF / 2;          // inscribed in the hex: no ledge
     const rBore = spec.socket.bossR - 3;          // leave a 3 mm wall
     const yStart = piece.rimY + spec.socket.depth;
     const flare = rBore - rSock;
-    if (ceilY - yStart < flare + 4) return null;
-    const levels = [
-        { y: yStart, r: rSock },
-        { y: yStart + flare, r: rBore },          // 45 deg — self-supporting
-        { y: ceilY + 0.5, r: rBore }
-    ];
+    // CAP is what stops the bore breaking through the deck: it stays this far
+    // below the floor underside at every point, so the floor keeps its full
+    // thickness plus a bridgeable lid over the void.
+    const CAP = 0.7;
+    if (underside(spec.socket.bossR) - CAP - (yStart + flare) < 3) return [];
+
+    // 45 deg cone off the socket mouth — self-supporting, and no horizontal
+    // ledge for the print to start from
     const n = segmentsForCircle(rBore);
-    return toBufferGeometry(sweepSolid(
-        levels.map(l => circlePlan(l.r, n).map(([x, z]) => [cx + x, -(cz + z)])),
-        levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+    const cone = toBufferGeometry(sweepSolid(
+        [{ y: yStart, r: rSock }, { y: yStart + flare, r: rBore }]
+            .map(l => circlePlan(l.r, n).map(([x, z]) => [cx + x, -(cz + z)])),
+        [{ y: yStart }, { y: yStart + flare }]
+            .map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
     ));
+    const shaft = slantedCylinder(cx, cz, heading, rBore, yStart + flare - 0.01,
+        (ds) => underside(ds) - CAP);
+    return [cone, shaft];
 }
 
 /**
@@ -389,7 +442,7 @@ function bossBoreSolid(cx, cz, piece, spec, ceilY) {
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
-    let bx, bz, bossCeilY = null;
+    let bx, bz, bossCeilY = null, bossHeading = 0, bossUnderside = null;
 
     if (!support || support.mode === 'center') {
         const s = support?.s ?? piece.planLen / 2;
@@ -403,11 +456,14 @@ function bossOps(piece, spec, support) {
         }
         const ceilY = (piece.entryDeck - piece.drop * f) - spec.floorThk;
         bossCeilY = ceilY;      // deck at the BOSS, not the piece's lowest deck
+        // floor underside at an offset ds along the track from the boss centre
+        const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
+        bossHeading = support?.h ?? planPosAt(piece, s).h;
+        bossUnderside = (ds) => ceilY - grad * ds;
         ops.push({
             op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(
-                circlePlan(spec.socket.bossR).map(([px, pz]) => [bx + px, bz + pz]),
-                piece.rimY, ceilY + 0.5))
+            geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
+                piece.rimY, (ds) => bossUnderside(ds) + 0.5)
         });
     } else {
         // outrigger: printable arm at rim level (sits on the bed) carrying the
@@ -446,8 +502,11 @@ function bossOps(piece, spec, support) {
     // socket upward so the void stays open to the bed (no trapped cavity), and
     // flares at 45 deg, which is self-supporting, rather than stepping out to a
     // horizontal ledge that would need support.
-    const bore = bossCeilY == null ? null : bossBoreSolid(bx, bz, piece, spec, bossCeilY);
-    if (bore) ops.push({ op: SUBTRACTION, geometry: bore });
+    if (bossUnderside) {
+        for (const g of bossBoreSolids(bx, bz, bossHeading, piece, spec, bossUnderside)) {
+            ops.push({ op: SUBTRACTION, geometry: g });
+        }
+    }
     return ops;
 }
 
