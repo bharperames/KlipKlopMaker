@@ -230,18 +230,37 @@ export function channelProfile(o) {
 }
 
 /**
- * Skirt-rim height at arc length s, carving gothic arch windows between
- * support pads on running pieces. Pads (ends + the pillar-boss station) keep
- * the flat rim so the piece prints on them and joints/bosses stay anchored;
- * between pads the rim rises at 45° to a peak capped 10 mm under the deck.
- * Pure 45° edges → printable with zero supports; aerial viaduct look; less
- * plastic under elevated track.
+ * Skirt-rim height at arc length s, carving arch windows between support pads
+ * on running pieces. Pads (ends + the pillar-boss station) keep the flat rim so
+ * the piece prints on them and joints/bosses stay anchored.
+ *
+ * The window shape is dictated by printing, not taste. The part prints rim-down,
+ * so raising the rim carves a void whose CEILING FACES DOWN — every tangent
+ * must stay within 45° of vertical or it needs support. That rules out the
+ * obvious shapes:
+ *
+ *   Roman semicircle   crown tangent is horizontal            unprintable
+ *   circular gothic    self-supporting only up to h = 0.414a  removes LESS
+ *                      — i.e. shallower than a plain 45° tent
+ *
+ * The one direction that curves AND stays printable is concave: flanks that
+ * start at exactly 45° where they spring off the foot and get STEEPER toward a
+ * pointed apex. That is a lancet arch — genuinely arched, self-supporting, and
+ * it removes more material than the straight tent it replaces, because the
+ * extra steepness buys extra rise for the same span.
+ *
+ * slope(t) = 1 + ARCH_CURVE·t/half  ≥ 1 everywhere, so the overhang limit holds
+ * by construction. ARCH_CURVE = 0 recovers the old straight 45° tent.
+ *
+ * A flat top, where the rise is clipped by the cap, is fine: that is a bridge
+ * between two flanks, which FDM handles.
  */
 export function archedRimY(piece, s, spec, padCenters = []) {
     const PAD = 20;
     const ARCH_MAX_RISE = 100;  // window height cap — keeps a sturdy band under the deck
     const ARCH_TARGET_W = 75;   // preferred window width; spans subdivide evenly
     const FOOT = 12;            // mini-pad between adjacent windows
+    const ARCH_CURVE = 1.0;     // 0 = straight 45° tent; >0 curves the flanks steeper
     const flat = piece.rimY;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;
     const pads = [[0, PAD], [piece.planLen - PAD, piece.planLen]];
@@ -254,17 +273,23 @@ export function archedRimY(piece, s, spec, padCenters = []) {
         if (b <= s && b > s0) s0 = b;
         if (a >= s && a < s1) s1 = a;
     }
-    // subdivide the span into an even ARCADE of flat-topped windows with
-    // 45° flanks (printable) separated by small feet — regular and calm,
-    // instead of one giant sawtooth per span
+    // subdivide the span into an even ARCADE of lancet windows separated by
+    // small feet — regular and calm, instead of one giant sawtooth per span
     const span = s1 - s0;
     const n = Math.max(1, Math.round(span / ARCH_TARGET_W));
     const unit = span / n;
     const local = (s - s0) % unit;
     const w0 = FOOT / 2, w1 = unit - FOOT / 2;
     if (local <= w0 || local >= w1) return flat; // on a foot
-    const rise = Math.min(local - w0, w1 - local);
-    const deckCap = deckYAt(piece, s) - 10;
+    const t = Math.min(local - w0, w1 - local);      // distance from the nearer foot
+    const half = (w1 - w0) / 2;
+    const rise = half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
+    // Cap from the deck at THIS WINDOW's centre, not at s. Taken per-station the
+    // cap follows the ramp, so a clipped window top came out as a 11.2° ceiling
+    // — roughly 1 mm of horizontal overhang per 0.2 mm layer, which droops.
+    // Held constant across the window it is a true horizontal bridge.
+    const winCentre = s0 + (Math.floor((s - s0) / unit) + 0.5) * unit;
+    const deckCap = deckYAt(piece, winCentre) - 10;
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 

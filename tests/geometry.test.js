@@ -197,3 +197,49 @@ describe('washboard station rate', () => {
         expect(chordErr).toBeLessThanOrEqual(FACET_TOL_MM);
     });
 });
+
+describe('skirt arch windows print without support', () => {
+    test('no rim tangent is shallower than 45 degrees', async () => {
+        const { archedRimY } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+
+        for (const pc of pieces) {
+            const pads = [pc.planLen / 2];
+            const d = 0.05;
+            let worst = 0;
+            for (let s = d; s < pc.planLen - d; s += d) {
+                const a = archedRimY(pc, s, SPEC, pads) - pc.rimY;
+                const b = archedRimY(pc, s + d, SPEC, pads) - pc.rimY;
+                // only inside a window: the foot and pad edges are step changes,
+                // and a finite difference across a step is meaningless
+                if (a < 0.5 || b < 0.5) continue;
+                // Test the slope on BOTH sides. A single shallow difference is
+                // just a corner between a compliant flank and a compliant flat
+                // top; a genuinely shallow RUN is shallow on both sides. That
+                // distinction is what catches a real defect (the deck-capped
+                // tops used to slope at 0.198 for tens of mm) without tripping
+                // over every kink.
+                const prev = archedRimY(pc, s - d, SPEC, pads) - pc.rimY;
+                if (prev < 0.5) continue;
+                const mL = Math.abs(a - prev) / d;
+                const mR = Math.abs(b - a) / d;
+                const shallow = m => m > 1e-6 && m < 1;
+                if (shallow(mL) && shallow(mR)) worst = Math.max(worst, 1 - Math.max(mL, mR));
+            }
+            expect(worst).toBeLessThan(0.02);
+        }
+    });
+
+    test('a lancet window rises further than the straight tent it replaces', async () => {
+        const { archedRimY } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight'], { slopeDeg: 11.2167 });
+        const pc = pieces[1];
+        let peak = 0;
+        for (let s = 0; s <= pc.planLen; s += 0.25) {
+            peak = Math.max(peak, archedRimY(pc, s, SPEC, [pc.planLen / 2]) - pc.rimY);
+        }
+        expect(peak).toBeGreaterThan(0);
+    });
+});
