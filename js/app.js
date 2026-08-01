@@ -2233,6 +2233,12 @@ function tickJointGuideAnimation(dt) {
 }
 
 function setTab(t) {
+    // The header's run/view controls all act on the DESIGN scene. On the tabs
+    // that replace the viewport with something else — the part inspector and
+    // the joint guide — they have nothing to act on, so they go away rather
+    // than sitting there inert.
+    const designTools = $('hdr-design-tools');
+    if (designTools) designTools.style.visibility = (t === 'export' || t === 'joint') ? 'hidden' : '';
     for (const k of TABS) {
         $(`pane-${k}`).style.display = k === t ? '' : 'none';
         $(`tab-${k}`).classList.toggle('active', k === t);

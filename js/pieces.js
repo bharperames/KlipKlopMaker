@@ -21,7 +21,7 @@ import Module from 'manifold-3d';
 import { SPEC, STANDARD, stationsForPiece } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
-    bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan,
+    bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
@@ -85,8 +85,12 @@ function toManifold(g) {
 export const ADDITION = 'add';
 export const SUBTRACTION = 'subtract';
 
-/** Runs a chain of boolean operations; the result is manifold by construction. */
-function csgChain(baseGeometry, ops) {
+/**
+ * Runs a chain of boolean operations; the result is manifold by construction.
+ * `simplifyTol` is exposed so tests can build an undecimated reference to
+ * compare against — production always uses SIMPLIFY_TOL_MM.
+ */
+function csgChain(baseGeometry, ops, simplifyTol = SIMPLIFY_TOL_MM) {
     let acc = toManifold(baseGeometry);
     for (const { op, geometry } of ops) {
         const other = toManifold(geometry);
@@ -94,6 +98,14 @@ function csgChain(baseGeometry, ops) {
         acc.delete();
         other.delete();
         acc = next;
+    }
+    // Decimate to a bounded surface error before handing back — see
+    // SIMPLIFY_TOL_MM. Feature-detected so an older manifold build simply
+    // returns the undecimated mesh instead of throwing.
+    if (typeof acc.simplify === 'function' && simplifyTol > 0) {
+        const lean = acc.simplify(simplifyTol);
+        acc.delete();
+        acc = lean;
     }
     const out = acc.getMesh();
     acc.delete();
@@ -417,7 +429,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         ));
     }
     ops.push(...bossOps(piece, spec, opts.support));
-    return csgChain(shell, ops);
+    return csgChain(shell, ops, opts.simplifyTol);
 }
 
 /**

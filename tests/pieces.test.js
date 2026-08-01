@@ -194,3 +194,69 @@ describe('standard support parts', () => {
         }
     });
 });
+
+/**
+ * Export meshes are decimated to SIMPLIFY_TOL_MM (see geometry.js). The bound
+ * is a promise about SURFACE POSITION, so it is checked by rebuilding the same
+ * part undecimated and comparing the two directly — that tests the decimation
+ * itself rather than any analytic model of the washboard.
+ */
+describe('export decimation stays inside its error bound', () => {
+    /** Topmost surface of the mesh at a given (x, z) column, or -Infinity. */
+    const surfaceYAt = (mesh, x, z) => {
+        const { positions: p, indices: idx } = mesh;
+        let best = -Infinity;
+        for (let t = 0; t < idx.length; t += 3) {
+            const A = [p[idx[t] * 3], p[idx[t] * 3 + 1], p[idx[t] * 3 + 2]];
+            const B = [p[idx[t + 1] * 3], p[idx[t + 1] * 3 + 1], p[idx[t + 1] * 3 + 2]];
+            const C = [p[idx[t + 2] * 3], p[idx[t + 2] * 3 + 1], p[idx[t + 2] * 3 + 2]];
+            const d = (B[2] - C[2]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[2] - C[2]);
+            if (Math.abs(d) < 1e-12) continue;
+            const a = ((B[2] - C[2]) * (x - C[0]) + (C[0] - B[0]) * (z - C[2])) / d;
+            const b = ((C[2] - A[2]) * (x - C[0]) + (A[0] - C[0]) * (z - C[2])) / d;
+            const c = 1 - a - b;
+            if (a < -1e-9 || b < -1e-9 || c < -1e-9) continue;
+            best = Math.max(best, a * A[1] + b * B[1] + c * C[1]);
+        }
+        return best;
+    };
+
+    test('decimated surfaces stay within the tolerance of the undecimated part', async () => {
+        const { SIMPLIFY_TOL_MM } = await import('../js/geometry.js');
+        const { pieces } = layoutTrack(['straight'], { slopeDeg: 11.2167 });
+        const pc = pieces[1];
+        const lean = buildPieceExportGeometry(pc);
+        const full = buildPieceExportGeometry(pc, { simplifyTol: 0 });
+
+        expect(lean.indices.length).toBeLessThan(full.indices.length * 0.75);
+
+        // sample across the whole deck, not just the centreline
+        let worst = 0, n = 0;
+        for (let s = 8; s <= pc.planLen - 8; s += 1.1) {
+            for (const lat of [-18, -9, 0, 9, 18]) {
+                const x = pc.entry.x + s;
+                const a = surfaceYAt(full, x, lat);
+                const b = surfaceYAt(lean, x, lat);
+                if (!isFinite(a) || !isFinite(b)) continue;
+                worst = Math.max(worst, Math.abs(a - b));
+                n++;
+            }
+        }
+        expect(n).toBeGreaterThan(400);
+        expect(worst).toBeLessThanOrEqual(SIMPLIFY_TOL_MM);
+    });
+
+    test('decimation preserves volume, so no feature is lost', async () => {
+        const { pieces } = layoutTrack(['straight', 'curveL'], { slopeDeg: 11.2167 });
+        for (const pc of [pieces[1], pieces[2]]) {
+            const lean = analyzeMesh(...Object.values({ p: buildPieceExportGeometry(pc) })
+                .flatMap(m => [m.positions, m.indices]));
+            const full = analyzeMesh(...Object.values({ p: buildPieceExportGeometry(pc, { simplifyTol: 0 }) })
+                .flatMap(m => [m.positions, m.indices]));
+            const drift = Math.abs(lean.volumeMm3 - full.volumeMm3) / full.volumeMm3;
+            expect(drift).toBeLessThan(1e-3);        // < 0.1%
+            expect(lean.isManifold).toBe(true);
+            expect(lean.windsOutward).toBe(true);
+        }
+    });
+});

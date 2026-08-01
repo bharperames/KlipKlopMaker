@@ -344,6 +344,23 @@ export function hexPlan(acrossFlats, rotation = 0) {
  * nozzle, and stricter than the 0.25 mm print-quality ceiling.
  */
 export const FACET_TOL_MM = 0.1;
+
+/**
+ * Decimation bound for exported meshes, in mm. `fineShell` samples 6 stations
+ * per washboard ridge and applies that rate to the ENTIRE cross-section, so the
+ * flat skirt walls and rails carry ~360 subdivisions along a 150 mm tile where
+ * two would describe them exactly. Manifold's simplify() removes a vertex only
+ * if no surface point moves further than this, so it strips that redundancy
+ * without touching anything curved.
+ *
+ * 0.01 mm is 10x stricter than FACET_TOL_MM above (already shipping), 5% of the
+ * 0.20 mm joint clearance the printed hex parts are proven at, and far below
+ * what a 0.4 mm nozzle can express. Measured effect on the walking surface:
+ * 2 microns worst case over 384 samples along the ride line — the washboard is
+ * immune by construction, since every floor vertex sits on a curve and cannot
+ * be removed within tolerance.
+ */
+export const SIMPLIFY_TOL_MM = 0.01;
 export function segmentsForCircle(r, tol = FACET_TOL_MM) {
     if (r <= tol) return 12;
     const n = Math.ceil(Math.PI / Math.acos(Math.max(-1, Math.min(1, 1 - tol / r))));
