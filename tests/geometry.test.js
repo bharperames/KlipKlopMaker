@@ -171,3 +171,29 @@ describe('facet tolerance', () => {
         expect(sagitta).toBeLessThan(0.001);
     });
 });
+
+describe('washboard station rate', () => {
+    test('samples land on crest and valley, so ridge height is exact', async () => {
+        const { ridgeStationSpacing, FACET_TOL_MM } = await import('../js/geometry.js');
+        const { SPEC, ridgeOffset } = await import('../js/track.js');
+        const h = SPEC.ridge.height, pitch = 2.5;
+        const step = ridgeStationSpacing(h / 2, pitch);
+
+        // an EVEN whole number of samples per ridge is what guarantees a
+        // station at s=0 (valley) and s=pitch/2 (crest) for every ridge
+        const perRidge = pitch / step;
+        expect(Math.abs(perRidge - Math.round(perRidge))).toBeLessThan(1e-9);
+        expect(Math.round(perRidge) % 2).toBe(0);
+        expect(Math.round(perRidge)).toBeGreaterThanOrEqual(4);
+
+        // sampling at that rate must reproduce the full peak-to-valley
+        const ys = [];
+        for (let s = 0; s <= pitch * 4 + 1e-9; s += step) ys.push(ridgeOffset(s, pitch, h));
+        expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(h, 6);
+
+        // and it must be no stricter than the facet tolerance the rest of the
+        // geometry already accepts
+        const chordErr = (step * step / 8) * (h / 2) * Math.pow((2 * Math.PI) / pitch, 2);
+        expect(chordErr).toBeLessThanOrEqual(FACET_TOL_MM);
+    });
+});

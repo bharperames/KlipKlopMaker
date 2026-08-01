@@ -22,6 +22,7 @@ import { SPEC, STANDARD, stationsForPiece } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
+    ridgeStationSpacing,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
@@ -255,7 +256,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 
 /** Fine washboard shell (positions/indices) for one piece. */
 function fineShell(piece, spec, padCenters) {
-    const stations = stationsForPiece(piece, piece.ridgePitch / 6);
+    const stations = stationsForPiece(piece, ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch));
     const profiles = pieceProfiles(piece, stations, spec, true, padCenters ?? [piece.planLen / 2]);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }

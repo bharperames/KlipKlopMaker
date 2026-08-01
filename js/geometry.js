@@ -361,6 +361,30 @@ export const FACET_TOL_MM = 0.1;
  * be removed within tolerance.
  */
 export const SIMPLIFY_TOL_MM = 0.01;
+
+/**
+ * Station spacing for sweeping the washboard, derived from a chord tolerance
+ * instead of the bare `pitch / 6` it replaces — the same move segmentsForCircle
+ * already makes for circles, so the sampling rate states its own error budget.
+ *
+ * The catch is that a ridge is periodic, so the achieved peak-to-valley depends
+ * on whether a station LANDS on the crest, not on the average sample density.
+ * Measured: pitch/6 and pitch/4 both give the full 0.600 mm, while pitch/5
+ * gives 0.543 (90%) and pitch/3 gives 0.450 (75%). A non-integer rate is worse
+ * still — the phase walks along the piece and ridge height varies tile to tile.
+ * So the tolerance picks a rate and this snaps it to an EVEN integer count per
+ * ridge, which samples valley (0) and crest (p/2) exactly, every ridge alike.
+ *
+ * At FACET_TOL_MM this yields 4 per ridge: 33% fewer stations than pitch/6,
+ * ridge height still exactly 0.600 mm, chord error 0.093 mm. (pitch/6 itself
+ * corresponds to a ~0.05 mm budget, i.e. the old constant was twice as strict
+ * as anything else in the part.)
+ */
+export function ridgeStationSpacing(amplitude, pitch, tol = FACET_TOL_MM) {
+    const ideal = (pitch / (2 * Math.PI)) * Math.sqrt((8 * tol) / amplitude);
+    const perRidge = Math.max(4, Math.floor(pitch / ideal));
+    return pitch / (perRidge % 2 ? perRidge + 1 : perRidge);
+}
 export function segmentsForCircle(r, tol = FACET_TOL_MM) {
     if (r <= tol) return 12;
     const n = Math.ceil(Math.PI / Math.acos(Math.max(-1, Math.min(1, 1 - tol / r))));
