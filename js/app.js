@@ -1771,18 +1771,20 @@ function initJointGuide() {
     // win on colour contrast alone, so it uses the drafting convention
     // instead: solid = visible edge, dashed = edge behind material. That reads
     // instantly and stops the occluded geometry competing with the key.
-    const visibleLineMat = () => new LineMaterial({ color: 0x14171a, linewidth: 2.4, resolution: res });
+    const track = (m) => { jointGuideState.lineMats.push(m); return m; };
+    const visibleLineMat = () => track(new LineMaterial({ color: 0x14171a, linewidth: 2.4, resolution: res }));
     // Dash lengths are WORLD units (mm), not screen units, so perspective and
     // foreshortening already vary their apparent size — a near-1:1 dash:gap
     // ratio on top of that fragments every short edge into sketchy specks.
     // ~3:1, the drafting convention, gives a much calmer rhythm and keeps the
     // shorter pocket/boss edges reading as continuous lines.
-    const hiddenLineMat = () => new LineMaterial({
+    const hiddenLineMat = () => track(new LineMaterial({
         color: 0x2f3439, linewidth: 1.8, resolution: res,
         transparent: true, opacity: 0.95, depthTest: false,
         dashed: true, dashSize: 4.2, gapSize: 1.5
-    });
+    }));
     jointGuideState.lineRes = res;
+    jointGuideState.lineMats = [];
 
     /**
      * DEPTH PREPASS — the piece that makes this an actual hidden-line render.
@@ -1845,9 +1847,9 @@ function initJointGuide() {
     keyGroup.add(keyGhost);
 
     const keyFat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(keyGeo, edgeThreshold));
-    const keyLines = new LineSegments2(keyFat, new LineMaterial({
+    const keyLines = new LineSegments2(keyFat, track(new LineMaterial({
         color: 0x3a1400, linewidth: 2.2, resolution: res, depthTest: false
-    }));
+    })));
     keyLines.renderOrder = 5;
     keyGroup.add(keyLines);
     
@@ -2044,7 +2046,7 @@ function initJointVignettes(pieces, seamX, seamZ, seamDeckY) {
         cam.lookAt(...def.look);
         jointVignettes.views.push({ scene: sc, camera: cam, label: def.label });
     }
-    resizeJointVignettes();
+    settleResize(resizeJointVignettes);
 }
 
 function resizeJointVignettes() {
@@ -2239,7 +2241,7 @@ function setTab(t) {
         refreshPrintPartsList();
         initGallery();
         gallery.open = true;
-        galleryResize();
+        settleResize(galleryResize);
         if (gallery.parts && gallery.parts.length > 0) {
             selectGalleryPart(0);
         }
@@ -3196,7 +3198,7 @@ function lightPartViewer(target) {
     // A real (not ShadowMaterial) surface so it also carries the contact shadow.
     target.shadowCatcher = new THREE.Mesh(
         new THREE.PlaneGeometry(1200, 1200).rotateX(-Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0xdae4f0, roughness: 0.95, metalness: 0 })
+        new THREE.MeshStandardMaterial({ color: 0x2f4a6e, roughness: 0.92, metalness: 0 })
     );
     target.shadowCatcher.receiveShadow = true;
     target.scene.add(target.shadowCatcher);
@@ -3208,15 +3210,18 @@ function lightPartViewer(target) {
  * helper can only draw two line weights and we want the minor grid genuinely
  * faint against the major.
  */
-function makeGraphPlate() {
+function makeGraphPlate(extent) {
     const g = new THREE.Group();
-    const minor = new THREE.GridHelper(600, 60, 0xa8c4e0, 0xa8c4e0);
+    // Light lines on a denim plate — inverted from the usual dark-on-light
+    // graph paper, which is how a slicer bed actually reads. Divisions are
+    // derived from the extent so squares stay a true 10 mm at any plate size.
+    const minor = new THREE.GridHelper(extent, Math.round(extent / 10), 0x8ba9cc, 0x8ba9cc);
     minor.material.transparent = true;
-    minor.material.opacity = 0.55;
-    const major = new THREE.GridHelper(600, 12, 0x6d93bb, 0x6d93bb);
+    minor.material.opacity = 0.5;
+    const major = new THREE.GridHelper(extent, Math.round(extent / 50), 0xd6e4f2, 0xd6e4f2);
     major.material.transparent = true;
-    major.material.opacity = 0.75;
-    major.position.y = 0.02;         // sit just above the minor lines
+    major.material.opacity = 0.85;
+    major.position.y = 0.06;         // sit clear of the minor lines
     g.add(minor, major);
     return g;
 }
@@ -3234,9 +3239,21 @@ function framePartShadow(target, box, center, size) {
         target.key.target.updateMatrixWorld();
         target.scene.add(target.key.target);
     }
-    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.4, center.z);
-    // grid rides just above the plate so the lines aren't z-fighting it
-    if (target.grid) target.grid.position.set(center.x, box.min.y - 0.3, center.z);
+    // The plate must not extend past the shadow camera's frustum: outside it
+    // the shadow map is undefined, so a large plate renders as a black,
+    // acne-streaked field. Harmless while the plate was near-white, obvious
+    // the moment it went denim. Size it to the frustum and rebuild the grid to
+    // match, keeping true 10 mm squares.
+    const extent = Math.max(120, Math.round(size * 1.1 / 50) * 50);
+    if (target.plateExtent !== extent) {
+        if (target.grid) target.scene.remove(target.grid);
+        target.grid = makeGraphPlate(extent);
+        target.scene.add(target.grid);
+        target.plateExtent = extent;
+        if (target.shadowCatcher) target.shadowCatcher.scale.set(extent / 1200, 1, extent / 1200);
+    }
+    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.6, center.z);
+    target.grid.position.set(center.x, box.min.y - 0.45, center.z);
 }
 
 function initGallery() {
@@ -3262,8 +3279,7 @@ function initGallery() {
     gallery.controls.autoRotateSpeed = 1.6;
     gallery.controls.zoomSpeed = 3;
     lightPartViewer(gallery);
-    gallery.grid = makeGraphPlate();
-    gallery.scene.add(gallery.grid);
+
 
     $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
@@ -3547,6 +3563,10 @@ function makeDimGroup(box, part) {
  */
 function makePartEdges(geo, res) {
     const g = new THREE.Group();
+    // LineMaterial.resolution is a COPY-ON-SET accessor (it does
+    // uniforms.resolution.value.copy(v)), so handing it a shared Vector2 and
+    // mutating that later never reaches the shader. The materials themselves
+    // have to be updated — see updateLineRes().
     const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, 45));
     const hidden = new LineSegments2(fat, new LineMaterial({
         color: 0x2b3138, linewidth: 1.5, resolution: res,
@@ -3560,7 +3580,14 @@ function makePartEdges(geo, res) {
     }));
     visible.renderOrder = 3;
     g.add(hidden, visible);
+    g.userData.lineMats = [hidden.material, visible.material];
     return g;
+}
+
+/** Push a real viewport size into Line2 materials (see makePartEdges). */
+function updateLineRes(mats, w, h) {
+    if (!mats || !w || !h) return;
+    for (const m of mats) m.resolution.set(w, h);
 }
 
 function applyGalleryStyle() {
@@ -3578,8 +3605,9 @@ function applyGalleryStyle() {
     gallery.scene.add(gallery.mesh);
     gallery.lineRes = gallery.lineRes ?? new THREE.Vector2(1, 1);
     gallery.edges = makePartEdges(gallery.geo, gallery.lineRes);
+    gallery.lineMats = gallery.edges.userData.lineMats;
     gallery.scene.add(gallery.edges);
-    galleryResize();                 // seed the Line2 resolution
+    settleResize(galleryResize);     // seed the Line2 resolution
     if (gallery.showWire) {
         gallery.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(gallery.geo),
@@ -3596,14 +3624,30 @@ function applyGalleryStyle() {
     }
 }
 
+/**
+ * Runs a resize now and again once layout has settled. A pane that was just
+ * switched from display:none frequently still reports 0x0 on the frame it is
+ * revealed, so a single synchronous resize silently does nothing and the view
+ * stays blank until something else triggers one.
+ */
+function settleResize(fn) {
+    fn();
+    requestAnimationFrame(() => { fn(); requestAnimationFrame(fn); });
+}
+
 function galleryResize() {
     const holder = $('print-part-view');
     if (!holder || !gallery.renderer) return;
     const w = holder.clientWidth, h = holder.clientHeight;
+    // A container that has not been laid out yet reports 0. Dividing by that
+    // put NaN in camera.aspect and the projection matrix stayed broken until
+    // some later resize — the "blank the first time, fine the second" bug.
+    if (!w || !h) return;
     gallery.renderer.setSize(w, h);
     gallery.camera.aspect = w / h;
     gallery.camera.updateProjectionMatrix();
     if (gallery.lineRes) gallery.lineRes.set(w, h);
+    updateLineRes(gallery.lineMats, w, h);
 }
 
 function openGallery() {
@@ -3632,6 +3676,12 @@ function selectGalleryPart(i) {
         gallery.controls.target.copy(c);
         // low three-quarter angle so undersides (pockets, sockets, ribs) show
         gallery.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        // OrbitControls caches its own spherical state. On the FIRST open that
+        // state was captured with the camera at the origin (radius 0), and with
+        // enableDamping + autoRotate the damped update fights the position we
+        // just set — the view comes up wrong the first time and is fine on the
+        // second. Sync it explicitly.
+        gallery.controls.update();
         // Fit the shadow frustum to THIS part — a frustum sized for the whole
         // scene wastes the depth range and washes out small recesses.
         framePartShadow(gallery, box, c, size);
@@ -3675,8 +3725,7 @@ function initLightbox() {
     lightbox.controls.autoRotateSpeed = 1.6;
     lightbox.controls.zoomSpeed = 3;
     lightPartViewer(lightbox);
-    lightbox.grid = makeGraphPlate();
-    lightbox.scene.add(lightbox.grid);
+
 
     $('parts-shading').addEventListener('change', () => { lightbox.style = $('parts-shading').value; applyLightboxStyle(); });
     $('parts-rotate').addEventListener('change', () => { lightbox.controls.autoRotate = $('parts-rotate').checked; });
@@ -3698,8 +3747,9 @@ function applyLightboxStyle() {
     lightbox.scene.add(lightbox.mesh);
     lightbox.lineRes = lightbox.lineRes ?? new THREE.Vector2(1, 1);
     lightbox.edges = makePartEdges(lightbox.geo, lightbox.lineRes);
+    lightbox.lineMats = lightbox.edges.userData.lineMats;
     lightbox.scene.add(lightbox.edges);
-    lightboxResize();                // seed the Line2 resolution
+    settleResize(lightboxResize);    // seed the Line2 resolution
     if (lightbox.showWire) {
         lightbox.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(lightbox.geo),
@@ -3720,10 +3770,12 @@ function lightboxResize() {
     const holder = $('parts-view');
     if (!holder || !lightbox.renderer) return;
     const w = holder.clientWidth, h = holder.clientHeight;
+    if (!w || !h) return;                       // see galleryResize
     lightbox.renderer.setSize(w, h);
     lightbox.camera.aspect = w / h;
     lightbox.camera.updateProjectionMatrix();
     if (lightbox.lineRes) lightbox.lineRes.set(w, h);
+    updateLineRes(lightbox.lineMats, w, h);
 }
 
 function selectLightboxPart(i) {
@@ -3743,6 +3795,7 @@ function selectLightboxPart(i) {
         const size = box.getSize(new THREE.Vector3()).length();
         lightbox.controls.target.copy(c);
         lightbox.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        lightbox.controls.update();      // see selectGalleryPart
         framePartShadow(lightbox, box, c, size);
         const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
@@ -3760,7 +3813,7 @@ function selectLightboxPart(i) {
 function openLightbox() {
     $('parts-overlay').style.display = '';
     initLightbox();
-    lightboxResize();
+    settleResize(lightboxResize);
     lightbox.parts = assembleParts().parts;
     $('parts-count').textContent = `${lightbox.parts.length} unique parts in this design`;
     const list = $('parts-list');
@@ -4023,6 +4076,7 @@ function resize() {
     // Line2 widths are screen-space: a stale resolution makes the joint-guide
     // hidden lines the wrong thickness after any window resize.
     if (jointGuideState.lineRes) jointGuideState.lineRes.set(w, h);
+    updateLineRes(jointGuideState.lineMats, w, h);
     resizeJointVignettes();
 }
 window.addEventListener('resize', resize);
