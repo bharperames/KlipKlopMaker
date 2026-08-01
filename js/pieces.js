@@ -119,10 +119,12 @@ function planToWorld(pts, face) {
 // ---------------------------------------------------------------------------
 
 /** Fast, ridgeless shell for the interactive scene. */
-export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters) {
+export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters, support) {
     const stations = stationsForPiece(piece, 6);
     const profiles = pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]);
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
+    const ops = [];
+
     if (piece.type === 'elevator' || piece.isElevator) {
         const Wo = piece.innerWidth / 2 + spec.wall;
         const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
@@ -136,6 +138,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters) {
             [c110[0] - right[0] * Wo, c110[1] - right[1] * Wo]
         ];
         const housingSolid = toBufferGeometry(extrudePolygonY(housingPoly, piece.rimY, piece.exitDeck - spec.floorThk + 0.5));
+        ops.push({ op: ADDITION, geometry: housingSolid });
         
         const W_slot = 12;
         const c15 = [piece.entry.x + dir[0] * 15, piece.entry.z + dir[1] * 15];
@@ -147,13 +150,40 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters) {
             [c135[0] - right[0] * (W_slot/2), c135[1] - right[1] * (W_slot/2)]
         ];
         const slotSolid = toBufferGeometry(extrudePolygonY(slotPoly, piece.rimY - 5, piece.exitDeck + 15));
-        
-        return toBufferGeometry(csgChain(shell, [
-            { op: ADDITION, geometry: housingSolid },
-            { op: SUBTRACTION, geometry: slotSolid }
-        ]));
+        ops.push({ op: SUBTRACTION, geometry: slotSolid });
     }
-    return shell;
+
+    const Wi = piece.innerWidth / 2;
+    if (piece.type === 'start') {
+        const bump = planToWorld(
+            [[-Wi - 1, 2], [Wi + 1, 2], [Wi + 1, 10], [-Wi - 1, 10]],
+            { ...piece.entry }
+        );
+        ops.push({
+            op: ADDITION,
+            geometry: toBufferGeometry(extrudePolygonY(bump, piece.entryDeck - 4, piece.entryDeck + spec.railHeight + 14))
+        });
+    }
+
+    const hasEntryJoint = !piece.isImplicitStart;
+    const hasExitJoint = piece.type !== 'end';
+
+    if (hasEntryJoint) {
+        ops.push(...jointOps(
+            { ...piece.entry }, piece.entryDeck,
+            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.innerWidth, spec
+        ));
+    }
+    if (hasExitJoint) {
+        ops.push(...jointOps(
+            { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
+            piece.exitDeck, piece.exitDeck, piece.rimY, piece.innerWidth, spec
+        ));
+    }
+
+    ops.push(...bossOps(piece, spec, support));
+
+    return toBufferGeometry(csgChain(shell, ops));
 }
 
 /**
@@ -175,17 +205,40 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
 }
 
 /** Display union of a switch's two route shells with an open frog. */
-export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, padCenters) {
+export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, padCenters, support) {
     const mk = (piece) => {
         const stations = stationsForPiece(piece, 8);
         return toBufferGeometry(sweepSolid(
             pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]), stations));
     };
-    return toBufferGeometry(csgChain(mk(mainPiece), [
-        { op: ADDITION, geometry: mk(branchPiece) },
+
+    const shell = mk(mainPiece);
+    const ops = [{ op: ADDITION, geometry: mk(branchPiece) }];
+
+    ops.push(
         { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(mainPiece, spec, 12)) },
         { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(branchPiece, spec, 12)) }
-    ]));
+    );
+
+    ops.push(...jointOps(
+        { ...mainPiece.entry }, mainPiece.entryDeck,
+        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.innerWidth, spec
+    ));
+    for (const pc of [mainPiece, branchPiece]) {
+        ops.push(...jointOps(
+            { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
+            pc.exitDeck, pc.exitDeck, pc.rimY, pc.innerWidth, spec
+        ));
+    }
+    ops.push(...bossOps(mainPiece, spec, support));
+
+    // gate pivot bore
+    const pinPos = gatePinPosition(mainPiece);
+    const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, segmentsForCircle(1.65));
+    pin.translate(pinPos.x, pinPos.deckY + spec.railHeight / 2, pinPos.z);
+    ops.push({ op: SUBTRACTION, geometry: pin });
+
+    return toBufferGeometry(csgChain(shell, ops));
 }
 
 /** Fine washboard shell (positions/indices) for one piece. */
@@ -216,7 +269,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     }), face);
     return [
         { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(rib, rimY, deckY - spec.floorThk + 0.5)) },
-        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, seamDeckY - 3 - K.height, seamDeckY - 3)) }
+        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, seamDeckY - 3)) }
     ];
 }
 
@@ -427,6 +480,25 @@ export function gatePinPosition(mainPiece) {
         yawParked: h,
         yawDiverting: h + (mainPiece.switchType === 'switchL' ? 1 : -1) * Math.asin(Math.min(0.99, (mainPiece.innerWidth - 4) / 50))
     };
+}
+
+/**
+ * Section-view helper: removes everything on the +normal side of a plane and
+ * CAPS the result, because the cut is a real boolean rather than a rendering
+ * clip plane. A clip plane would expose the shell's back faces and the joint
+ * would read as hollow — exactly the confusion these views exist to remove.
+ * Axis-aligned unit normals only, which is all the fixed vignettes need.
+ * Needs initCSG().
+ */
+export function sectionGeometry(geom, { origin, normal, extent = 800 }) {
+    const box = new THREE.BoxGeometry(extent, extent, extent);
+    const h = extent / 2;
+    box.translate(
+        origin[0] + normal[0] * h,
+        origin[1] + normal[1] * h,
+        origin[2] + normal[2] * h
+    );
+    return csgChain(geom, [{ op: SUBTRACTION, geometry: box }]);
 }
 
 /** Printable connector key — one per seam, prints flat in stacks. */

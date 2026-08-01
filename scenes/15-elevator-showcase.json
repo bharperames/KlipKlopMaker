@@ -5,7 +5,7 @@
   "name": "Elevator Showcase",
   "description": "An elevator ascent showcase circuit.",
   "sequence": [
-    "elevator",
+    {"type": "elevator", "height": 45},
     "curveL",
     "curveL",
     "curveL",
@@ -55,8 +55,6 @@
     "maxTimeS": 45,
     "minClacks": 100,
     "minWalkedFraction": 0.9,
-    "layoutErrors": [
-      "clearance"
-    ]
+    "layoutErrors": []
   }
 }

@@ -239,8 +239,8 @@ export function channelProfile(o) {
  */
 export function archedRimY(piece, s, spec, padCenters = []) {
     const PAD = 20;
-    const ARCH_MAX_RISE = 22;   // window height cap — keeps a sturdy band under the deck
-    const ARCH_TARGET_W = 56;   // preferred window width; spans subdivide evenly
+    const ARCH_MAX_RISE = 100;  // window height cap — keeps a sturdy band under the deck
+    const ARCH_TARGET_W = 75;   // preferred window width; spans subdivide evenly
     const FOOT = 12;            // mini-pad between adjacent windows
     const flat = piece.rimY;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;

@@ -41,11 +41,17 @@ export function serializeScene(state, meta = {}) {
 }
 
 function cloneNodes(nodes) {
-    return nodes.map(n => typeof n === 'string' ? n : {
-        type: n.type,
-        gate: n.gate === 'branch' ? 'branch' : 'main',
-        main: cloneNodes(n.main ?? []),
-        branch: cloneNodes(n.branch ?? [])
+    return nodes.map(n => {
+        if (typeof n === 'string') return n;
+        if (isSwitchNode(n)) {
+            return {
+                type: n.type,
+                gate: n.gate === 'branch' ? 'branch' : 'main',
+                main: cloneNodes(n.main ?? []),
+                branch: cloneNodes(n.branch ?? [])
+            };
+        }
+        return { ...n };
     });
 }
 
@@ -58,6 +64,10 @@ function validateNodes(nodes, problems, path) {
             if (i !== nodes.length - 1) problems.push(`${path}[${i}]: a switch must be the last node of its branch`);
             validateNodes(n.main ?? [], problems, `${path}[${i}].main`);
             validateNodes(n.branch ?? [], problems, `${path}[${i}].branch`);
+        } else if (n && typeof n === 'object' && SIMPLE_TYPES.includes(n.type)) {
+            if (n.type === 'elevator' && n.height !== undefined && typeof n.height !== 'number') {
+                problems.push(`${path}[${i}]: elevator height must be a number`);
+            }
         } else {
             problems.push(`${path}[${i}]: unknown node`);
         }

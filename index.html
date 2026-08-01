@@ -104,6 +104,16 @@ aside {
 }
 #build-panel { grid-area: side; border-right: 2px solid var(--accent2); }
 #viewport { grid-area: view; position: relative; min-width: 0; }
+/* Plain-language name first — "Side view" is what someone actually looks for;
+   the section description is the subtitle, not the headline. */
+.vig-cap {
+    position: absolute; left: 0; right: 0;
+    font-family: system-ui, sans-serif; letter-spacing: .2px;
+    color: #f4f7fb; background: linear-gradient(rgba(12,22,34,.86), rgba(12,22,34,0));
+    padding: 5px 8px 12px; pointer-events: none;
+}
+.vig-cap b { display: block; font-size: 12.5px; font-weight: 700; }
+.vig-cap span { display: block; font-size: 10px; font-weight: 500; opacity: .78; }
 #viewport canvas { display: block; }
 footer {
     grid-area: ftr;
@@ -544,8 +554,38 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 #doc-body th, #doc-body td { border: 1px solid var(--line); padding: 5px 10px; text-align: left; }
 #doc-body th { background: var(--panel-2); }
 #doc-body code { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 12.5px; }
-#doc-body a, #refs-body a { color: #5cb1ff; text-decoration: underline; }
-#doc-body a:hover, #refs-body a:hover { color: #9adcff; }
+#doc-body a, #refs-body a {
+    color: var(--track-gold);
+    text-decoration: underline;
+    text-decoration-color: rgba(242, 182, 50, 0.4);
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+    font-weight: 600;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+#doc-body a:hover, #refs-body a:hover {
+    color: #ffd76b;
+    text-decoration-color: #ffd76b;
+}
+#refs-body .card {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#refs-body .card:hover {
+    border-color: #8a6842;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+#refs-body h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+    color: var(--ink-3);
+    margin: 24px 0 10px;
+}
 </style>
 </head>
 <body>
@@ -794,6 +834,17 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         </div>
 
         <div class="card" style="margin-bottom: 12px;">
+            <b style="font-size:13px; display:block; margin-bottom:2px;">Section Views</b>
+            <p style="color:var(--ink-3); font-size:11px; line-height:1.35; margin:0 0 8px;">
+                Solid cutaways from fixed angles — the boolean is real, so the cut
+                faces are capped and the cavity reads as a cavity.
+            </p>
+            <p style="color:var(--ink-3); font-size:11px; line-height:1.35; margin:0;">
+                Shown as insets over the main view →
+            </p>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px;">
             <b style="font-size:13px; margin-bottom: 8px; display:block;">Tolerances &amp; Fits Spec</b>
             <table style="width:100%; border-collapse:collapse; font-size:11px; color:var(--ink-2); line-height:1.35;">
                 <thead>
@@ -834,6 +885,14 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 </aside>
 
 <div id="viewport">
+    <!-- Fixed-angle section cutaways, overlaid on the main view. Shown only on
+         the Joint Guide tab; one canvas drives all three via scissored viewports. -->
+    <div id="joint-insets" style="display:none; position:absolute; top:14px; left:14px; width:256px; z-index:6; border-radius:8px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,.32);">
+        <div id="joint-vignettes" style="width:256px; height:456px; background:#eef1f5;"></div>
+        <div class="vig-cap" style="top:0"><b>Side view</b><span>cut along the seam centreline</span></div>
+        <div class="vig-cap" style="top:152px"><b>End view</b><span>cut 6 mm into the pocket</span></div>
+        <div class="vig-cap" style="top:304px"><b>Bottom view</b><span>cut through the seated key</span></div>
+    </div>
     <div id="toast"></div>
     <div id="sim-hud" style="display:none"></div>
     <div id="viewhelp">drag orbit · scroll zoom · right-drag pan · click piece = select/edit · <kbd>R</kbd> cycle type / rotate scenery · <kbd>G</kbd> flip gate · <kbd>⌫</kbd> delete · <kbd>Esc</kbd> cancel</div>
@@ -851,25 +910,25 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
 <div id="refs-overlay" style="display:none">
     <div id="refs-panel">
-        <div id="refs-head"><span>📚 Research references &amp; reports</span><button id="refs-close">✕ Close (Esc)</button></div>
+        <div id="refs-head"><span>Research References &amp; Reports</span><button id="refs-close">✕ Close (Esc)</button></div>
         <div id="refs-body">
     
         <h2>Generated for this project</h2>
         <div class="card">
-            <a href="./reports/index.html" target="_blank">📊 Scene verification report</a><br>
+            <a href="./reports/index.html" target="_blank">Scene verification report</a><br>
             <span style="color:var(--ink-2)">All bundled scenes solved by the dynamics engine — outcomes,
             expectation checks, speed/elevation traces, event timelines, 3D views.
             Regenerate: <code>node scripts/generate_reports.mjs</code></span>
         </div>
         <div class="card">
-            <a href="./PHYSICS.md" class="doc-link" data-doc="PHYSICS.md">📐 PHYSICS.md — model derivations</a><br>
+            <a href="./PHYSICS.md" class="doc-link" data-doc="PHYSICS.md">PHYSICS.md — model derivations</a><br>
             <span style="color:var(--ink-2)">Rimless-wheel gait math, friction budget, geometry rule set, sources. Opens rendered in-app.</span>
         </div>
         <div class="card">
-            <a href="./readme.md" class="doc-link" data-doc="readme.md">📘 readme.md — app &amp; architecture guide</a>
+            <a href="./readme.md" class="doc-link" data-doc="readme.md">readme.md — app &amp; architecture guide</a>
         </div>
         <div class="card">
-            <a href="./JOURNEY.md" class="doc-link" data-doc="JOURNEY.md">🐴 JOURNEY.md — development history</a><br>
+            <a href="./JOURNEY.md" class="doc-link" data-doc="JOURNEY.md">The Journey — development history</a><br>
             <span style="color:var(--ink-2)">How the app came to be: the toy-physics inspiration, the rimless-wheel
             research, the Klip Klop Standard, and every iteration of the founding sessions. Opens rendered in-app.</span>
         </div>

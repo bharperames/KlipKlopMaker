@@ -1,3 +1,8 @@
 node_modules/
 reports/img/
 .DS_Store
+
+# local dev server leftovers (the Makefile now runs in the foreground, but
+# older checkouts and stray runs still drop these)
+server.log
+.server.pid

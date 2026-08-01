@@ -11,6 +11,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+// LineBasicMaterial.linewidth is ignored by every WebGL renderer — lines are
+// always 1 px. Line2 draws them as camera-facing quads, which is the only way
+// to get a hidden-line pass thick enough to read against the part.
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import * as fflate from 'fflate';
 
 import {
@@ -30,9 +36,13 @@ import {
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
     buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
-    buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids
+    buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
+    sectionGeometry
 } from './pieces.js';
-import { extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate } from './geometry.js';
+import {
+    extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
+    bowtieKeyPlan, bowtiePocketPlan
+} from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
@@ -54,6 +64,7 @@ const state = {
     muKey: 'washboard',
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
+    renderMode: localStorage.getItem('klipklop-render-mode') || 'solid',
     selected: -1,           // piece index
     selectedScenery: -1,    // scenery index
     activeEndKey: '[]',     // container path key of the active build end
@@ -193,7 +204,7 @@ camera.position.set(620, 520, 620);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(150, 120, 60);
 controls.enableDamping = true;
-controls.maxPolarAngle = Math.PI * 0.495;
+controls.maxPolarAngle = Math.PI;
 controls.zoomSpeed = 3; // touchpad pinch/scroll deltas are tiny — boost gain
 
 scene.add(new THREE.HemisphereLight(0xe8f2ff, 0x8a7a55, 0.85));
@@ -243,7 +254,8 @@ const MAT = {
     palmTrunk: new THREE.MeshLambertMaterial({ color: 0x9b7347 }),
     palmCrown: new THREE.MeshLambertMaterial({ color: 0x4d9e45 }),
     sand: new THREE.MeshLambertMaterial({ color: 0xe4cf90 }),
-    patio: new THREE.MeshLambertMaterial({ color: 0xc9b8a0 })
+    patio: new THREE.MeshLambertMaterial({ color: 0xc9b8a0 }),
+    key: new THREE.MeshLambertMaterial({ color: 0xff6b00 })
 };
 
 function materialFor(piece, hasIssue) {
@@ -309,17 +321,18 @@ function rebuild() {
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             mesh = new THREE.Mesh(
-                buildSwitchDisplayGeometry(pair.main, pair.branch, SPEC, pads),
+                buildSwitchDisplayGeometry(pair.main, pair.branch, SPEC, pads, sup),
                 materialFor(pc, issues.has(pc.index) || issues.has(pair.branch.index))
             );
             mesh.userData.pieceIndex = pc.index;
             mesh.userData.switchKey = pc.switchKey;
             pieceMeshes[pair.branch.index] = mesh;
         } else {
-            mesh = new THREE.Mesh(buildPieceDisplayGeometry(pc, SPEC, pads), materialFor(pc, issues.has(pc.index)));
+            mesh = new THREE.Mesh(buildPieceDisplayGeometry(pc, SPEC, pads, sup), materialFor(pc, issues.has(pc.index)));
             mesh.userData.pieceIndex = pc.index;
         }
         mesh.castShadow = mesh.receiveShadow = true;
+        addOutline(mesh, 20);
         pieceMeshes[pc.index] = mesh;
         trackGroup.add(mesh);
 
@@ -339,6 +352,21 @@ function rebuild() {
             }
         }
     }
+
+    // Add physical bowtie keys at all track joints
+    const keyMaterial = MAT.key;
+    const keyGeo = toBufferGeometry(buildKeyGeometry(SPEC));
+    for (const pc of pieces) {
+        if (pc.type !== 'end') {
+            const lockedKeyY = pc.exitDeck - 3 - SPEC.key.height + SPEC.jointClearanceMm;
+            const keyMesh = new THREE.Mesh(keyGeo, keyMaterial);
+            keyMesh.position.set(pc.exit.x, lockedKeyY, pc.exit.z);
+            keyMesh.rotation.y = pc.exit.h + Math.PI / 2;
+            keyMesh.castShadow = true;
+            addOutline(keyMesh, 20);
+            trackGroup.add(keyMesh);
+        }
+    }
     for (const sup of state.supports) {
         const pc = pieces[sup.pieceIndex];
         if (sup.mode === 'none') {
@@ -349,32 +377,6 @@ function rebuild() {
             continue;
         }
         trackGroup.add(buildSupportObject(pc.rimY, sup.x, sup.z));
-        if (sup.mode === 'center') {
-            const f = sup.s / pc.planLen;
-            const ceilY = (pc.entryDeck - pc.drop * f) - SPEC.floorThk;
-            const bossH = (ceilY + 0.5) - pc.rimY;
-            if (bossH > 0) {
-                const bossMesh = new THREE.Mesh(
-                    new THREE.CylinderGeometry(SPEC.socket.bossR, SPEC.socket.bossR, bossH, 16),
-                    materialFor(pc, false)
-                );
-                bossMesh.position.set(sup.x, pc.rimY + bossH / 2, sup.z);
-                bossMesh.castShadow = true;
-                trackGroup.add(bossMesh);
-            }
-        } else if (sup.mode === 'outrigger') {
-            // arm reaches from the skirt wall out to the boss (lateral = local X)
-            const right = [Math.sin(sup.h), -Math.cos(sup.h)];
-            const arm = new THREE.Mesh(new THREE.BoxGeometry(26, 11, 22), MAT.pillar);
-            arm.position.set(
-                sup.x - right[0] * sup.side * 12,
-                pc.rimY + 5.5,
-                sup.z - right[1] * sup.side * 12
-            );
-            arm.rotation.y = Math.PI / 2 - sup.h;
-            arm.castShadow = true;
-            trackGroup.add(arm);
-        }
     }
 
     // gate blades: hinged on the wall opposite the branch — parked flat along
@@ -390,6 +392,7 @@ function rebuild() {
         paddle.rotation.y = Math.PI / 2 - yaw;
         paddle.userData.switchKey = sw.key;
         paddle.userData.pieceIndex = pair.main.index;
+        addOutline(paddle, 20);
         trackGroup.add(paddle);
     }
 
@@ -422,6 +425,7 @@ function rebuild() {
     refreshParamsMode();
     refreshPrintPartsList();
     $('btn-connect').disabled = state.layout.isCircuit || !state.sequence.length || state.sequence.some(n => typeof n !== 'string');
+    applyRenderMode();
     saveState();
 }
 
@@ -440,25 +444,38 @@ function supportGeom(kind) {
     return supportGeomCache.get(kind);
 }
 
+function makeStackedSupportMesh(geometry, material) {
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    
+    const edges = new THREE.EdgesGeometry(geometry, 20); // 20 degrees threshold
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x3d2716, linewidth: 1.5 });
+    const lines = new THREE.LineSegments(edges, lineMat);
+    group.add(lines);
+    
+    return group;
+}
+
 /** A support at (x,z): stacked standard parts on-grid, legacy pillar otherwise. */
 function buildSupportObject(heightMm, x, z) {
     const dec = usingStandard() ? decomposeSupport(heightMm) : null;
     if (!dec) {
-        const pillar = new THREE.Mesh(buildPillarGeometry(heightMm), MAT.pillar);
-        pillar.position.set(x, 0, z);
-        pillar.castShadow = true;
-        return pillar;
+        const pillarGeo = buildPillarGeometry(heightMm);
+        const group = makeStackedSupportMesh(pillarGeo, MAT.pillar);
+        group.position.set(x, 0, z);
+        return group;
     }
     const g = new THREE.Group();
-    const foot = new THREE.Mesh(supportGeom('foot'), MAT.pillar);
-    foot.castShadow = true;
-    g.add(foot);
+    const footGroup = makeStackedSupportMesh(supportGeom('foot'), MAT.pillar);
+    g.add(footGroup);
     let y = STANDARD.footHeight;
     for (const r of [...dec.risers].sort((a, b) => b - a)) {
-        const m = new THREE.Mesh(supportGeom(String(r)), MAT.pillar);
-        m.position.y = y;
-        m.castShadow = true;
-        g.add(m);
+        const mGroup = makeStackedSupportMesh(supportGeom(String(r)), MAT.pillar);
+        mGroup.position.y = y;
+        g.add(mGroup);
         y += r;
     }
     g.position.set(x, 0, z);
@@ -520,7 +537,13 @@ function rebuildScenery() {
         const obj = sceneryMeshFor(item.kind);
         obj.position.set(item.x, 0, item.z);
         obj.rotation.y = item.rot ?? 0;
-        obj.traverse(o => { o.castShadow = true; o.userData.sceneryIndex = i; });
+        obj.traverse(o => {
+            if (o.isMesh) {
+                o.castShadow = true;
+                o.userData.sceneryIndex = i;
+                addOutline(o, 20);
+            }
+        });
         obj.userData.sceneryIndex = i;
         sceneryGroup.add(obj);
         sceneryMeshes.push(obj);
@@ -533,6 +556,7 @@ function rebuildScenery() {
             sceneryGroup.add(ring);
         }
     });
+    applyRenderMode();
 }
 
 let placementKind = null; // scenery kind being placed
@@ -985,6 +1009,7 @@ $('in-opacity').addEventListener('input', () => {
         scene.add(sim.horse);
     }
     refreshIdleHorse();
+    applyRenderMode();
     saveState();
 });
 
@@ -1340,6 +1365,48 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
+    // Dynamically update orbit target to the clicked intersection point
+    if (!placementKind && draggingScenery === -1) {
+        const ndc = ndcFromEvent(e);
+        raycaster.setFromCamera(ndc, camera);
+        
+        const targets = [];
+        if (jointGuideState.active && jointGuideState.group) {
+            targets.push(jointGuideState.group);
+        } else {
+            targets.push(trackGroup);
+            targets.push(sceneryGroup);
+        }
+        
+        const hits = raycaster.intersectObjects(targets, true);
+        let targetPoint = null;
+        if (hits.length > 0) {
+            targetPoint = hits[0].point;
+        } else {
+            // Fall back to ground plane intersection
+            const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+            const intersection = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(plane, intersection)) {
+                if (intersection.distanceTo(camera.position) < 800) {
+                    targetPoint = intersection;
+                }
+            }
+        }
+        
+        if (targetPoint) {
+            // Project target point onto camera forward ray to avoid visual jumps
+            const cameraDir = new THREE.Vector3();
+            camera.getWorldDirection(cameraDir);
+            const toTarget = new THREE.Vector3().subVectors(targetPoint, camera.position);
+            const depth = toTarget.dot(cameraDir);
+            if (depth > 2 && depth < 2000) {
+                const newTarget = new THREE.Vector3().copy(camera.position).addScaledVector(cameraDir, depth);
+                controls.target.copy(newTarget);
+                controls.update();
+            }
+        }
+    }
+
     if (e.button !== 0) return;
     if (placementKind) {
         const pt = groundPointAt(e);
@@ -1615,8 +1682,554 @@ function refreshFooter() {
 }
 
 // tabs (single side panel: Build | Print | Physics; Refs opens from the header toolbar)
-const TABS = ['build', 'export', 'physics'];
+const TABS = ['build', 'export', 'physics', 'joint'];
 for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => setTab(t));
+
+const jointGuideState = { active: false, group: null, leftTrack: null, rightTrack: null, bowtieKey: null, seamGapIndicator: null, t: 0, seamX: 0, seamZ: 0, seamDeckY: 0 };
+
+function initJointGuide() {
+    if (jointGuideState.group) return;
+    
+    const group = new THREE.Group();
+    scene.add(group);
+    jointGuideState.group = group;
+    
+    // Generate track pieces for the joint demo - using standard slope to show real ramp pieces
+    const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: STANDARD.slopeDeg });
+    
+    // Save seam position and Y deck height dynamically (which accounts for ground shift!)
+    const seamX = pieces[1].exit.x;
+    const seamZ = pieces[1].exit.z;
+    const seamDeckY = pieces[1].exitDeck;
+    
+    jointGuideState.seamX = seamX;
+    jointGuideState.seamZ = seamZ;
+    jointGuideState.seamDeckY = seamDeckY;
+    // lowest rim of the two mating pieces — the key has to clear this before it
+    // can rise into the pockets
+    jointGuideState.rimFloor = Math.min(pieces[1].rimY, pieces[2].rimY);
+    
+    // Ghosted shell, NOT glass. `transmission` refracts and re-lights every
+    // surface behind it, which is exactly what buried the pocket: the rib, the
+    // floor and the far wall all ended up the same value. A flat low-opacity
+    // front-faces-only shell keeps the part readable and lets the hidden-line
+    // pass below carry the shape information.
+    // depthWrite stays off (the prepass owns the depth buffer), but depthTest
+    // is now meaningful because the prepass filled it — so these faces are
+    // correctly hidden behind nearer geometry instead of blending through it.
+    const trackMaterial = new THREE.MeshLambertMaterial({
+        color: 0xe4e9ef,
+        opacity: 0.22,
+        transparent: true,
+        depthWrite: false,
+        depthTest: true,
+        side: THREE.FrontSide
+    });
+    
+    // Create solid high-visibility orange/gold plastic for the bowtie key
+    const keyMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xff6b00,
+        roughness: 0.3,
+        metalness: 0.1,
+        clearcoat: 0.4
+    });
+
+    const leftGeo = toBufferGeometry(buildPieceExportGeometry(pieces[1]));
+    const rightGeo = toBufferGeometry(buildPieceExportGeometry(pieces[2]));
+    const keyGeo = toBufferGeometry(buildKeyGeometry(SPEC));
+    
+    const leftMesh = new THREE.Mesh(leftGeo, trackMaterial);
+    const rightMesh = new THREE.Mesh(rightGeo, trackMaterial.clone());
+    const keyMesh = new THREE.Mesh(keyGeo, keyMaterial);
+    
+    // True two-pass hidden-line: the SAME edge set drawn twice. The depth-tested
+    // pass yields solid lines only where the edge is actually visible; the
+    // depth-ignoring pass fills in the occluded edges faintly. That contrast is
+    // what tells you a pocket recedes instead of reading as a painted outline.
+    //
+    // 32° threshold (was 20°): the washboard ridges meet at ~26°, so a 20°
+    // threshold emitted an edge for every ripple — hundreds of lines of noise
+    // that swamped the joint. 32° keeps structural edges and drops the ripples.
+    // WebGL ignores LineBasicMaterial.linewidth (always 1px), and Line2/
+    // LineMaterial isn't vendored — so prominence has to come from CONTRAST,
+    // not thickness: near-black visible edges against a 10%-opacity shell, and
+    // hidden edges at a mid blue strong enough to trace but clearly secondary.
+    // 45°, not 32°: the washboard is sampled 6× per 2.5 mm ridge, so at the
+    // crests the facet-to-facet angle reaches ~38° and every ridge was emitting
+    // a pair of edges — ~120 lines of comb across the floor, showing straight
+    // through the ghost as hidden lines and burying the joint. Structural
+    // corners are 90°, so 45° drops the ripples and keeps everything that
+    // describes the shape.
+    const edgeThreshold = 45;
+    // Widths are in pixels; `resolution` must track the canvas or the shader
+    // computes the wrong screen-space thickness (see jointLineMats/onResize).
+    const res = new THREE.Vector2(viewport.clientWidth, viewport.clientHeight);
+    // Charcoal, not blue: the hidden/visible distinction is carried by weight
+    // and opacity, so the colour doesn't need to do the work — and a saturated
+    // hue on every occluded edge just competes with the orange key.
+    // Charcoal, not blue — and the hidden pass is DASHED. Grey-on-grey can't
+    // win on colour contrast alone, so it uses the drafting convention
+    // instead: solid = visible edge, dashed = edge behind material. That reads
+    // instantly and stops the occluded geometry competing with the key.
+    const visibleLineMat = () => new LineMaterial({ color: 0x14171a, linewidth: 2.4, resolution: res });
+    // Dash lengths are WORLD units (mm), not screen units, so perspective and
+    // foreshortening already vary their apparent size — a near-1:1 dash:gap
+    // ratio on top of that fragments every short edge into sketchy specks.
+    // ~3:1, the drafting convention, gives a much calmer rhythm and keeps the
+    // shorter pocket/boss edges reading as continuous lines.
+    const hiddenLineMat = () => new LineMaterial({
+        color: 0x2f3439, linewidth: 1.8, resolution: res,
+        transparent: true, opacity: 0.95, depthTest: false,
+        dashed: true, dashSize: 4.2, gapSize: 1.5
+    });
+    jointGuideState.lineRes = res;
+
+    /**
+     * DEPTH PREPASS — the piece that makes this an actual hidden-line render.
+     *
+     * The ghost shell must not write depth (transparent surfaces would occlude
+     * each other in draw order, not in space). But with NOTHING writing depth,
+     * the depth buffer stays empty, so the depth-tested edge pass has nothing
+     * to be occluded by and every edge draws as "visible" — no hidden-line
+     * separation at all, and the shells pile up as unsorted grey.
+     *
+     * So: draw the geometry first with colour writes OFF and depth writes ON.
+     * The buffer then holds the true front surfaces, and everything after it
+     * — ghost faces, visible edges — is occluded correctly. polygonOffset
+     * pushes the prepass a hair back so coincident edges win the depth test
+     * instead of z-fighting with the surface they sit on.
+     */
+    const prepassMat = () => new THREE.MeshBasicMaterial({
+        colorWrite: false,
+        depthWrite: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1
+    });
+
+    const addTrack = (geo, mesh) => {
+        const g = new THREE.Group();
+        const place = (o, order) => {
+            o.position.set(-seamX, 0, -seamZ);    // offset so seam is at 0 locally
+            o.renderOrder = order;
+            g.add(o);
+        };
+        place(new THREE.Mesh(geo, prepassMat()), -10);
+        place(mesh, 1);
+        const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, edgeThreshold));
+        // hidden first so the visible pass paints over it where they coincide
+        const hid = new LineSegments2(fat, hiddenLineMat());
+        hid.computeLineDistances();          // required before dashes render
+        place(hid, 2);
+        place(new LineSegments2(fat, visibleLineMat()), 3);
+        group.add(g);
+        return g;
+    };
+
+    jointGuideState.leftTrack = addTrack(leftGeo, leftMesh);
+    jointGuideState.rightTrack = addTrack(rightGeo, rightMesh);
+    
+    const keyGroup = new THREE.Group();
+    // The depth prepass writes the TRACK's depth, so an ordinarily depth-tested
+    // key gets clipped away behind shells that are meant to be see-through.
+    // Same two-pass treatment the edges get: the solid key shows where it is
+    // genuinely visible, and a dimmer depthTest-free copy shows the part buried
+    // in the pockets — which is the half that matters.
+    keyMesh.renderOrder = -1;
+    keyGroup.add(keyMesh);
+
+    const keyGhost = new THREE.Mesh(keyGeo, new THREE.MeshBasicMaterial({
+        color: 0xd4692a, transparent: true, opacity: 0.5, depthTest: false
+    }));
+    keyGhost.renderOrder = 4;
+    keyGroup.add(keyGhost);
+
+    const keyFat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(keyGeo, edgeThreshold));
+    const keyLines = new LineSegments2(keyFat, new LineMaterial({
+        color: 0x3a1400, linewidth: 2.2, resolution: res, depthTest: false
+    }));
+    keyLines.renderOrder = 5;
+    keyGroup.add(keyLines);
+    
+    // Rotate the key to align with the pocket (which is perpendicular to the track running along X)
+    keyGroup.rotation.y = pieces[1].exit.h + Math.PI / 2;
+    group.add(keyGroup);
+    jointGuideState.bowtieKey = keyGroup;
+    
+    // Lock-state flash at the joint. It is a HUD annotation, not part of the
+    // assembly, so it must not be sliced by the depth prepass — a flat ring
+    // lying inside the track was getting cut into disconnected crescents by the
+    // surfaces it passed through. depthTest off + a renderOrder above every
+    // edge pass keeps it whole and always on top.
+    const ringGeo = new THREE.RingGeometry(16, 20, 48);
+    ringGeo.rotateX(Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x55ff55,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false
+    });
+    const indicator = new THREE.Mesh(ringGeo, ringMat);
+    indicator.position.set(0, seamDeckY - 6, 0); // Position it around the key slot height
+    indicator.renderOrder = 20;
+    indicator.visible = false;   // stays hidden until the flash actually starts
+    group.add(indicator);
+    jointGuideState.seamGapIndicator = indicator;
+
+    initJointVignettes(pieces, seamX, seamZ, seamDeckY);
+}
+
+/**
+ * Fixed-angle solid cutaways of the assembled joint, stacked in the side pane.
+ *
+ * One WebGL context drives all three via scissored viewports — three separate
+ * renderers would burn three of the browser's ~16 context budget for static
+ * thumbnails. Each view gets its own scene because each needs a DIFFERENT
+ * boolean cut, which is geometry, not a camera setting.
+ */
+const jointVignettes = { renderer: null, views: [] };
+
+function initJointVignettes(pieces, seamX, seamZ, seamDeckY) {
+    if (jointVignettes.renderer) return;
+    const holder = $('joint-vignettes');
+    if (!holder) return;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setScissorTest(true);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    holder.appendChild(renderer.domElement);
+    jointVignettes.renderer = renderer;
+
+    const lock = SPEC.key.height - 2 * SPEC.jointClearanceMm;
+    const keyTopY = seamDeckY - 3;
+    const keyY = keyTopY - lock;
+
+    // the key sits seated, so every view shows the assembled end state
+    const keyGeo = toBufferGeometry(buildKeyGeometry(SPEC));
+
+    // cut planes are expressed in world coords around the seam
+    // Offsets are relative to the seam so the framing survives any layout
+    // change; the guide's track always runs along +X with +Z lateral.
+    const at = (dx, dy, dz) => [seamX + dx, seamDeckY + dy, seamZ + dz];
+    const CUTS = [
+        {
+            // Cut removes the +Z half, so the camera must sit on +Z to face the
+            // capped section — from −Z you'd be looking at the intact outer
+            // skirt and see nothing of the joint.
+            label: 'Side view · cut along the seam centreline',
+            cut: { origin: [0, 0, seamZ], normal: [0, 0, 1] },
+            ghostKey: true,
+            eye: at(-18, 20, 78), look: at(0, -7, 0)
+        },
+        {
+            // cut 6 mm into the downhill pocket, look back at the capped face
+            label: 'End view · cut 6 mm into the pocket',
+            cut: { origin: [seamX + 6, 0, 0], normal: [1, 0, 0] },
+            ghostKey: true,
+            eye: at(62, 18, 30), look: at(2, -6, 0)
+        },
+        {
+            // Horizontal cut through the key's mid-height, looking straight up
+            // at it. From outside, the underside is an unreadable mass of grey;
+            // a plan section shows the one thing that matters — the bowtie
+            // sitting inside the pocket it has to fit, in true cross-section.
+            label: 'Bottom view · cut through the seated key',
+            cut: { origin: [0, keyY + lock / 2, 0], normal: [0, -1, 0] },
+            cutKey: true,
+            eye: at(-6, -76, 13), look: at(0, -(seamDeckY - (keyY + lock / 2)), 0)
+        }
+    ];
+
+    const shellMat = () => new THREE.MeshStandardMaterial({ color: 0xd9dee6, roughness: 0.62, metalness: 0, side: THREE.DoubleSide });
+    const keyMat = () => new THREE.MeshStandardMaterial({ color: 0xff6b00, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
+
+    for (const def of CUTS) {
+        const sc = new THREE.Scene();
+        sc.background = new THREE.Color(0xeef1f5);
+        sc.add(new THREE.HemisphereLight(0xffffff, 0x9aa3ae, 0.85));
+        // A DirectionalLight aims at its target, which defaults to the world
+        // origin — but the seam sits ~300 mm down +X, so every light was
+        // raking across the joint at the wrong angle. Aim them all at the seam.
+        const aimAt = (light) => {
+            light.target.position.set(seamX, seamDeckY, seamZ);
+            sc.add(light.target);
+            sc.add(light);
+        };
+        const k = new THREE.DirectionalLight(0xfff4e2, 1.9);
+        k.position.set(seamX + 120, seamDeckY + 180, seamZ + 140);
+        aimAt(k);
+        const f = new THREE.DirectionalLight(0xc9dcff, 0.5);
+        f.position.set(seamX - 150, seamDeckY + 40, seamZ - 120);
+        aimAt(f);
+        // plan/underside views look at faces pointing DOWN, which every
+        // overhead source leaves unlit — they need a dedicated bounce
+        const up = new THREE.DirectionalLight(0xffffff, 1.15);
+        up.position.set(seamX - 40, seamDeckY - 160, seamZ + 90);
+        aimAt(up);
+
+        // Crop both pieces to a short stub either side of the seam. Without
+        // this each inset is 300 mm of track with a 24 mm joint lost in the
+        // middle of it — the cut plane alone doesn't make the view legible.
+        const STUB = 38;
+        const add = (raw, mat) => {
+            let g = raw;
+            for (const c of [
+                { origin: [seamX + STUB, 0, 0], normal: [1, 0, 0] },
+                { origin: [seamX - STUB, 0, 0], normal: [-1, 0, 0] },
+                ...(def.cut ? [def.cut] : [])
+            ]) g = sectionGeometry(g, c);
+            const mesh = new THREE.Mesh(toBufferGeometry(g), mat);
+            sc.add(mesh);
+            const lines = new THREE.LineSegments(
+                new THREE.EdgesGeometry(mesh.geometry, 32),
+                new THREE.LineBasicMaterial({ color: 0x24384f })
+            );
+            sc.add(lines);
+        };
+
+        add(buildPieceExportGeometry(pieces[1]), shellMat());
+        add(buildPieceExportGeometry(pieces[2]), shellMat());
+
+        // The key is modelled at the origin with its own +Z along the track, so
+        // it has to be rotated and translated onto the seam. Bake that into the
+        // geometry rather than the mesh transform — sectionGeometry cuts in
+        // world space and would otherwise slice the key where it isn't.
+        const seatedKey = keyGeo.clone()
+            .rotateY(pieces[1].exit.h + Math.PI / 2)
+            .translate(seamX, keyY, seamZ);
+
+        if (def.cutKey) {
+            // plan section: the key is cut on the same plane as the track, so
+            // the view is a true cross-section of key-inside-pocket
+            const cut = sectionGeometry({
+                positions: new Float32Array(seatedKey.attributes.position.array),
+                indices: seatedKey.index
+                    ? new Uint32Array(seatedKey.index.array)
+                    : Uint32Array.from({ length: seatedKey.attributes.position.count }, (_, i) => i)
+            }, def.cut);
+            const m = new THREE.Mesh(toBufferGeometry(cut), keyMat());
+            sc.add(m);
+            sc.add(new THREE.LineSegments(
+                new THREE.EdgesGeometry(m.geometry, 32),
+                new THREE.LineBasicMaterial({ color: 0x7a2f00 })
+            ));
+        } else {
+            sc.add(new THREE.Mesh(seatedKey, keyMat()));
+        }
+
+        if (def.ghostKey) {
+            // A second, dimmer copy drawn with depthTest off. The solid key
+            // above only shows the sliver facing the cut; this reveals the rest
+            // of the bowtie still buried in the pocket, which is the part you
+            // actually need to see to judge the fit.
+            const ghost = new THREE.Mesh(seatedKey, new THREE.MeshBasicMaterial({
+                color: 0xc4551a, transparent: true, opacity: 0.42, depthTest: false
+            }));
+            ghost.renderOrder = 5;
+            sc.add(ghost);
+            const gl = new THREE.LineSegments(
+                new THREE.EdgesGeometry(seatedKey, 32),
+                new THREE.LineBasicMaterial({ color: 0x8a3a08, transparent: true, opacity: 0.75, depthTest: false })
+            );
+            gl.renderOrder = 6;
+            sc.add(gl);
+        }
+
+        const cam = new THREE.PerspectiveCamera(38, 1, 0.5, 3000);
+        cam.position.set(...def.eye);
+        cam.lookAt(...def.look);
+        jointVignettes.views.push({ scene: sc, camera: cam, label: def.label });
+    }
+    resizeJointVignettes();
+}
+
+function resizeJointVignettes() {
+    const holder = $('joint-vignettes');
+    if (!holder || !jointVignettes.renderer) return;
+    const w = holder.clientWidth, h = holder.clientHeight;
+    if (!w || !h) return;
+    jointVignettes.renderer.setSize(w, h);
+    const n = jointVignettes.views.length || 1;
+    for (const v of jointVignettes.views) {
+        v.camera.aspect = w / (h / n);
+        v.camera.updateProjectionMatrix();
+    }
+}
+
+function renderJointVignettes() {
+    const r = jointVignettes.renderer;
+    if (!r || !jointVignettes.views.length) return;
+    const holder = $('joint-vignettes');
+    const w = holder.clientWidth, h = holder.clientHeight;
+    if (!w || !h) return;
+    const n = jointVignettes.views.length;
+    const vh = Math.floor(h / n);
+    jointVignettes.views.forEach((v, i) => {
+        const y = h - vh * (i + 1);
+        r.setViewport(0, y, w, vh);
+        r.setScissor(0, y, w, vh);
+        r.render(v.scene, v.camera);
+    });
+}
+
+function tickJointGuideAnimation(dt) {
+    if (!jointGuideState.group) return;
+    jointGuideState.t += dt;
+    const loopDuration = 8.5; // seconds
+    const t = jointGuideState.t % loopDuration;
+    
+    const leftTrack = jointGuideState.leftTrack;
+    const rightTrack = jointGuideState.rightTrack;
+    const bowtieKey = jointGuideState.bowtieKey;
+    const seamGapIndicator = jointGuideState.seamGapIndicator;
+    const seamDeckY = jointGuideState.seamDeckY;
+    
+    const lockedKeyY = seamDeckY - 3 - SPEC.key.height + SPEC.jointClearanceMm;
+    // The key must START below BOTH pieces' rims. The old fixed −30 mm put it
+    // at y≈3 while the downhill piece's skirt runs down to y=0, so the key
+    // began its travel already buried inside that piece — which is why the
+    // motion read as the ramp sliding onto a stationary key instead of the key
+    // slotting up into both ramps from underneath.
+    const rimFloor = jointGuideState.rimFloor ?? (lockedKeyY - 30);
+    const startKeyY = Math.min(rimFloor, lockedKeyY) - 22;
+    const keyTravel = lockedKeyY - startKeyY;
+    
+    // Reset defaults
+    leftTrack.position.set(0, 0, 0);
+    rightTrack.position.set(0, 0, 0);
+    rightTrack.rotation.set(0, 0, 0);
+    bowtieKey.position.y = startKeyY;
+    bowtieKey.scale.set(1, 1, 1);
+    
+    // UI steps highlight
+    const step1El = $('timeline-step-1');
+    const step2El = $('timeline-step-2');
+    const step3El = $('timeline-step-3');
+    if (step1El) { step1El.style.background = ''; step1El.style.fontWeight = ''; }
+    if (step2El) { step2El.style.background = ''; step2El.style.fontWeight = ''; }
+    if (step3El) { step3El.style.background = ''; step3El.style.fontWeight = ''; }
+    
+    if (seamGapIndicator) {
+        seamGapIndicator.material.opacity = 0;
+        seamGapIndicator.material.color.setHex(0x55ff55);
+        seamGapIndicator.visible = false;   // re-enabled only by the flash steps
+    }
+
+    if (t < 1.5) {
+        // Step 1: pieces apart but ALREADY IN LINE. The old start tilted the
+        // piece (yaw 0.08, roll 0.04) and offset it in Y and Z, which reads as
+        // a jump when the ease snaps it square — and misrepresents the joint,
+        // which only ever slides along the track axis.
+        if (step1El) { step1El.style.background = 'rgba(242,182,50,0.15)'; step1El.style.fontWeight = 'bold'; }
+
+        rightTrack.position.set(15, 0, 0);   // longitudinal separation only
+        bowtieKey.position.y = startKeyY;
+
+    } else if (t < 3.5) {
+        // Step 1 -> 2: Alignment Slide
+        if (step1El) { step1El.style.background = 'rgba(242,182,50,0.15)'; step1El.style.fontWeight = 'bold'; }
+        
+        const alpha = (t - 1.5) / 2.0;
+        const ease = 1 - Math.pow(1 - alpha, 3); // ease out cubic
+        
+        rightTrack.position.set(15 - 13 * ease, 0, 0);   // closes to a 2 mm gap along X
+        bowtieKey.position.y = startKeyY;
+        
+    } else if (t < 5.5) {
+        // Step 2 -> 3: Key Insertion & Wedging Pull
+        if (step2El) { step2El.style.background = 'rgba(242,182,50,0.15)'; step2El.style.fontWeight = 'bold'; }
+        
+        const alpha = (t - 3.5) / 2.0;
+        const keyY = startKeyY + keyTravel * alpha;   // rises into the pockets
+        bowtieKey.position.y = keyY;
+        
+        let gap = 2.0;
+        if (alpha > 0.5) {
+            if (step3El) { step3El.style.background = 'rgba(242,182,50,0.15)'; step3El.style.fontWeight = 'bold'; }
+            const wedgeProgress = (alpha - 0.5) / 0.5; // 0 to 1
+            gap = 2.0 * (1 - wedgeProgress);
+        }
+        
+        rightTrack.position.set(gap, 0, 0);
+        
+    } else if (t < 5.8) {
+        // Step 3: The Snap!
+        if (step3El) { step3El.style.background = 'rgba(242,182,50,0.15)'; step3El.style.fontWeight = 'bold'; }
+        
+        bowtieKey.position.y = lockedKeyY;
+        rightTrack.position.set(0, 0, 0);
+        
+        const snapT = t - 5.5; // 0 to 0.3
+        const freq = 40;
+        const decay = Math.exp(-20 * snapT);
+        const amp = 0.8 * Math.sin(freq * snapT) * decay;
+        
+        rightTrack.position.x += amp; // vibrates along X
+        bowtieKey.position.y += amp * 0.5;
+        bowtieKey.scale.set(1 + amp*0.1, 1 + amp*0.2, 1 + amp*0.1);
+        
+        if (seamGapIndicator) {
+            seamGapIndicator.material.color.setHex(0x55ff55);
+            seamGapIndicator.material.opacity = 0.8 * decay;
+            seamGapIndicator.visible = true;
+        }
+        
+    } else if (t < 7.2) {
+        // Fully Locked
+        if (step3El) { step3El.style.background = 'rgba(242,182,50,0.15)'; step3El.style.fontWeight = 'bold'; }
+        
+        bowtieKey.position.y = lockedKeyY;
+        rightTrack.position.set(0, 0, 0);
+        
+        if (seamGapIndicator) {
+            seamGapIndicator.material.color.setHex(0x55ff55);
+            seamGapIndicator.material.opacity = 0.3 + 0.3 * Math.sin((t - 5.8) * 8);
+            seamGapIndicator.visible = true;
+        }
+        
+    } else {
+        // Fade Out / Reset
+        const alpha = (t - 7.2) / 1.3;
+        const opacity = 1 - alpha;
+        
+        leftTrack.traverse(child => {
+            if (child.isMesh) child.material.opacity = 0.65 * opacity;
+            else if (child.isLine) child.material.opacity = 0.8 * opacity;
+        });
+        rightTrack.traverse(child => {
+            if (child.isMesh) child.material.opacity = 0.65 * opacity;
+            else if (child.isLine) child.material.opacity = 0.8 * opacity;
+        });
+        bowtieKey.traverse(child => {
+            if (child.isMesh) child.material.opacity = 0.95 * opacity;
+            else if (child.isLine) child.material.opacity = 0.9 * opacity;
+        });
+        
+        if (seamGapIndicator) {
+            seamGapIndicator.material.opacity = 0;
+        }
+        
+        if (t > loopDuration - 0.05) {
+            leftTrack.traverse(child => {
+                if (child.isMesh) child.material.opacity = 0.65;
+                else if (child.isLine) child.material.opacity = 0.8;
+            });
+            rightTrack.traverse(child => {
+                if (child.isMesh) child.material.opacity = 0.65;
+                else if (child.isLine) child.material.opacity = 0.8;
+            });
+            bowtieKey.traverse(child => {
+                if (child.isMesh) child.material.opacity = 0.95;
+                else if (child.isLine) child.material.opacity = 0.9;
+            });
+        }
+    }
+}
+
 function setTab(t) {
     for (const k of TABS) {
         $(`pane-${k}`).style.display = k === t ? '' : 'none';
@@ -1632,6 +2245,56 @@ function setTab(t) {
         }
     } else {
         gallery.open = false;
+    }
+    
+    if (t === 'joint') {
+        trackGroup.visible = false;
+        arrowGroup.visible = false;
+        ghostGroup.visible = false;
+        sceneryGroup.visible = false;
+        strikeGroup.visible = false;
+        if (sim.horse) sim.horse.visible = false;
+        if (idleHorse) idleHorse.visible = false;
+        // The green ground, the grid and the sky-blue background all show
+        // straight through the ghosted shells and were most of the visual
+        // noise. A flat studio backdrop lets the line work read.
+        ground.visible = false;
+        grid.visible = false;
+        scene.background = new THREE.Color(0xeef1f5);
+        const ins = $('joint-insets');
+        if (ins) ins.style.display = '';
+
+        initJointGuide();
+        jointGuideState.active = true;
+        jointGuideState.group.visible = true;
+        jointGuideState.t = 0;
+        
+        controls.maxPolarAngle = Math.PI; // Allow rotating fully underneath the joint
+        const seamDeckY = jointGuideState.seamDeckY;
+        controls.target.set(0, seamDeckY - 6, 0);
+        camera.position.set(0, seamDeckY - 80, 110); // less zoomed in, looking up from the underside to view bottom insertion clearly
+        controls.update();
+    } else {
+        if (jointGuideState.active) {
+            jointGuideState.active = false;
+            if (jointGuideState.group) {
+                jointGuideState.group.visible = false;
+            }
+            trackGroup.visible = true;
+            arrowGroup.visible = true;
+            ghostGroup.visible = true;
+            sceneryGroup.visible = true;
+            strikeGroup.visible = true;
+            ground.visible = true;
+            grid.visible = true;
+            scene.background = new THREE.Color(0xcfe6f5);
+            const ins = $('joint-insets');
+            if (ins) ins.style.display = 'none';
+            if (sim.horse) sim.horse.visible = true;
+            if (idleHorse) idleHorse.visible = true;
+            controls.maxPolarAngle = Math.PI; // Maintain underneath-view capability
+            fitView();
+        }
     }
 }
 
@@ -1767,6 +2430,106 @@ $('btn-speed').addEventListener('click', () => {
     updateSpeedButton();
 });
 
+function updateRenderModeButton() {
+    const btn = $('btn-render-mode');
+    if (btn) {
+        const mode = state.renderMode || 'solid';
+        const labels = {
+            'solid': '👁 Solid',
+            'hidden-line': '👁 Hidden-line',
+            'wireframe': '👁 Wireframe'
+        };
+        btn.textContent = labels[mode] || '👁 Solid';
+    }
+}
+
+$('btn-render-mode').addEventListener('click', () => {
+    const MODES = ['solid', 'hidden-line', 'wireframe'];
+    let currentIdx = MODES.indexOf(state.renderMode || 'solid');
+    if (currentIdx === -1) currentIdx = 0;
+    const nextIdx = (currentIdx + 1) % MODES.length;
+    state.renderMode = MODES[nextIdx];
+    localStorage.setItem('klipklop-render-mode', state.renderMode);
+    updateRenderModeButton();
+    applyRenderMode();
+});
+
+function addOutline(mesh, thresholdAngle = 20) {
+    if (mesh.userData.outline) {
+        mesh.remove(mesh.userData.outline);
+        mesh.userData.outline = null;
+    }
+    const edges = new THREE.EdgesGeometry(mesh.geometry, thresholdAngle);
+    const lineMat = new THREE.LineBasicMaterial({
+        color: 0x111111,
+        linewidth: 1.5,
+        transparent: true,
+        opacity: 0.8
+    });
+    const line = new THREE.LineSegments(edges, lineMat);
+    mesh.add(line);
+    mesh.userData.outline = line;
+}
+
+function applyRenderMode() {
+    const mode = state.renderMode || 'solid';
+    const traverseAndStyle = (obj) => {
+        obj.traverse(o => {
+            if (o.isMesh) {
+                if (!o.userData.outline && o.geometry && o.geometry.type !== 'SphereGeometry') {
+                    addOutline(o, 20);
+                }
+                const outline = o.userData.outline;
+                if (!o.userData.origMaterial) {
+                    o.userData.origMaterial = {
+                        transparent: o.material.transparent,
+                        opacity: o.material.opacity,
+                        depthWrite: o.material.depthWrite,
+                        visible: o.material.visible !== false
+                    };
+                }
+                
+                if (mode === 'solid') {
+                    o.material.transparent = o.userData.origMaterial.transparent;
+                    o.material.opacity = o.userData.origMaterial.opacity;
+                    o.material.depthWrite = o.userData.origMaterial.depthWrite;
+                    o.material.visible = o.userData.origMaterial.visible;
+                    if (o.material.needsUpdate) o.material.needsUpdate = true;
+                    if (outline) outline.visible = false;
+                } else if (mode === 'hidden-line') {
+                    o.material.transparent = o.userData.origMaterial.transparent;
+                    o.material.opacity = o.userData.origMaterial.opacity;
+                    o.material.depthWrite = o.userData.origMaterial.depthWrite;
+                    o.material.visible = o.userData.origMaterial.visible;
+                    if (o.material.needsUpdate) o.material.needsUpdate = true;
+                    if (outline) {
+                        outline.visible = true;
+                        outline.material.color.setHex(0x111111);
+                        outline.material.opacity = 0.85;
+                        outline.material.needsUpdate = true;
+                    }
+                } else if (mode === 'wireframe') {
+                    o.material.transparent = true;
+                    o.material.opacity = 0.15;
+                    o.material.depthWrite = false;
+                    o.material.visible = true;
+                    if (o.material.needsUpdate) o.material.needsUpdate = true;
+                    if (outline) {
+                        outline.visible = true;
+                        outline.material.color.setHex(0x39ff14); // neon green
+                        outline.material.opacity = 0.9;
+                        outline.material.needsUpdate = true;
+                    }
+                }
+            }
+        });
+    };
+    traverseAndStyle(trackGroup);
+    traverseAndStyle(sceneryGroup);
+    if (idleHorse) traverseAndStyle(idleHorse);
+    if (sim.horse) traverseAndStyle(sim.horse);
+}
+
 // ---------------------------------------------------------------------------
 // Simulation (replays the verified simulateRun trace)
 // ---------------------------------------------------------------------------
@@ -1820,6 +2583,12 @@ function buildHorse() {
     com.position.set(0, 14, 6); // low & slightly rear — where the ballast goes
     pivot.add(com);
     group.userData = { pivot, pend };
+    group.traverse(o => {
+        if (o.isMesh) {
+            if (o.geometry.type === 'SphereGeometry') return;
+            addOutline(o, 20);
+        }
+    });
     return group;
 }
 
@@ -2046,6 +2815,7 @@ function startSim() {
     sim.running = true;
     for (const btn of document.querySelectorAll('[data-figstyle]')) btn.disabled = true;
     refreshIdleHorse();
+    applyRenderMode();
     if (sim.run.events.some(e => e.type === 'mode' && e.detail.includes('slide'))) {
         toast('⛸ Hooves lose grip somewhere on this ride — watch it ski (see Physics lab)');
     }
@@ -2162,8 +2932,12 @@ function refreshIdleHorse() {
         idleHorse = buildHorse();
         idleHorse.position.set(pt.x, pt.y, pt.z);
         idleHorse.rotation.y = Math.PI / 2 - pt.h;
+        if (jointGuideState.active) {
+            idleHorse.visible = false;
+        }
         scene.add(idleHorse);
     } catch { /* empty/degenerate layouts have no place to stand */ }
+    applyRenderMode();
 }
 
 // Dev hook for the Playwright smoke/screenshot scripts: orbit the camera
@@ -2293,6 +3067,8 @@ function assembleParts() {
                 count,
                 sig,
                 note: note.switch,
+                piece: pair.main,
+                support: support,
                 build: () => {
                     const mesh = buildSwitchExportGeometry(pair.main, pair.branch, { support });
                     return transformMeshToLocalFrame(mesh, pair.main);
@@ -2304,6 +3080,8 @@ function assembleParts() {
                 count,
                 sig,
                 note: note.piece,
+                piece: pc,
+                support: support,
                 build: () => {
                     const mesh = buildPieceExportGeometry(pc, { support });
                     return transformMeshToLocalFrame(mesh, pc);
@@ -2368,20 +3146,111 @@ const gallery = {
 
 // material styles: how the same watertight mesh reads under different finishes
 const GALLERY_MATS = {
-    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.32, metalness: 0, clearcoat: 0.65, clearcoatRoughness: 0.25 }),
-    pla: () => new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.85, metalness: 0 }),
+    // envMapIntensity is deliberately low: image-based light reaches into
+    // concave features almost as strongly as onto flat faces, which flattens
+    // pockets and sockets into painted rectangles. The shadow-casting key light
+    // describes the shape instead.
+    // polygonOffset pushes the surface a hair back so the edge overlay sits on
+    // top of it instead of z-fighting the faces it traces.
+    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.38, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3, envMapIntensity: 0.32, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    pla: () => new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.85, metalness: 0, envMapIntensity: 0.25, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
     clay: () => new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
     normals: () => new THREE.MeshNormalMaterial()
 };
+
+/**
+ * Shared studio rig for both part viewers (side panel + expanded lightbox).
+ * Recessed features — bowtie pockets, hex sockets — are only legible when
+ * something OCCLUDES them. A bright uniform environment lights the inside of a
+ * pocket almost as strongly as the flat rib around it, which is what made the
+ * joint read as a painted rectangle; so the IBL is dialled back (see
+ * GALLERY_MATS.envMapIntensity) and a raking, shadow-casting key describes the
+ * shape instead.
+ */
+function lightPartViewer(target) {
+    target.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    target.renderer.toneMappingExposure = 1.15;
+    target.renderer.shadowMap.enabled = true;
+    target.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    target.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 0.26));
+    const key = new THREE.DirectionalLight(0xfff2d8, 2.4);
+    key.position.set(170, 240, 205);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.bias = -0.0005;
+    key.shadow.normalBias = 0.5;
+    target.scene.add(key);
+    target.key = key;
+    // cool fill keeps the shadow side off black; warm rim separates the
+    // silhouette from the background
+    const fill = new THREE.DirectionalLight(0xbdd4ff, 0.42);
+    fill.position.set(-230, 80, 150);
+    target.scene.add(fill);
+    const rim = new THREE.DirectionalLight(0xffd2a0, 0.85);
+    rim.position.set(-110, 55, -250);
+    target.scene.add(rim);
+
+    // Slicer-style build plate: a light plane the part sits on, so the piece
+    // reads as something about to be printed rather than floating in a void.
+    // A real (not ShadowMaterial) surface so it also carries the contact shadow.
+    target.shadowCatcher = new THREE.Mesh(
+        new THREE.PlaneGeometry(1200, 1200).rotateX(-Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0xdae4f0, roughness: 0.95, metalness: 0 })
+    );
+    target.shadowCatcher.receiveShadow = true;
+    target.scene.add(target.shadowCatcher);
+}
+
+/**
+ * Graph-paper grid for the build plate — fine 10 mm squares with a heavier
+ * 50 mm line, in light blue. Two GridHelpers rather than one because a single
+ * helper can only draw two line weights and we want the minor grid genuinely
+ * faint against the major.
+ */
+function makeGraphPlate() {
+    const g = new THREE.Group();
+    const minor = new THREE.GridHelper(600, 60, 0xa8c4e0, 0xa8c4e0);
+    minor.material.transparent = true;
+    minor.material.opacity = 0.55;
+    const major = new THREE.GridHelper(600, 12, 0x6d93bb, 0x6d93bb);
+    major.material.transparent = true;
+    major.material.opacity = 0.75;
+    major.position.y = 0.02;         // sit just above the minor lines
+    g.add(minor, major);
+    return g;
+}
+
+/** Fits the shadow frustum and ground plane to the selected part. */
+function framePartShadow(target, box, center, size) {
+    if (target.key) {
+        const r = size * 0.62;
+        const sc = target.key.shadow.camera;
+        sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r;
+        sc.near = 1; sc.far = size * 4;
+        sc.updateProjectionMatrix();
+        target.key.position.set(center.x + size * 0.5, center.y + size * 0.9, center.z + size * 0.6);
+        target.key.target.position.copy(center);
+        target.key.target.updateMatrixWorld();
+        target.scene.add(target.key.target);
+    }
+    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.4, center.z);
+    // grid rides just above the plate so the lines aren't z-fighting it
+    if (target.grid) target.grid.position.set(center.x, box.min.y - 0.3, center.z);
+}
 
 function initGallery() {
     if (gallery.renderer) return;
     const holder = $('print-part-view');
     gallery.renderer = new THREE.WebGLRenderer({ antialias: true });
     gallery.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    gallery.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    gallery.renderer.toneMappingExposure = 1.15;
+    gallery.renderer.shadowMap.enabled = true;
+    gallery.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     holder.appendChild(gallery.renderer.domElement);
     gallery.scene = new THREE.Scene();
-    gallery.scene.background = new THREE.Color(0x272420);
+    gallery.scene.background = new THREE.Color(0xeef3f9);
     // studio environment: reflections make the physical material read as
     // injection-molded plastic instead of untextured CAD
     const pmrem = new THREE.PMREMGenerator(gallery.renderer);
@@ -2392,12 +3261,9 @@ function initGallery() {
     gallery.controls.autoRotate = true;
     gallery.controls.autoRotateSpeed = 1.6;
     gallery.controls.zoomSpeed = 3;
-    gallery.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 0.55));
-    const key = new THREE.DirectionalLight(0xfff2d8, 1.1);
-    key.position.set(200, 350, 150);
-    gallery.scene.add(key);
-    const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
-    gallery.scene.add(grid);
+    lightPartViewer(gallery);
+    gallery.grid = makeGraphPlate();
+    gallery.scene.add(gallery.grid);
 
     $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
@@ -2410,7 +3276,7 @@ function initGallery() {
  * bounding corners out to the dimension line, so callouts visually attach to
  * the part instead of floating in space. Small fixed offset regardless of size.
  */
-function makeDimGroup(box) {
+function makeDimGroup(box, part) {
     const g = new THREE.Group();
     const mat = new THREE.LineBasicMaterial({ color: 0x9ec5ff });
     const size = box.getSize(new THREE.Vector3());
@@ -2420,18 +3286,61 @@ function makeDimGroup(box) {
         const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
         g.add(new THREE.Line(geo, mat));
     };
+    /**
+     * Dimension callout.
+     *
+     * Two things used to make these unreadable. The canvas was a fixed 256×64,
+     * so anything longer than ~7 characters at 36px was silently clipped — that
+     * is where "Pocket depth 9.25" became "ocket depth 9.2". And the sprite was
+     * scaled in WORLD units, so a label's on-screen size depended on how far it
+     * happened to sit from the camera; near ones were huge, far ones tiny.
+     *
+     * Now: the canvas is measured to fit the string, and sizeAttenuation:false
+     * makes the sprite a constant fraction of viewport height regardless of
+     * depth. A dark pill keeps the text legible over the part as well as over
+     * the background.
+     */
+    const LABEL_PX = 30, PAD_X = 12, PAD_Y = 7, LINE_H = LABEL_PX * 1.25;
+    // `text` may be an array — a multi-line block keeps a cluster of related
+    // callouts as ONE pill instead of six that collide at any zoom.
     const mkLabel = (text, pos) => {
+        const lines = Array.isArray(text) ? text : [text];
+        const font = `600 ${LABEL_PX}px system-ui, -apple-system, sans-serif`;
+        const probe = document.createElement('canvas').getContext('2d');
+        probe.font = font;
+        const tw = Math.ceil(Math.max(...lines.map(l => probe.measureText(l).width)));
+        const w = tw + PAD_X * 2, h = lines.length * LINE_H + PAD_Y * 2;
+
+        const dpr = Math.min(devicePixelRatio || 1, 2);
         const c = document.createElement('canvas');
-        c.width = 256; c.height = 64;
+        c.width = Math.ceil(w * dpr);
+        c.height = Math.ceil(h * dpr);
         const ctx = c.getContext('2d');
-        ctx.font = 'bold 40px sans-serif';
-        ctx.fillStyle = '#cfe2ff';
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = 'rgba(10,16,26,0.74)';
+        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(0, 0, w, h, 7); ctx.fill(); }
+        else ctx.fillRect(0, 0, w, h);
+        ctx.font = font;
         ctx.textAlign = 'center';
-        ctx.fillText(text, 128, 46);
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false }));
+        ctx.textBaseline = 'middle';
+        lines.forEach((line, i) => {
+            ctx.fillStyle = (lines.length > 1 && i === 0) ? '#ffd79a' : '#dceaff';
+            ctx.fillText(line, w / 2, PAD_Y + LINE_H * (i + 0.5) + 1);
+        });
+
+        const tex = new THREE.CanvasTexture(c);
+        tex.minFilter = THREE.LinearFilter;
+        tex.generateMipmaps = false;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex, depthTest: false, transparent: true, sizeAttenuation: false
+        }));
         sp.position.copy(pos);
-        const s = Math.min(46, Math.max(16, size.length() * 0.09));
-        sp.scale.set(s, s / 4, 1);
+        // with sizeAttenuation off, scale.y ≈ fraction of viewport height / 1.2.
+        // Scales with line count so each ROW stays the same size as a one-line
+        // label — a fixed total height would shrink a 4-line block to 1/4 text.
+        const hFrac = 0.024 * lines.length;
+        sp.scale.set(hFrac * (w / h), hFrac, 1);
+        sp.renderOrder = 30;
         g.add(sp);
     };
     const { min, max } = box;
@@ -2454,12 +3363,208 @@ function makeDimGroup(box) {
     mkLine(V(max.x, max.y, max.z), V(max.x + ext, max.y, max.z + ext));
     mkLine(V(max.x + off, min.y, max.z + off), V(max.x + off, max.y, max.z + off));
     mkLabel(`${size.y.toFixed(1)} mm`, V(max.x + off + 4, (min.y + max.y) / 2, max.z + off + 4));
+
+    // Custom connective dimension annotations
+    if (part) {
+        const name = part.name || '';
+        
+        if (name === 'connector_key_print') {
+            // Derived from SPEC, not hardcoded: the thickness callout used to
+            // read "7.5 mm" for a key that is height(6) − 2×clearance(0.2) =
+            // 5.6 mm, which is the kind of drift that gets a part printed wrong.
+            const K = SPEC.key;
+            const thk = K.height - 2 * SPEC.jointClearanceMm;
+            mkLine(V(-K.neckHalf, max.y + 1, 0), V(K.neckHalf, max.y + 1, 0));
+            mkLabel(`Neck ${(2 * K.neckHalf).toFixed(1)} mm`, V(0, max.y + 6, 0));
+
+            mkLine(V(-K.tipHalf, max.y + 1, K.depth), V(K.tipHalf, max.y + 1, K.depth));
+            mkLabel(`Tip ${(2 * K.tipHalf).toFixed(1)} mm`, V(0, max.y + 6, K.depth));
+
+            mkLine(V(min.x - 4, min.y, 0), V(min.x - 4, max.y, 0));
+            mkLabel(`Thk ${thk.toFixed(1)} mm`, V(min.x - 12, (min.y + max.y) / 2, 0));
+        }
+        else if (name.startsWith('support_riser') || name.startsWith('support_foot')) {
+            // Support columns tenon details
+            const bodyY = max.y - 9.0;
+            
+            // Tenon height: 9.0 mm
+            mkLine(V(5, bodyY, 5), V(12, bodyY, 5));
+            mkLine(V(5, max.y, 5), V(12, max.y, 5));
+            mkLine(V(10, bodyY, 5), V(10, max.y, 5));
+            mkLabel('Tenon 9.0 mm', V(18, (bodyY + max.y) / 2, 5));
+            
+            // Tenon across-flats size: 8.6 mm
+            mkLine(V(-4.3, max.y + 1, 0), V(4.3, max.y + 1, 0));
+            mkLabel('Tenon AF 8.6 mm', V(0, max.y + 5, 0));
+        }
+        else if (part.piece) {
+            // Track Piece detailed dimensions
+            const pc = part.piece;
+            const support = part.support;
+            const spec = SPEC;
+
+            // If it has a support, draw socket dimensions at y = 0
+            if (support && support.mode !== 'none') {
+                const h = pc.entry.h;
+                const cos = Math.cos(-h);
+                const sin = Math.sin(-h);
+                
+                const tx = support.x - pc.entry.x;
+                const tz = support.z - pc.entry.z;
+                const lx = tx * cos - tz * sin;
+                const lz = tx * sin + tz * cos;
+                
+                const stations = stationsForPiece(pc, 5);
+                let minLx = Infinity, maxLx = -Infinity, minLz = Infinity, maxLz = -Infinity;
+                stations.forEach(st => {
+                    const stx = st.origin[0] - pc.entry.x;
+                    const stz = st.origin[2] - pc.entry.z;
+                    const slx = stx * cos - stz * sin;
+                    const slz = stx * sin + stz * cos;
+                    const W = pc.innerWidth / 2 + spec.wall;
+                    minLx = Math.min(minLx, slx - W);
+                    maxLx = Math.max(maxLx, slx + W);
+                    minLz = Math.min(minLz, slz - W);
+                    maxLz = Math.max(maxLz, slz + W);
+                });
+                const cx = (minLx + maxLx) / 2;
+                const cz = (minLz + maxLz) / 2;
+
+                const socketX = lx - cx;
+                const socketZ = lz - cz;
+                
+                // Socket AF
+                mkLine(V(socketX - 4.5, 0.2, socketZ), V(socketX + 4.5, 0.2, socketZ));
+                mkLabel('Socket AF 9.0 mm', V(socketX, -4, socketZ));
+
+                // Socket Depth
+                mkLine(V(socketX + 6, 0, socketZ), V(socketX + 11, 0, socketZ));
+                mkLine(V(socketX + 6, 10, socketZ), V(socketX + 11, 10, socketZ));
+                mkLine(V(socketX + 9, 0, socketZ), V(socketX + 9, 10, socketZ));
+                mkLabel('Depth 10.0 mm', V(socketX + 15, 5, socketZ));
+
+                // Boss OD
+                mkLine(V(socketX - 10, -0.2, socketZ + 8), V(socketX + 10, -0.2, socketZ + 8));
+                mkLabel('Boss Ø 20.0 mm', V(socketX, -8, socketZ + 12));
+            }
+
+            // Bowtie Pocket dimensions at exit face
+            if (pc.type !== 'end') {
+                const h = pc.entry.h;
+                const cos = Math.cos(-h);
+                const sin = Math.sin(-h);
+
+                const tx = pc.exit.x - pc.entry.x;
+                const tz = pc.exit.z - pc.entry.z;
+                const exitLx = tx * cos - tz * sin;
+                const exitLz = tx * sin + tz * cos;
+                const exitLy = pc.exitDeck - pc.entryDeck;
+
+                const stations = stationsForPiece(pc, 5);
+                let minLx = Infinity, maxLx = -Infinity, minLz = Infinity, maxLz = -Infinity;
+                stations.forEach(st => {
+                    const stx = st.origin[0] - pc.entry.x;
+                    const stz = st.origin[2] - pc.entry.z;
+                    const slx = stx * cos - stz * sin;
+                    const slz = stx * sin + stz * cos;
+                    const W = pc.innerWidth / 2 + spec.wall;
+                    minLx = Math.min(minLx, slx - W);
+                    maxLx = Math.max(maxLx, slx + W);
+                    minLz = Math.min(minLz, slz - W);
+                    maxLz = Math.max(maxLz, slz + W);
+                });
+                const cx = (minLx + maxLx) / 2;
+                const cz = (minLz + maxLz) / 2;
+
+                const exX = exitLx - cx;
+                const exZ = exitLz - cz;
+                const exY = pc.exitDeck - pc.rimY;
+
+                // Derived from the same plan polygon the CSG cuts, so these can
+                // never drift from the geometry the way hardcoded values did.
+                const K = spec.key;
+                const poc = bowtiePocketPlan({
+                    neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
+                    clearance: spec.jointClearanceMm + 0.05
+                });
+                const mouthHalf = poc[1][0];                          // at z = -0.5
+                const tipHalf = poc[2][0];                            // at z = depth+clr
+                const pocDepth = poc[2][1];
+                const keyH = K.height - 2 * spec.jointClearanceMm;
+                const ceilY = exY - 3;                                // 3 mm of rib+floor cap
+                const bandY = ceilY - keyH;
+
+                // The mesh is recentred but NOT de-rotated (see recenter()):
+                // world +X runs along the track, world Z is lateral, y = 0 is
+                // the rim. Pocket widths are therefore Z spans and the pocket
+                // depth is an X span running INWARD from the face.
+                const inward = exX >= 0 ? -1 : 1;
+                const lat = tipHalf + 6;          // park vertical callouts clear of the part
+
+                // lateral widths: at the mouth, and at the deep end
+                // The three vertical bands (cap / key band / throat) span only
+                // ~12 mm between them, so at constant on-screen label size they
+                // stack on top of each other. Fan them out along Z — 20 mm
+                // apart — and give each a leader back to its dimension line.
+                // Dimension lines still mark each measured feature on the part…
+                mkLine(V(exX, bandY, exZ - mouthHalf), V(exX, bandY, exZ + mouthHalf));
+                mkLine(V(exX + inward * pocDepth, ceilY + 4, exZ - tipHalf), V(exX + inward * pocDepth, ceilY + 4, exZ + tipHalf));
+                mkLine(V(exX, ceilY, exZ + lat), V(exX + inward * pocDepth, ceilY, exZ + lat));
+                mkLine(V(exX, exY, exZ - lat), V(exX, ceilY, exZ - lat));
+                mkLine(V(exX, ceilY, exZ - lat), V(exX, bandY, exZ - lat));
+                mkLine(V(exX, bandY, exZ - lat), V(exX, 0, exZ - lat));
+
+                // …but the VALUES go in one block with a single leader. Six
+                // separate pills in a 25 mm span overlapped at every camera
+                // angle; a legend can't collide with itself.
+                const anchor = V(exX, (ceilY + bandY) / 2, exZ - lat);
+                // kept close to the part: pushed further out it fell outside the
+                // viewport at the default framing
+                const block = V(exX - 26, ceilY + 20, exZ - lat + 4);
+                mkLine(anchor, block);
+                mkLabel([
+                    'Bowtie pocket',
+                    `mouth ${(2 * mouthHalf).toFixed(2)}  ·  tip ${(2 * tipHalf).toFixed(2)} mm`,
+                    `depth ${pocDepth.toFixed(2)} mm  ·  cap 3.0 mm`,
+                    `key band ${keyH.toFixed(1)} mm  ·  throat ${bandY.toFixed(1)} mm`
+                ], block);
+            }
+        }
+    }
     return g;
 }
 
 /** (Re)builds the displayed mesh + overlays from gallery.geo and view options. */
+/**
+ * Hidden-line overlay for the part inspector — the same convention the joint
+ * guide uses: solid dark edges where an edge is genuinely visible, dashed grey
+ * where it lies behind material. On a solid gold part that is what separates a
+ * pocket from a shadow, and it reveals internal features (socket bores, the
+ * bowtie pocket) that an opaque render simply hides.
+ *
+ * The part mesh is opaque and already writes depth, so no prepass is needed
+ * here — only the polygonOffset on GALLERY_MATS so edges win the depth test.
+ */
+function makePartEdges(geo, res) {
+    const g = new THREE.Group();
+    const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, 45));
+    const hidden = new LineSegments2(fat, new LineMaterial({
+        color: 0x2b3138, linewidth: 1.5, resolution: res,
+        transparent: true, opacity: 0.5, depthTest: false,
+        dashed: true, dashSize: 4.2, gapSize: 1.5
+    }));
+    hidden.computeLineDistances();
+    hidden.renderOrder = 2;
+    const visible = new LineSegments2(fat, new LineMaterial({
+        color: 0x23180a, linewidth: 2.0, resolution: res
+    }));
+    visible.renderOrder = 3;
+    g.add(hidden, visible);
+    return g;
+}
+
 function applyGalleryStyle() {
-    for (const key of ['mesh', 'wire', 'dims']) {
+    for (const key of ['mesh', 'wire', 'dims', 'edges']) {
         if (gallery[key]) {
             gallery.scene.remove(gallery[key]);
             gallery[key] = null;
@@ -2467,7 +3572,14 @@ function applyGalleryStyle() {
     }
     if (!gallery.geo) return;
     gallery.mesh = new THREE.Mesh(gallery.geo, GALLERY_MATS[gallery.style]());
+    // self-shadowing is what makes a pocket read as a cavity rather than a decal
+    gallery.mesh.castShadow = true;
+    gallery.mesh.receiveShadow = true;
     gallery.scene.add(gallery.mesh);
+    gallery.lineRes = gallery.lineRes ?? new THREE.Vector2(1, 1);
+    gallery.edges = makePartEdges(gallery.geo, gallery.lineRes);
+    gallery.scene.add(gallery.edges);
+    galleryResize();                 // seed the Line2 resolution
     if (gallery.showWire) {
         gallery.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(gallery.geo),
@@ -2476,7 +3588,10 @@ function applyGalleryStyle() {
         gallery.scene.add(gallery.wire);
     }
     if (gallery.showDims) {
-        gallery.dims = makeDimGroup(new THREE.Box3().setFromObject(gallery.mesh));
+        gallery.dims = makeDimGroup(
+            new THREE.Box3().setFromObject(gallery.mesh),
+            gallery.parts[gallery.selectedIndex]
+        );
         gallery.scene.add(gallery.dims);
     }
 }
@@ -2488,6 +3603,7 @@ function galleryResize() {
     gallery.renderer.setSize(w, h);
     gallery.camera.aspect = w / h;
     gallery.camera.updateProjectionMatrix();
+    if (gallery.lineRes) gallery.lineRes.set(w, h);
 }
 
 function openGallery() {
@@ -2501,6 +3617,7 @@ function closeGallery() {
 function selectGalleryPart(i) {
     const part = gallery.parts[i];
     if (!part) return;
+    gallery.selectedIndex = i;
     [...$('print-parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
     $('print-part-caption').innerHTML = '⏳ building export geometry…';
     setTimeout(() => {
@@ -2515,6 +3632,9 @@ function selectGalleryPart(i) {
         gallery.controls.target.copy(c);
         // low three-quarter angle so undersides (pockets, sockets, ribs) show
         gallery.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        // Fit the shadow frustum to THIS part — a frustum sized for the whole
+        // scene wastes the depth range and washes out small recesses.
+        framePartShadow(gallery, box, c, size);
         const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
@@ -2545,7 +3665,7 @@ function initLightbox() {
     lightbox.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     holder.appendChild(lightbox.renderer.domElement);
     lightbox.scene = new THREE.Scene();
-    lightbox.scene.background = new THREE.Color(0x1d1a16);
+    lightbox.scene.background = new THREE.Color(0xeef3f9);
     const pmrem = new THREE.PMREMGenerator(lightbox.renderer);
     lightbox.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     lightbox.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
@@ -2554,12 +3674,9 @@ function initLightbox() {
     lightbox.controls.autoRotate = true;
     lightbox.controls.autoRotateSpeed = 1.6;
     lightbox.controls.zoomSpeed = 3;
-    lightbox.scene.add(new THREE.HemisphereLight(0xffffff, 0x554433, 0.55));
-    const key = new THREE.DirectionalLight(0xfff2d8, 1.1);
-    key.position.set(200, 350, 150);
-    lightbox.scene.add(key);
-    const grid = new THREE.GridHelper(600, 30, 0x554e42, 0x3d3830);
-    lightbox.scene.add(grid);
+    lightPartViewer(lightbox);
+    lightbox.grid = makeGraphPlate();
+    lightbox.scene.add(lightbox.grid);
 
     $('parts-shading').addEventListener('change', () => { lightbox.style = $('parts-shading').value; applyLightboxStyle(); });
     $('parts-rotate').addEventListener('change', () => { lightbox.controls.autoRotate = $('parts-rotate').checked; });
@@ -2568,7 +3685,7 @@ function initLightbox() {
 }
 
 function applyLightboxStyle() {
-    for (const key of ['mesh', 'wire', 'dims']) {
+    for (const key of ['mesh', 'wire', 'dims', 'edges']) {
         if (lightbox[key]) {
             lightbox.scene.remove(lightbox[key]);
             lightbox[key] = null;
@@ -2576,7 +3693,13 @@ function applyLightboxStyle() {
     }
     if (!lightbox.geo) return;
     lightbox.mesh = new THREE.Mesh(lightbox.geo, GALLERY_MATS[lightbox.style]());
+    lightbox.mesh.castShadow = true;
+    lightbox.mesh.receiveShadow = true;
     lightbox.scene.add(lightbox.mesh);
+    lightbox.lineRes = lightbox.lineRes ?? new THREE.Vector2(1, 1);
+    lightbox.edges = makePartEdges(lightbox.geo, lightbox.lineRes);
+    lightbox.scene.add(lightbox.edges);
+    lightboxResize();                // seed the Line2 resolution
     if (lightbox.showWire) {
         lightbox.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(lightbox.geo),
@@ -2585,7 +3708,10 @@ function applyLightboxStyle() {
         lightbox.scene.add(lightbox.wire);
     }
     if (lightbox.showDims) {
-        lightbox.dims = makeDimGroup(new THREE.Box3().setFromObject(lightbox.mesh));
+        lightbox.dims = makeDimGroup(
+            new THREE.Box3().setFromObject(lightbox.mesh),
+            lightbox.parts[lightbox.selectedIndex]
+        );
         lightbox.scene.add(lightbox.dims);
     }
 }
@@ -2597,6 +3723,7 @@ function lightboxResize() {
     lightbox.renderer.setSize(w, h);
     lightbox.camera.aspect = w / h;
     lightbox.camera.updateProjectionMatrix();
+    if (lightbox.lineRes) lightbox.lineRes.set(w, h);
 }
 
 function selectLightboxPart(i) {
@@ -2616,6 +3743,7 @@ function selectLightboxPart(i) {
         const size = box.getSize(new THREE.Vector3()).length();
         lightbox.controls.target.copy(c);
         lightbox.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
+        framePartShadow(lightbox, box, c, size);
         const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
             : /^scenery/.test(part.name) ? 'scenery'
             : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
@@ -2892,6 +4020,10 @@ function resize() {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // Line2 widths are screen-space: a stale resolution makes the joint-guide
+    // hidden lines the wrong thickness after any window resize.
+    if (jointGuideState.lineRes) jointGuideState.lineRes.set(w, h);
+    resizeJointVignettes();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('beforeunload', (e) => {
@@ -2918,7 +4050,11 @@ function animate(now) {
     if (film.active) tickFilmCamera(dt);
     else controls.update();
     fadeStrikeMarkers(now);
+    if (jointGuideState.active) {
+        tickJointGuideAnimation(dt);
+    }
     renderer.render(scene, camera);
+    if (jointGuideState.active) renderJointVignettes();
     if (gallery.open) {
         gallery.controls.update();
         gallery.renderer.render(gallery.scene, gallery.camera);
@@ -2947,8 +4083,10 @@ function syncControls() {
     await initCSG(); // switch display meshes and scenery need booleans
     await loadState();
     updateSpeedButton();
+    updateRenderModeButton();
     syncControls();
     rebuild();
+    applyRenderMode();
     resize();
     fitView();
     requestAnimationFrame(animate);
