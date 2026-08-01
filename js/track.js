@@ -536,7 +536,15 @@ export function planPillarPositions(pieces, params = {}) {
 
     const supports = [];
     for (const pc of pieces) {
-        if (pc.rimY <= 1 || pc.role === 'branch') continue; // ground / merged with main
+        if (pc.role === 'branch') continue;   // merged with its main sibling
+        // NB: grounded pieces (rimY ~ 0) are planned too. They used to be
+        // skipped, which left them with no support record at all — and bossOps
+        // reads a missing record as "build the default centre boss", so they
+        // got a boss anyway while the part signature and the dimension labels
+        // both reported them as unsupported. That is what listed two identical
+        // straights as separate parts. Every piece keeps its socket boss (one
+        // less unique part), and decomposeSupport() returns null at zero height
+        // so no foot or risers are emitted for them.
         const ignore = new Set(
             pc.switchKey
                 ? pieces.filter(q => q.switchKey === pc.switchKey).map(q => q.index)
@@ -571,6 +579,9 @@ export function planPillarPositions(pieces, params = {}) {
     }
     return supports;
 }
+
+/** True for records that carry a real socket boss (i.e. not a blocked column). */
+export const supportsPillar = (s) => !!s && (s.mode === 'center' || s.mode === 'outrigger');
 
 /**
  * Spiral-tier / branch clearance check. Pieces that share an endpoint

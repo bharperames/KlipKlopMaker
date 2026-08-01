@@ -22,7 +22,7 @@ import * as fflate from 'fflate';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
-    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions,
+    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar,
     planPosAt, deckYAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
@@ -316,7 +316,7 @@ function rebuild() {
     for (const pc of pieces) {
         if (pc.role === 'branch') continue; // rendered with its main sibling
         const sup = supportOf(pc.index);
-        const pads = (sup && sup.mode !== 'none') ? [sup.s] : undefined;
+        const pads = supportsPillar(sup) ? [sup.s] : undefined;
         let mesh;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
@@ -1057,8 +1057,9 @@ function pieceWeightsG() {
 function printJobTotalG(weights) {
     let total = [...weights.values()].reduce((s, g) => s + g, 0);
     for (const sup of state.supports ?? []) {
-        if (sup.mode === 'none') continue;
+        if (!supportsPillar(sup)) continue;
         const pc = state.layout.pieces[sup.pieceIndex];
+        if (pc.rimY <= 1) continue;      // sits on the ground: boss but no pillar
         // pillar ≈ hex shaft AF15 + base/tenon
         total += printedWeightG(195 * pc.rimY + 4200, 'pillar');
     }
@@ -1323,7 +1324,7 @@ function snapScenery(kind, pt) {
     const SNAP_DIST = 15;
     if (state.supports) {
         for (const sup of state.supports) {
-            if (sup.mode === 'none') continue;
+            if (!supportsPillar(sup)) continue;
             const dx = pt.x - sup.x;
             const dz = pt.z - sup.z;
             if (dx * dx + dz * dz < SNAP_DIST * SNAP_DIST) {
@@ -1516,7 +1517,6 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         if ($('doc-overlay').style.display !== 'none') { $('doc-overlay').style.display = 'none'; return; }
         if ($('refs-overlay').style.display !== 'none') { $('refs-overlay').style.display = 'none'; return; }
-        if (lightbox.open) { closeLightbox(); return; }
         cancelPlacement();
     }
     if (e.key === ' ') {
@@ -2239,14 +2239,34 @@ function setTab(t) {
     }
     if (t === 'export') {
         refreshPrintPartsList();
+        // The inspector owns the main viewport on this tab — the design itself
+        // is irrelevant while you are looking at one printable part.
+        trackGroup.visible = false;
+        arrowGroup.visible = false;
+        ghostGroup.visible = false;
+        sceneryGroup.visible = false;
+        strikeGroup.visible = false;
+        if (sim.horse) sim.horse.visible = false;
+        if (idleHorse) idleHorse.visible = false;
+        $('parts-stage').style.display = '';
         initGallery();
         gallery.open = true;
         settleResize(galleryResize);
         if (gallery.parts && gallery.parts.length > 0) {
-            selectGalleryPart(0);
+            selectGalleryPart(gallery.selectedIndex ?? 0);
         }
     } else {
-        gallery.open = false;
+        if (gallery.open) {
+            gallery.open = false;
+            $('parts-stage').style.display = 'none';
+            trackGroup.visible = true;
+            arrowGroup.visible = true;
+            ghostGroup.visible = true;
+            sceneryGroup.visible = true;
+            strikeGroup.visible = true;
+            if (sim.horse) sim.horse.visible = true;
+            if (idleHorse) idleHorse.visible = true;
+        }
     }
     
     if (t === 'joint') {
@@ -3098,7 +3118,7 @@ function assembleParts() {
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
-    const supList = (state.supports ?? []).filter(sup => sup.mode !== 'none');
+    const supList = (state.supports ?? []).filter(supportsPillar);
     if (usingStandard()) {
         let feet = 0;
         const riserCounts = new Map();
@@ -3161,7 +3181,7 @@ const GALLERY_MATS = {
 };
 
 /**
- * Shared studio rig for both part viewers (side panel + expanded lightbox).
+ * Studio rig for the part inspector.
  * Recessed features — bowtie pockets, hex sockets — are only legible when
  * something OCCLUDES them. A bright uniform environment lights the inside of a
  * pocket almost as strongly as the flat rib around it, which is what made the
@@ -3258,7 +3278,7 @@ function framePartShadow(target, box, center, size) {
 
 function initGallery() {
     if (gallery.renderer) return;
-    const holder = $('print-part-view');
+    const holder = $('parts-stage');
     gallery.renderer = new THREE.WebGLRenderer({ antialias: true });
     gallery.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     gallery.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3283,6 +3303,7 @@ function initGallery() {
 
     $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
+    paintModeButton('print-part-mode', gallery.mode);
     $('print-part-mode').addEventListener('click', () => cycleRenderMode(gallery, 'print-part-mode', applyGalleryStyle));
     $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').checked; applyGalleryStyle(); });
 }
@@ -3598,17 +3619,56 @@ function updateLineRes(mats, w, h) {
  *                hidden/visible split working without drawing the surface
  *   wire       — raw tessellation, i.e. what the slicer actually receives
  */
+// Each icon is the same isometric cube drawn the way that mode draws a part:
+// filled, filled-with-edges, line-only with a dashed hidden edge, or fully
+// triangulated. The glyph says more at a glance than the label does.
+const CUBE = 'M7 1.2 13 4.7 13 10.7 7 14.2 1 10.7 1 4.7Z';
+const CUBE_TOP = 'M7 1.2 13 4.7 7 8.2 1 4.7Z';
+const CUBE_STEM = 'M7 8.2V14.2';
+const modeIcon = (body) =>
+    `<svg viewBox="0 0 14 15.4" width="13" height="14" fill="none" stroke-linejoin="round" style="vertical-align:-2px">${body}</svg>`;
+
 const RENDER_MODES = [
-    { key: 'shaded',    label: 'Shaded' },
-    { key: 'shadedHlr', label: 'Shaded + HLR' },
-    { key: 'hlr',       label: 'HLR only' },
-    { key: 'wire',      label: 'Wireframe' }
+    {
+        key: 'shaded', label: 'Shaded',
+        icon: modeIcon(`<path d="${CUBE}" fill="currentColor" opacity=".85"/>`)
+    },
+    {
+        key: 'shadedHlr', label: 'Shaded + HLR',
+        icon: modeIcon(`<path d="${CUBE}" fill="currentColor" opacity=".55"/>
+            <path d="${CUBE}" stroke="currentColor" stroke-width="1.1"/>
+            <path d="${CUBE_TOP}" stroke="currentColor" stroke-width="1.1"/>
+            <path d="${CUBE_STEM}" stroke="currentColor" stroke-width="1.1"/>`)
+    },
+    {
+        key: 'hlr', label: 'HLR only',
+        icon: modeIcon(`<path d="${CUBE}" stroke="currentColor" stroke-width="1.1"/>
+            <path d="${CUBE_TOP}" stroke="currentColor" stroke-width="1.1"/>
+            <path d="${CUBE_STEM}" stroke="currentColor" stroke-width="1.1"/>
+            <path d="M7 8.2 1 4.7M7 8.2 13 4.7" stroke="currentColor" stroke-width=".9"
+                  stroke-dasharray="1.6 1.4" opacity=".75"/>`)
+    },
+    {
+        key: 'wire', label: 'Wireframe',
+        icon: modeIcon(`<path d="${CUBE}" stroke="currentColor" stroke-width=".9"/>
+            <path d="${CUBE_TOP}" stroke="currentColor" stroke-width=".9"/>
+            <path d="${CUBE_STEM}" stroke="currentColor" stroke-width=".9"/>
+            <path d="M1 4.7 7 8.2 13 4.7M7 1.2 7 8.2M1 4.7 7 14.2M13 4.7 7 14.2"
+                  stroke="currentColor" stroke-width=".7" opacity=".8"/>`)
+    }
 ];
 
+/** Paint a mode button with its icon + label. */
+function paintModeButton(btnId, mode) {
+    const btn = $(btnId);
+    if (!btn) return;
+    const m = RENDER_MODES[mode];
+    btn.innerHTML = `${m.icon} <span style="margin-left:4px">${m.label}</span>`;
+}
+
 /**
- * Shared by the side panel and the expanded lightbox. These two had drifted
- * apart repeatedly while they were separate copies, so they share one body and
- * differ only in which state object and resize function they are handed.
+ * Takes the viewer state object and its resize function, so the render-mode
+ * logic lives in exactly one place.
  */
 function applyViewerStyle(target, resizeFn) {
     for (const key of ['mesh', 'prepass', 'wire', 'dims', 'edges']) {
@@ -3672,13 +3732,11 @@ function applyViewerStyle(target, resizeFn) {
 /** Advance a viewer to the next render mode and relabel its button. */
 function cycleRenderMode(target, btnId, apply) {
     target.mode = ((target.mode ?? 1) + 1) % RENDER_MODES.length;
-    const btn = $(btnId);
-    if (btn) btn.textContent = RENDER_MODES[target.mode].label;
+    paintModeButton(btnId, target.mode);
     apply();
 }
 
 function applyGalleryStyle() { applyViewerStyle(gallery, galleryResize); }
-function applyLightboxStyle() { applyViewerStyle(lightbox, lightboxResize); }
 
 /**
  * Runs a resize now and again once layout has settled. A pane that was just
@@ -3692,7 +3750,7 @@ function settleResize(fn) {
 }
 
 function galleryResize() {
-    const holder = $('print-part-view');
+    const holder = $('parts-stage');
     if (!holder || !gallery.renderer) return;
     const w = holder.clientWidth, h = holder.clientHeight;
     // A container that has not been laid out yet reports 0. Dividing by that
@@ -3759,126 +3817,8 @@ function selectGalleryPart(i) {
 // Lightbox overlay inspector (large preview)
 // ---------------------------------------------------------------------------
 
-const lightbox = {
-    open: false, renderer: null, scene: null, camera: null, controls: null,
-    mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
-    style: 'plastic', mode: 1, showDims: true, selectedIndex: 0
-};
-
-function initLightbox() {
-    if (lightbox.renderer) return;
-    const holder = $('parts-view');
-    lightbox.renderer = new THREE.WebGLRenderer({ antialias: true });
-    lightbox.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    holder.appendChild(lightbox.renderer.domElement);
-    lightbox.scene = new THREE.Scene();
-    lightbox.scene.background = new THREE.Color(0xeef3f9);
-    const pmrem = new THREE.PMREMGenerator(lightbox.renderer);
-    lightbox.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    lightbox.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
-    lightbox.controls = new OrbitControls(lightbox.camera, lightbox.renderer.domElement);
-    lightbox.controls.enableDamping = true;
-    lightbox.controls.autoRotate = true;
-    lightbox.controls.autoRotateSpeed = 1.6;
-    lightbox.controls.zoomSpeed = 3;
-    lightPartViewer(lightbox);
-
-
-    $('parts-shading').addEventListener('change', () => { lightbox.style = $('parts-shading').value; applyLightboxStyle(); });
-    $('parts-rotate').addEventListener('change', () => { lightbox.controls.autoRotate = $('parts-rotate').checked; });
-    $('parts-mode').addEventListener('click', () => cycleRenderMode(lightbox, 'parts-mode', applyLightboxStyle));
-    $('parts-dims').addEventListener('change', () => { lightbox.showDims = $('parts-dims').checked; applyLightboxStyle(); });
-}
-
-
-function lightboxResize() {
-    const holder = $('parts-view');
-    if (!holder || !lightbox.renderer) return;
-    const w = holder.clientWidth, h = holder.clientHeight;
-    if (!w || !h) return;                       // see galleryResize
-    lightbox.renderer.setSize(w, h);
-    lightbox.camera.aspect = w / h;
-    lightbox.camera.updateProjectionMatrix();
-    if (lightbox.lineRes) lightbox.lineRes.set(w, h);
-    updateLineRes(lightbox.lineMats, w, h);
-}
-
-function selectLightboxPart(i) {
-    lightbox.selectedIndex = i;
-    const part = lightbox.parts[i];
-    if (!part) return;
-    [...$('parts-list').children].forEach((li, k) => li.classList.toggle('selected', k === i));
-    $('parts-caption').innerHTML = '⏳ building export geometry…';
-    setTimeout(() => {
-        if (lightbox.geo) lightbox.geo.dispose();
-        const mesh = recenter(part.build());
-        const report = analyzeMesh(mesh.positions, mesh.indices);
-        lightbox.geo = toBufferGeometry(mesh);
-        applyLightboxStyle();
-        lightbox.geo.computeBoundingBox();
-        const box = lightbox.geo.boundingBox.clone();
-        const c = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3()).length();
-        lightbox.controls.target.copy(c);
-        lightbox.camera.position.set(c.x + size * 0.8, c.y + size * 0.45, c.z + size * 0.8);
-        lightbox.controls.update();      // see selectGalleryPart
-        framePartShadow(lightbox, box, c, size);
-        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
-            : /^scenery/.test(part.name) ? 'scenery'
-            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
-            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
-        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
-        $('parts-caption').innerHTML =
-            `<b>${part.name}${countLabel}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
-            `${report.isManifold && report.isConsistent && report.windsOutward
-                ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
-            `<span style="opacity:.8">${part.note ?? ''} Drag in inspector to rotate.</span>`;
-    }, 30);
-}
-
-function openLightbox() {
-    $('parts-overlay').style.display = '';
-    initLightbox();
-    settleResize(lightboxResize);
-    lightbox.parts = assembleParts().parts;
-    $('parts-count').textContent = `${lightbox.parts.length} unique parts in this design`;
-    const list = $('parts-list');
-    list.innerHTML = '';
-    lightbox.parts.forEach((part, i) => {
-        const li = document.createElement('li');
-        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
-        li.textContent = `${part.name}${countLabel}`;
-        li.addEventListener('click', () => selectLightboxPart(i));
-        list.appendChild(li);
-    });
-
-    let index = 0;
-    const inlineList = $('print-parts-list');
-    if (inlineList) {
-        const selectedLi = inlineList.querySelector('li.selected');
-        if (selectedLi) {
-            const siblings = [...inlineList.children];
-            index = siblings.indexOf(selectedLi);
-            if (index < 0) index = 0;
-        }
-    }
-
-    lightbox.open = true;
-    selectLightboxPart(index);
-}
-
-function closeLightbox() {
-    lightbox.open = false;
-    $('parts-overlay').style.display = 'none';
-    selectGalleryPart(lightbox.selectedIndex);
-}
-
-$('btn-open-lightbox').addEventListener('click', openLightbox);
-$('parts-close').addEventListener('click', closeLightbox);
-
 window.addEventListener('resize', () => {
     if (gallery.renderer) galleryResize();
-    if (lightbox.renderer) lightboxResize();
 });
 
 // ---------------------------------------------------------------------------
@@ -4138,10 +4078,6 @@ function animate(now) {
     if (gallery.open) {
         gallery.controls.update();
         gallery.renderer.render(gallery.scene, gallery.camera);
-    }
-    if (lightbox.open) {
-        lightbox.controls.update();
-        lightbox.renderer.render(lightbox.scene, lightbox.camera);
     }
 }
 

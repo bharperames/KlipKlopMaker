@@ -414,89 +414,6 @@ aside a { color: var(--track-gold); text-decoration-color: #8a6842; }
 aside a:visited { color: #dba24f; }
 aside a:hover { color: #ffd76b; text-decoration-color: var(--track-gold); }
 kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
-#parts-overlay {
-    position: fixed; inset: 0; z-index: 40;
-    display: grid;
-    grid-template-rows: 48px 1fr;
-    grid-template-columns: 300px 1fr;
-    grid-template-areas: "phdr phdr" "plist pview";
-    background: #1d1a16; color: #ede5d4;
-}
-#parts-header {
-    grid-area: phdr;
-    display: flex; align-items: center; gap: 14px;
-    padding: 0 14px;
-    background: #63421f; color: #fbf3e2;
-    border-bottom: 2px solid #4c331a;
-}
-#parts-header span { opacity: .8; font-size: 12.5px; margin-right: auto; }
-#parts-header button { background: #8a6134; color: #fbf3e2; border-color: #a87b45; }
-#parts-side {
-    grid-area: plist;
-    display: flex; flex-direction: column;
-    background: #26221a;
-    border-right: 1px solid #3a342a;
-    min-height: 0;
-}
-#parts-standard {
-    margin: 8px; padding: 9px 10px;
-    background: #322c21; border: 1px solid #4c4232; border-radius: 10px;
-    font-size: 11.8px; line-height: 1.45; color: #d9c9a6;
-}
-#parts-standard b { color: #ffd98a; }
-#parts-standard ul { margin: 6px 0 6px 18px; }
-#parts-list {
-    flex: 1; min-height: 0;
-    list-style: none; overflow-y: auto;
-    padding: 0 8px 8px;
-    font-size: 12.5px;
-}
-#parts-list li { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
-#parts-list li:hover { background: #322c21; }
-#parts-list li.selected { background: #4c3a1c; color: #ffd98a; font-weight: 600; }
-#parts-view { grid-area: pview; position: relative; min-width: 0; }
-#parts-view canvas { display: block; }
-#parts-caption {
-    position: absolute; left: 14px; bottom: 12px; right: 14px; z-index: 2;
-    background: rgba(29,26,22,.85);
-    border: 1px solid #3a342a; border-radius: 10px;
-    padding: 8px 12px; font-size: 13px;
-}
-#parts-caption .ok { color: #7ede7e; font-weight: 700; }
-#parts-caption .bad { color: #ff9d9d; font-weight: 700; }
-#parts-tools {
-    position: absolute; left: 14px; top: 12px; z-index: 2;
-    display: flex; gap: 14px; align-items: center;
-    background: rgba(29,26,22,.85);
-    border: 1px solid #3a342a; border-radius: 10px;
-    padding: 7px 12px; font-size: 12.5px; color: #ede5d4;
-}
-#parts-tools select { background: #322c21; color: #ede5d4; border: 1px solid #4a4336; border-radius: 6px; padding: 3px 6px; font: inherit; }
-#parts-tools label {
-    display: flex; gap: 7px; align-items: center; cursor: pointer;
-    padding: 5px 11px; border-radius: 99px;
-    background: #322c21; border: 1px solid #4a4336;
-    white-space: nowrap; user-select: none; font-size: 12px;
-    color: #b8ab8f;
-    transition: background .15s, border-color .15s, color .15s;
-}
-#parts-tools label:hover { border-color: #8a6842; }
-#parts-tools label:has(input:checked) {
-    background: #4c3a1c; border-color: var(--track-gold); color: #ffd98a; font-weight: 600;
-}
-#parts-tools input[type=checkbox] {
-    appearance: none; -webkit-appearance: none;
-    width: 15px; height: 15px; margin: 0; flex: 0 0 auto;
-    border: 1.5px solid #6b5c44; border-radius: 4px; background: #241f18;
-    display: grid; place-items: center; cursor: pointer;
-    transition: background .15s, border-color .15s;
-}
-#parts-tools input[type=checkbox]:checked {
-    background: var(--track-gold); border-color: var(--track-gold);
-}
-#parts-tools input[type=checkbox]:checked::before {
-    content: '✔'; font-size: 10px; line-height: 1; color: #3a2814; font-weight: 900;
-}
 #sim-hud {
     position: absolute; left: 12px; top: 12px; z-index: 3;
     display: flex; gap: 14px; align-items: center;
@@ -776,11 +693,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <ul id="print-parts-list" style="list-style: none; padding: 0; margin: 0;"></ul>
         </div>
 
-        <h2 style="display: flex; justify-content: space-between; align-items: center;">
-            <span>3D Part Inspector</span>
-            <button id="btn-open-lightbox" style="font-size: 11px; padding: 2px 6px;">⛶ Expand</button>
-        </h2>
-        <div id="print-part-view" style="height: 220px; background: #000; border: 1px solid var(--line); border-radius: 6px; position: relative; overflow: hidden; margin-bottom: 6px;"></div>
+        <h2>3D Part Inspector</h2>
         <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between;">
             <select id="print-part-shading" style="font-size: 11px; padding: 4px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);">
                 <option value="plastic">✨ Injection plastic</option>
@@ -885,6 +798,9 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 </aside>
 
 <div id="viewport">
+    <!-- Part inspector: takes over the main viewport on the Print/Parts tab,
+         the way Joint Guide and Physics do. Replaces the old full-page overlay. -->
+    <div id="parts-stage" style="display:none; position:absolute; inset:0;"></div>
     <!-- Fixed-angle section cutaways, overlaid on the main view. Shown only on
          the Joint Guide tab; one canvas drives all three via scissored viewports. -->
     <div id="joint-insets" style="display:none; position:absolute; top:14px; left:14px; width:256px; z-index:6; border-radius:8px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,.32);">
@@ -967,34 +883,6 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     </div>
 </div>
 
-<div id="parts-overlay" style="display:none">
-    <div id="parts-header">
-        <h2 style="margin:0; font-size:16px; color:#fbf3e2;">Watertight Parts Inspector</h2>
-        <span id="parts-count">0 unique parts</span>
-        <button id="parts-close">Close Inspector (Esc)</button>
-    </div>
-    <div id="parts-side">
-        <div id="parts-standard">
-            <b>Standard Parts Note</b><br>
-            All connection tabs/slots and pockets are generated from high-precision CSG subtraction boolean operations to guarantee clean sliding and snapping.
-        </div>
-        <ul id="parts-list"></ul>
-    </div>
-    <div id="parts-view">
-        <div id="parts-tools">
-            <select id="parts-shading">
-                <option value="plastic">✨ Injection plastic</option>
-                <option value="pla">🧵 Matte PLA</option>
-                <option value="clay">🏺 Clay</option>
-                <option value="normals">🧭 Normals inspector</option>
-            </select>
-            <button id="parts-mode" type="button" title="Cycle render mode">Shaded + HLR</button>
-            <label><input type="checkbox" id="parts-dims" checked> dims</label>
-            <label><input type="checkbox" id="parts-rotate" checked> spin</label>
-        </div>
-        <div id="parts-caption">Select a part from the list to preview.</div>
-    </div>
-</div>
 
 <div id="dialog-overlay" style="display:none">
     <div id="dialog-panel">
