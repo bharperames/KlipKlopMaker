@@ -3143,7 +3143,7 @@ function assembleParts() {
 const gallery = {
     open: false, renderer: null, scene: null, camera: null, controls: null,
     mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
-    style: 'plastic', showWire: false, showDims: true
+    style: 'plastic', mode: 1, showDims: true
 };
 
 // material styles: how the same watertight mesh reads under different finishes
@@ -3217,10 +3217,10 @@ function makeGraphPlate(extent) {
     // derived from the extent so squares stay a true 10 mm at any plate size.
     const minor = new THREE.GridHelper(extent, Math.round(extent / 10), 0x8ba9cc, 0x8ba9cc);
     minor.material.transparent = true;
-    minor.material.opacity = 0.5;
+    minor.material.opacity = 0.72;
     const major = new THREE.GridHelper(extent, Math.round(extent / 50), 0xd6e4f2, 0xd6e4f2);
     major.material.transparent = true;
-    major.material.opacity = 0.85;
+    major.material.opacity = 0.95;
     major.position.y = 0.06;         // sit clear of the minor lines
     g.add(minor, major);
     return g;
@@ -3283,7 +3283,7 @@ function initGallery() {
 
     $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
-    $('print-part-wire').addEventListener('change', () => { gallery.showWire = $('print-part-wire').checked; applyGalleryStyle(); });
+    $('print-part-mode').addEventListener('click', () => cycleRenderMode(gallery, 'print-part-mode', applyGalleryStyle));
     $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').checked; applyGalleryStyle(); });
 }
 
@@ -3590,39 +3590,95 @@ function updateLineRes(mats, w, h) {
     for (const m of mats) m.resolution.set(w, h);
 }
 
-function applyGalleryStyle() {
-    for (const key of ['mesh', 'wire', 'dims', 'edges']) {
-        if (gallery[key]) {
-            gallery.scene.remove(gallery[key]);
-            gallery[key] = null;
+/**
+ * Render modes for the part viewers, cycled by one button.
+ *   shaded     — just the material, as the printed part would look
+ *   shadedHlr  — shaded plus the hidden-line overlay (default)
+ *   hlr        — line drawing only; a depth-only stand-in mesh keeps the
+ *                hidden/visible split working without drawing the surface
+ *   wire       — raw tessellation, i.e. what the slicer actually receives
+ */
+const RENDER_MODES = [
+    { key: 'shaded',    label: 'Shaded' },
+    { key: 'shadedHlr', label: 'Shaded + HLR' },
+    { key: 'hlr',       label: 'HLR only' },
+    { key: 'wire',      label: 'Wireframe' }
+];
+
+/**
+ * Shared by the side panel and the expanded lightbox. These two had drifted
+ * apart repeatedly while they were separate copies, so they share one body and
+ * differ only in which state object and resize function they are handed.
+ */
+function applyViewerStyle(target, resizeFn) {
+    for (const key of ['mesh', 'prepass', 'wire', 'dims', 'edges']) {
+        if (target[key]) {
+            target.scene.remove(target[key]);
+            target[key] = null;
         }
     }
-    if (!gallery.geo) return;
-    gallery.mesh = new THREE.Mesh(gallery.geo, GALLERY_MATS[gallery.style]());
-    // self-shadowing is what makes a pocket read as a cavity rather than a decal
-    gallery.mesh.castShadow = true;
-    gallery.mesh.receiveShadow = true;
-    gallery.scene.add(gallery.mesh);
-    gallery.lineRes = gallery.lineRes ?? new THREE.Vector2(1, 1);
-    gallery.edges = makePartEdges(gallery.geo, gallery.lineRes);
-    gallery.lineMats = gallery.edges.userData.lineMats;
-    gallery.scene.add(gallery.edges);
-    settleResize(galleryResize);     // seed the Line2 resolution
-    if (gallery.showWire) {
-        gallery.wire = new THREE.LineSegments(
-            new THREE.WireframeGeometry(gallery.geo),
-            new THREE.LineBasicMaterial({ color: 0x2bff6a, transparent: true, opacity: 0.55 })
-        );
-        gallery.scene.add(gallery.wire);
+    if (!target.geo) return;
+    const mode = RENDER_MODES[target.mode ?? 1].key;
+    const showSurface = mode === 'shaded' || mode === 'shadedHlr';
+    const showEdges = mode === 'shadedHlr' || mode === 'hlr';
+
+    if (showSurface) {
+        target.mesh = new THREE.Mesh(target.geo, GALLERY_MATS[target.style]());
+        // self-shadowing is what makes a pocket read as a cavity, not a decal
+        target.mesh.castShadow = true;
+        target.mesh.receiveShadow = true;
+        target.scene.add(target.mesh);
+    } else if (mode === 'hlr') {
+        // Depth-only stand-in: without a surface in the depth buffer every
+        // edge would pass the depth test and the drawing would be a flat
+        // wireframe rather than a hidden-line view.
+        target.prepass = new THREE.Mesh(target.geo, new THREE.MeshBasicMaterial({
+            colorWrite: false, depthWrite: true,
+            polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+        }));
+        target.prepass.renderOrder = -10;
+        target.scene.add(target.prepass);
     }
-    if (gallery.showDims) {
-        gallery.dims = makeDimGroup(
-            new THREE.Box3().setFromObject(gallery.mesh),
-            gallery.parts[gallery.selectedIndex]
+
+    if (showEdges) {
+        target.lineRes = target.lineRes ?? new THREE.Vector2(1, 1);
+        target.edges = makePartEdges(target.geo, target.lineRes);
+        target.lineMats = target.edges.userData.lineMats;
+        target.scene.add(target.edges);
+        settleResize(resizeFn);      // seed the Line2 resolution
+    } else {
+        target.lineMats = null;
+    }
+
+    if (mode === 'wire') {
+        target.wire = new THREE.LineSegments(
+            new THREE.WireframeGeometry(target.geo),
+            new THREE.LineBasicMaterial({ color: 0x24384f, transparent: true, opacity: 0.55 })
         );
-        gallery.scene.add(gallery.dims);
+        target.scene.add(target.wire);
+    }
+
+    if (target.showDims) {
+        // from the geometry, not the mesh — there is no mesh in HLR/wire mode
+        target.geo.computeBoundingBox();
+        target.dims = makeDimGroup(
+            target.geo.boundingBox.clone(),
+            target.parts[target.selectedIndex]
+        );
+        target.scene.add(target.dims);
     }
 }
+
+/** Advance a viewer to the next render mode and relabel its button. */
+function cycleRenderMode(target, btnId, apply) {
+    target.mode = ((target.mode ?? 1) + 1) % RENDER_MODES.length;
+    const btn = $(btnId);
+    if (btn) btn.textContent = RENDER_MODES[target.mode].label;
+    apply();
+}
+
+function applyGalleryStyle() { applyViewerStyle(gallery, galleryResize); }
+function applyLightboxStyle() { applyViewerStyle(lightbox, lightboxResize); }
 
 /**
  * Runs a resize now and again once layout has settled. A pane that was just
@@ -3670,7 +3726,8 @@ function selectGalleryPart(i) {
         const report = analyzeMesh(mesh.positions, mesh.indices);
         gallery.geo = toBufferGeometry(mesh);
         applyGalleryStyle();
-        const box = new THREE.Box3().setFromObject(gallery.mesh);
+        gallery.geo.computeBoundingBox();
+        const box = gallery.geo.boundingBox.clone();
         const c = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3()).length();
         gallery.controls.target.copy(c);
@@ -3705,7 +3762,7 @@ function selectGalleryPart(i) {
 const lightbox = {
     open: false, renderer: null, scene: null, camera: null, controls: null,
     mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
-    style: 'plastic', showWire: false, showDims: true, selectedIndex: 0
+    style: 'plastic', mode: 1, showDims: true, selectedIndex: 0
 };
 
 function initLightbox() {
@@ -3729,42 +3786,10 @@ function initLightbox() {
 
     $('parts-shading').addEventListener('change', () => { lightbox.style = $('parts-shading').value; applyLightboxStyle(); });
     $('parts-rotate').addEventListener('change', () => { lightbox.controls.autoRotate = $('parts-rotate').checked; });
-    $('parts-wire').addEventListener('change', () => { lightbox.showWire = $('parts-wire').checked; applyLightboxStyle(); });
+    $('parts-mode').addEventListener('click', () => cycleRenderMode(lightbox, 'parts-mode', applyLightboxStyle));
     $('parts-dims').addEventListener('change', () => { lightbox.showDims = $('parts-dims').checked; applyLightboxStyle(); });
 }
 
-function applyLightboxStyle() {
-    for (const key of ['mesh', 'wire', 'dims', 'edges']) {
-        if (lightbox[key]) {
-            lightbox.scene.remove(lightbox[key]);
-            lightbox[key] = null;
-        }
-    }
-    if (!lightbox.geo) return;
-    lightbox.mesh = new THREE.Mesh(lightbox.geo, GALLERY_MATS[lightbox.style]());
-    lightbox.mesh.castShadow = true;
-    lightbox.mesh.receiveShadow = true;
-    lightbox.scene.add(lightbox.mesh);
-    lightbox.lineRes = lightbox.lineRes ?? new THREE.Vector2(1, 1);
-    lightbox.edges = makePartEdges(lightbox.geo, lightbox.lineRes);
-    lightbox.lineMats = lightbox.edges.userData.lineMats;
-    lightbox.scene.add(lightbox.edges);
-    settleResize(lightboxResize);    // seed the Line2 resolution
-    if (lightbox.showWire) {
-        lightbox.wire = new THREE.LineSegments(
-            new THREE.WireframeGeometry(lightbox.geo),
-            new THREE.LineBasicMaterial({ color: 0x2bff6a, transparent: true, opacity: 0.55 })
-        );
-        lightbox.scene.add(lightbox.wire);
-    }
-    if (lightbox.showDims) {
-        lightbox.dims = makeDimGroup(
-            new THREE.Box3().setFromObject(lightbox.mesh),
-            lightbox.parts[lightbox.selectedIndex]
-        );
-        lightbox.scene.add(lightbox.dims);
-    }
-}
 
 function lightboxResize() {
     const holder = $('parts-view');
@@ -3790,7 +3815,8 @@ function selectLightboxPart(i) {
         const report = analyzeMesh(mesh.positions, mesh.indices);
         lightbox.geo = toBufferGeometry(mesh);
         applyLightboxStyle();
-        const box = new THREE.Box3().setFromObject(lightbox.mesh);
+        lightbox.geo.computeBoundingBox();
+        const box = lightbox.geo.boundingBox.clone();
         const c = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3()).length();
         lightbox.controls.target.copy(c);

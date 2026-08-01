@@ -789,7 +789,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
                 <option value="normals">🧭 Normals inspector</option>
             </select>
             <div style="display: flex; gap: 8px; align-items: center;">
-                <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2);"><input type="checkbox" id="print-part-wire"> wire</label>
+                <button id="print-part-mode" type="button" title="Cycle render mode" style="font-size: 11px; padding: 3px 8px; border-radius: 6px;">Shaded + HLR</button>
                 <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2);"><input type="checkbox" id="print-part-dims" checked> dims</label>
                 <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2);"><input type="checkbox" id="print-part-rotate" checked> spin</label>
             </div>
@@ -988,7 +988,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
                 <option value="clay">🏺 Clay</option>
                 <option value="normals">🧭 Normals inspector</option>
             </select>
-            <label><input type="checkbox" id="parts-wire"> wire</label>
+            <button id="parts-mode" type="button" title="Cycle render mode">Shaded + HLR</button>
             <label><input type="checkbox" id="parts-dims" checked> dims</label>
             <label><input type="checkbox" id="parts-rotate" checked> spin</label>
         </div>
