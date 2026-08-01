@@ -295,22 +295,38 @@ export function archedRimY(piece, s, spec, padCenters = []) {
         if (b <= s && b > s0) s0 = b;
         if (a >= s && a < s1) s1 = a;
     }
-    // subdivide the span into an even ARCADE of lancet windows separated by
-    // small feet — regular and calm, instead of one giant sawtooth per span
+    // Subdivide the span into an ARCADE of lancet windows separated by small
+    // feet — regular and calm, instead of one giant sawtooth per span.
+    //
+    // An interior foot whose centre lands on a socket boss is dropped, and the
+    // two windows either side merge into one. The boss is already a Ø19 pier
+    // running to the bed at that point, so the foot's 8 mm of contact sits
+    // wholly inside it and buys nothing: on a 150 mm tile the window division
+    // put a foot at s=75 and the boss is at s=75 exactly.
     const span = s1 - s0;
     const n = Math.max(1, Math.round(span / ARCH_TARGET_W));
     const unit = span / n;
-    const local = (s - s0) % unit;
-    const w0 = FOOT / 2, w1 = unit - FOOT / 2;
-    if (local <= w0 || local >= w1) return flat; // on a foot
-    const t = Math.min(local - w0, w1 - local);      // distance from the nearer foot
+    const clear = spec.socket.bossR + 2;
+    const bounds = [];
+    for (let k = 0; k <= n; k++) {
+        const b = s0 + k * unit;
+        if (k > 0 && k < n && padCenters.some(c => Math.abs(b - c) < clear)) continue;
+        bounds.push(b);
+    }
+    let a0 = bounds[0], a1 = bounds[bounds.length - 1];
+    for (let i = 0; i + 1 < bounds.length; i++) {
+        if (s >= bounds[i] && s <= bounds[i + 1]) { a0 = bounds[i]; a1 = bounds[i + 1]; break; }
+    }
+    const w0 = a0 + FOOT / 2, w1 = a1 - FOOT / 2;
+    if (s <= w0 || s >= w1) return flat; // on a foot
+    const t = Math.min(s - w0, w1 - s);              // distance from the nearer foot
     const half = (w1 - w0) / 2;
     const rise = half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
     // Cap from the deck at THIS WINDOW's centre, not at s. Taken per-station the
     // cap follows the ramp, so a clipped window top came out as a 11.2° ceiling
     // — roughly 1 mm of horizontal overhang per 0.2 mm layer, which droops.
     // Held constant across the window it is a true horizontal bridge.
-    const winCentre = s0 + (Math.floor((s - s0) / unit) + 0.5) * unit;
+    const winCentre = (w0 + w1) / 2;
     const deckCap = deckYAt(piece, winCentre) - ARCH.band;
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
