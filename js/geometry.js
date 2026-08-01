@@ -196,7 +196,14 @@ export function channelProfile(o) {
     // Edge treatment: rail crests get 0.8 mm chamfers (touch-safe, no sharp
     // plastic ridge for small hands); outer rim corners get 0.5 mm chamfers
     // (elephant-foot compensation where the part meets the bed).
-    const cr = 0.8;  // rail crest chamfer
+    // The crest chamfers eat into the wall from BOTH sides, so the flat left on
+    // top of a rail is wall - 2*cr. At wall 1.6 with cr fixed at 0.8 that is
+    // exactly zero: the profile gets two zero-length edges, ear-clipping cannot
+    // triangulate it, and the end cap came out as a single triangle spanning
+    // the whole channel — a flap at every seam. Below 1.6 it goes negative and
+    // the profile self-intersects. Clamp so a rail always keeps at least one
+    // nozzle width of flat crest.
+    const cr = Math.min(0.8, Math.max(0.2, (wall - 0.4) / 2));  // rail crest chamfer
     const ce = 0.5;  // bed-edge chamfer
     const pts = [];
     pts.push([-Wo + ce, rimY]);

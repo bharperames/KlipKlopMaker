@@ -279,3 +279,38 @@ describe('bowtie pocket fits the key', () => {
         expect(K.tipHalf).toBeGreaterThan(mouthHalf);
     });
 });
+
+describe('channel profile stays a simple polygon', () => {
+    // A degenerate or self-intersecting profile cannot be ear-clipped, and the
+    // end cap comes out as a triangle spanning the whole channel — a visible
+    // flap at every seam. The rail-crest chamfers eat into the wall from both
+    // sides, so this bites as soon as wall <= 2*cr.
+    test('no zero-length or crossing edges at any wall thickness', async () => {
+        const { channelProfile } = await import('../js/geometry.js');
+        const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const properIntersect = (p1, p2, p3, p4) => {
+            const d1 = cross(p3, p4, p1), d2 = cross(p3, p4, p2);
+            const d3 = cross(p1, p2, p3), d4 = cross(p1, p2, p4);
+            return ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) &&
+                   ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9));
+        };
+        for (const wall of [3.0, 2.4, 2.0, 1.6, 1.2, 0.8]) {
+            const pts = channelProfile({
+                innerWidth: 48, wall, railH: 14, floorThk: 2,
+                filletR: 2, deckY: 0, rimY: -12
+            });
+            const n = pts.length;
+            for (let i = 0; i < n; i++) {
+                const a = pts[i], b = pts[(i + 1) % n];
+                expect(Math.hypot(a[0] - b[0], a[1] - b[1])).toBeGreaterThan(1e-6);
+            }
+            for (let i = 0; i < n; i++) {
+                for (let j = i + 2; j < n; j++) {
+                    if (i === 0 && j === n - 1) continue;   // adjacent, shares a vertex
+                    expect(properIntersect(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]))
+                        .toBe(false);
+                }
+            }
+        }
+    });
+});
