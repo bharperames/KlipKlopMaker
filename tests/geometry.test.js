@@ -231,6 +231,46 @@ describe('skirt arch windows print without support', () => {
         }
     });
 
+    test('the rim never returns to the bed between the end pads', async () => {
+        // Interior boundaries are mullions carried by a bulkhead, not 8 mm
+        // feet. If a foot ever comes back, this is what notices.
+        const { archedRimY, ARCH } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        for (const pc of pieces) {
+            if (pc.type === 'start' || pc.type === 'end') continue;
+            const pads = [pc.planLen / 2];
+            let peak = 0;
+            for (let s = 0; s <= pc.planLen; s += 0.25) {
+                peak = Math.max(peak, archedRimY(pc, s, SPEC, pads) - pc.rimY);
+            }
+            if (peak < 1) continue;          // level piece: no arcade at all
+            for (let s = ARCH.pad + ARCH.margin + 1; s < pc.planLen - ARCH.pad - ARCH.margin - 1; s += 0.25) {
+                expect(archedRimY(pc, s, SPEC, pads) - pc.rimY).toBeGreaterThan(0);
+            }
+        }
+    });
+
+    test('every window boundary inside the arcade carries a bulkhead', async () => {
+        const { arcadeBulkheads, windowBounds, archedRimY } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        for (const pc of pieces) {
+            const pads = [pc.planLen / 2];
+            const bounds = windowBounds(pc, SPEC, pads);
+            const bulk = arcadeBulkheads(pc, SPEC, pads);
+            for (let i = 1; i + 1 < bounds.length; i++) {
+                const open = [
+                    (bounds[i - 1] + bounds[i]) / 2,
+                    (bounds[i] + bounds[i + 1]) / 2
+                ].some(s => archedRimY(pc, s, SPEC, pads) > pc.rimY + 1);
+                // an open window on either side means the ceiling steps here
+                // and its bridge needs an anchor
+                if (open) expect(bulk).toContain(bounds[i]);
+            }
+        }
+    });
+
     test('a lancet window rises further than the straight tent it replaces', async () => {
         const { archedRimY } = await import('../js/geometry.js');
         const { SPEC, layoutTrack } = await import('../js/track.js');

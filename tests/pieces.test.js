@@ -261,6 +261,50 @@ describe('export decimation stays inside its error bound', () => {
     });
 });
 
+describe('arcade bulkheads', () => {
+    // A bulkhead reaches from the bed to just under the floor. Level-topped
+    // geometry under a sloping deck is exactly how the boss once broke through
+    // the walking surface, so check the surface is still whole, and check the
+    // bulkhead really does touch the bed (an anchor that floats is no anchor).
+    test('stand on the bed and stop short of the walking surface', async () => {
+        const { SPEC, planPillarPositions, deckYAt, planPosAt } = await import('../js/track.js');
+        const { arcadeBulkheads } = await import('../js/geometry.js');
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        const supports = planPillarPositions(pieces);
+        for (const pc of pieces) {
+            const sup = supports.find(s => s.pieceIndex === pc.index);
+            const stations = sup && sup.mode !== 'none' ? [sup.s] : [];
+            const at = arcadeBulkheads(pc, SPEC, stations);
+            if (!at.length) continue;
+            const g = buildPieceExportGeometry(pc, { support: sup });
+            expectWatertight(g, `${pc.name} with ${at.length} bulkhead(s)`);
+
+            for (const s of at) {
+                const pos = planPosAt(pc, s);
+                const dir = [Math.cos(pos.h), Math.sin(pos.h)];
+                const right = [Math.sin(pos.h), -Math.cos(pos.h)];
+                const Wi = pc.innerWidth / 2;
+                let top = -Infinity, bottom = Infinity;
+                for (let i = 0; i < g.positions.length; i += 3) {
+                    const dx = g.positions[i] - pos.x, dz = g.positions[i + 2] - pos.z;
+                    const along = dx * dir[0] + dz * dir[1];
+                    const lat = dx * right[0] + dz * right[1];
+                    // inside the channel, in the bulkhead's own slice: only the
+                    // bulkhead (and the boss where they coincide) lives here
+                    if (Math.abs(along) > SPEC.wall / 2 + 0.05) continue;
+                    if (Math.abs(lat) > Wi - 1) continue;
+                    top = Math.max(top, g.positions[i + 1]);
+                    bottom = Math.min(bottom, g.positions[i + 1]);
+                }
+                // nothing in that slice may break the walking surface …
+                expect(top).toBeLessThan(deckYAt(pc, s) + SPEC.ridge.height + 0.05);
+                // … and the bulkhead must actually reach the bed to anchor
+                expect(bottom).toBeLessThan(pc.rimY + 0.01);
+            }
+        }
+    });
+});
+
 describe('bowtie pocket detent retains the key', () => {
     test('the detent is a ledge around the pocket, not a plug', async () => {
         const { SPEC } = await import('../js/track.js');

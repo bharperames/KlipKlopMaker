@@ -599,6 +599,13 @@ export function planPillarPositions(pieces, params = {}) {
 export const supportsPillar = (s) => !!s && (s.mode === 'center' || s.mode === 'outrigger');
 
 /**
+ * True when a piece actually needs a pier printed under its boss. A piece
+ * sitting at ground level rests on its own skirt: it keeps the boss (so the
+ * part stays interchangeable with airborne ones) but nothing goes under it.
+ */
+export const needsPier = (piece) => !!piece && piece.rimY > 1;
+
+/**
  * Spiral-tier / branch clearance check. Pieces that share an endpoint
  * (parent-child seams, switch siblings) are exempt; everything else that
  * overlaps in plan needs SPEC.clearanceHeight of vertical separation.

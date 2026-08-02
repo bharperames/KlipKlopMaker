@@ -22,7 +22,7 @@ import * as fflate from 'fflate';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
-    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar,
+    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier,
     planPosAt, deckYAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
@@ -37,7 +37,7 @@ import {
     buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
-    sectionGeometry
+    sectionGeometry, supportStations
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
@@ -246,8 +246,10 @@ const ghostGroup = new THREE.Group();
 scene.add(trackGroup, arrowGroup, sceneryGroup, ghostGroup);
 
 const MAT = {
+    // Straights and curves print in the same filament, so shading them
+    // differently only made the seam between them read as a defect.
     ramp: new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
-    curve: new THREE.MeshLambertMaterial({ color: 0xe0a52f }),
+    curve: new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
     lift: new THREE.MeshLambertMaterial({ color: 0xc95a3c }),
     switch: new THREE.MeshLambertMaterial({ color: 0xd8983b }),
     start: new THREE.MeshLambertMaterial({ color: 0x74b06c, transparent: true, opacity: 0.6 }),
@@ -326,7 +328,7 @@ function rebuild() {
     for (const pc of pieces) {
         if (pc.role === 'branch') continue; // rendered with its main sibling
         const sup = supportOf(pc.index);
-        const pads = supportsPillar(sup) ? [sup.s] : undefined;
+        const pads = supportStations(sup, pc);
         let mesh;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
@@ -386,6 +388,11 @@ function rebuild() {
             });
             continue;
         }
+        // A piece whose rim IS the ground stands on its own skirt. It still
+        // carries the socket boss — every piece does, so there is one straight
+        // and one curve, not two of each — but there is nothing for a pier to
+        // span, and buildPillarGeometry(0) drew a stub foot under it anyway.
+        if (!needsPier(pc)) continue;
         trackGroup.add(buildSupportObject(pc.rimY, sup.x, sup.z));
     }
 
@@ -1069,7 +1076,7 @@ function printJobTotalG(weights) {
     for (const sup of state.supports ?? []) {
         if (!supportsPillar(sup)) continue;
         const pc = state.layout.pieces[sup.pieceIndex];
-        if (pc.rimY <= 1) continue;      // sits on the ground: boss but no pillar
+        if (!needsPier(pc)) continue;    // sits on the ground: boss but no pillar
         // pillar ≈ hex shaft AF15 + base/tenon
         total += printedWeightG(195 * pc.rimY + 4200, 'pillar');
     }
@@ -2995,6 +3002,21 @@ window.__frameHorse = (theta = Math.PI / 4, phi = 1.25, dist = 160) => {
     return true;
 };
 
+/** Dev hook for the screenshot scripts: frame one piece from a given angle. */
+window.__framePiece = (index, { az = 0.6, el = 0.25, dist = 320 } = {}) => {
+    const m = pieceMeshes[index];
+    if (!m) return false;
+    const c = new THREE.Vector3();
+    new THREE.Box3().setFromObject(m).getCenter(c);
+    controls.target.copy(c);
+    camera.position.set(
+        c.x + dist * Math.cos(el) * Math.cos(az),
+        c.y + dist * Math.sin(el),
+        c.z + dist * Math.cos(el) * Math.sin(az));
+    controls.update();
+    return true;
+};
+
 /** Styled modal dialog replacing native alert/confirm. Resolves a button value. */
 function showDialog({ title, html, buttons = [{ label: 'OK', value: true, primary: true }] }) {
     return new Promise((resolve) => {
@@ -3134,7 +3156,8 @@ function assembleParts() {
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
-    const supList = (state.supports ?? []).filter(supportsPillar);
+    const supList = (state.supports ?? [])
+        .filter(s => supportsPillar(s) && needsPier(pieces[s.pieceIndex]));
     if (usingStandard()) {
         let feet = 0;
         const riserCounts = new Map();

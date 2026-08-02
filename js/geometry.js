@@ -266,62 +266,87 @@ export const ARCH = {
     // 14 mm clears the 12 mm end rib, which is what the pad is actually for —
     // the rib and its bowtie pocket must sit on the bed. 20 mm was arbitrary.
     pad: 14,
-    // 0 = no pad under a socket boss. The boss is a Ø19 cylinder that already
-    // runs from the rim to the drumhead on its own, so it prints as a pier with
-    // the arcade passing over it. It never needed the surrounding skirt dropped
-    // to the bed with it — that was 24 mm of flat rim per piece doing nothing.
-    bossPad: 0,
-    foot: 8,        // mini-pad between adjacent windows
+    margin: 4,      // set-back from a pad edge to the springing of its window
     maxRise: 100,   // window height cap
     band: 8,        // material kept under the deck above a window
     targetW: 75,    // preferred window width; spans subdivide evenly
     curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
 };
 
-export function archedRimY(piece, s, spec, padCenters = []) {
-    const { pad: PAD, foot: FOOT, maxRise: ARCH_MAX_RISE,
-            targetW: ARCH_TARGET_W, curve: ARCH_CURVE } = ARCH;
+/**
+ * Window boundaries for one piece, in arc length. The two end pads bracket the
+ * arcade; every interior boundary is a MULLION.
+ *
+ * A window ceiling that is clipped flat by the cap is a bridge, and a bridge
+ * has to be anchored at BOTH ends, so consecutive windows cannot simply abut —
+ * something has to reach the bed between them. That used to be an 8 mm foot:
+ * the rim dropped to the bed and both neighbours grew a 45° flank down to it.
+ * On a 25 mm-deep window that pair of flanks is ~2 000 mm3 of skirt, and it is
+ * the lump of plastic that reads as a leftover middle skirt from outside.
+ *
+ * A transverse BULKHEAD one wall thick does the same job for less: it stands on
+ * the bed as a plain vertical plate, ties both walls together (far more stable
+ * while printing than a slender foot, and 82 mm2 of bed contact against a
+ * foot's ~15), lets the ceiling simply STEP between neighbours instead of
+ * ramping down and back up, and from outside shows only a 1.6 mm mullion.
+ *
+ * Boundaries are seeded at any support station first, so that a centre boss
+ * gets its bulkhead as a gusset — the boss is a Ø19 cylinder on the centreline
+ * and the walls are ±25.6 mm out, so on its own it braces nothing.
+ */
+export function windowBounds(piece, spec, supportStations = []) {
+    const { pad: PAD, targetW: ARCH_TARGET_W } = ARCH;
+    if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return [];
+    const s0 = PAD, s1 = piece.planLen - PAD;
+    const minRun = Math.max(spec.socket.bossR + 6, ARCH_TARGET_W / 3);
+    const stops = [
+        s0,
+        ...supportStations.filter(c => c > s0 + minRun && c < s1 - minRun).sort((a, b) => a - b),
+        s1
+    ];
+    const bounds = [s0];
+    for (let i = 0; i + 1 < stops.length; i++) {
+        const a = stops[i], b = stops[i + 1];
+        const n = Math.max(1, Math.round((b - a) / ARCH_TARGET_W));
+        for (let k = 1; k <= n; k++) bounds.push(a + k * (b - a) / n);
+    }
+    return bounds;
+}
+
+export function archedRimY(piece, s, spec, supportStations = []) {
+    const { pad: PAD, margin: MARGIN, maxRise: ARCH_MAX_RISE, curve: ARCH_CURVE } = ARCH;
     const flat = piece.rimY;
-    if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return flat;
-    const pads = [[0, PAD], [piece.planLen - PAD, piece.planLen]];
-    if (ARCH.bossPad > 0) {
-        for (const c of padCenters) pads.push([Math.max(0, c - ARCH.bossPad), Math.min(piece.planLen, c + ARCH.bossPad)]);
-    }
-    pads.sort((a, b) => a[0] - b[0]);
-    for (const [a, b] of pads) if (s >= a - 1e-9 && s <= b + 1e-9) return flat;
-    // span between the surrounding pads
-    let s0 = 0, s1 = piece.planLen;
-    for (const [a, b] of pads) {
-        if (b <= s && b > s0) s0 = b;
-        if (a >= s && a < s1) s1 = a;
-    }
-    // Subdivide the span into an ARCADE of lancet windows separated by small
-    // feet — regular and calm, instead of one giant sawtooth per span.
-    //
-    // An interior foot whose centre lands on a socket boss is dropped, and the
-    // two windows either side merge into one. The boss is already a Ø19 pier
-    // running to the bed at that point, so the foot's 8 mm of contact sits
-    // wholly inside it and buys nothing: on a 150 mm tile the window division
-    // put a foot at s=75 and the boss is at s=75 exactly.
-    const span = s1 - s0;
-    const n = Math.max(1, Math.round(span / ARCH_TARGET_W));
-    const unit = span / n;
-    const clear = spec.socket.bossR + 2;
-    const bounds = [];
-    for (let k = 0; k <= n; k++) {
-        const b = s0 + k * unit;
-        if (k > 0 && k < n && padCenters.some(c => Math.abs(b - c) < clear)) continue;
-        bounds.push(b);
-    }
-    let a0 = bounds[0], a1 = bounds[bounds.length - 1];
+    const bounds = windowBounds(piece, spec, supportStations);
+    if (!bounds.length) return flat;
+    if (s <= PAD || s >= piece.planLen - PAD) return flat;   // end pads
+    // Subdivide into an ARCADE of lancet windows — regular and calm, instead of
+    // one giant sawtooth per piece.
+    let lo = bounds[0], hi = bounds[bounds.length - 1];
     for (let i = 0; i + 1 < bounds.length; i++) {
-        if (s >= bounds[i] && s <= bounds[i + 1]) { a0 = bounds[i]; a1 = bounds[i + 1]; break; }
+        if (s >= bounds[i] && s <= bounds[i + 1]) { lo = bounds[i]; hi = bounds[i + 1]; break; }
     }
-    const w0 = a0 + FOOT / 2, w1 = a1 - FOOT / 2;
-    if (s <= w0 || s >= w1) return flat; // on a foot
-    const t = Math.min(s - w0, w1 - s);              // distance from the nearer foot
+    // Only the end pads are set back; interior boundaries are mullions, and a
+    // window runs right up to one.
+    const atPad0 = lo === bounds[0], atPad1 = hi === bounds[bounds.length - 1];
+    const w0 = lo + (atPad0 ? MARGIN : 0);
+    const w1 = hi - (atPad1 ? MARGIN : 0);
+    // Only a pad end closes the window; a mullion end is a vertical face, and
+    // dipping to the bed for the one station that lands exactly on it would
+    // leave a degenerate sliver where the bulkhead already is.
+    if ((atPad0 && s <= w0) || (atPad1 && s >= w1)) return flat;
+    // A window SPRINGS off an end pad — the lancet flank rises out of solid
+    // rim. It does not spring off a mullion: there the rim jumps straight to
+    // the cap and the bulkhead behind carries the ceiling. Ramping down to the
+    // bed on both sides of a mullion is what left a triangular wedge of skirt
+    // hanging under every window boundary, and the wedge is not doing anything
+    // a 1.6 mm plate cannot do better.
+    const t = Math.min(
+        atPad0 ? s - w0 : Infinity,
+        atPad1 ? w1 - s : Infinity
+    );
     const half = (w1 - w0) / 2;
-    const rise = half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
+    const rise = !Number.isFinite(t) ? Infinity
+        : half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
     // Cap from the deck at THIS WINDOW's centre, not at s. Taken per-station the
     // cap follows the ramp, so a clipped window top came out as a 11.2° ceiling
     // — roughly 1 mm of horizontal overhang per 0.2 mm layer, which droops.
@@ -332,11 +357,27 @@ export function archedRimY(piece, s, spec, padCenters = []) {
 }
 
 /**
+ * Arc lengths needing a bulkhead: the interior boundaries, minus any where
+ * neither neighbouring window actually opens (a piece running level under its
+ * own deck has no arcade to brace).
+ */
+export function arcadeBulkheads(piece, spec, supportStations = []) {
+    const bounds = windowBounds(piece, spec, supportStations);
+    const out = [];
+    for (let i = 1; i + 1 < bounds.length; i++) {
+        const before = archedRimY(piece, (bounds[i - 1] + bounds[i]) / 2, spec, supportStations);
+        const after = archedRimY(piece, (bounds[i] + bounds[i + 1]) / 2, spec, supportStations);
+        if (before > piece.rimY + 1 || after > piece.rimY + 1) out.push(bounds[i]);
+    }
+    return out;
+}
+
+/**
  * Builds all sweep profiles for a piece at the given stations, applying the
  * washboard ridge as a function of arc length (seams always land in valleys
  * because the pitch was snapped to the piece length) and the arched skirt rim.
  */
-export function pieceProfiles(piece, stations, spec, withRidges, padCenters = []) {
+export function pieceProfiles(piece, stations, spec, withRidges, supportStations = []) {
     return stations.map(st => channelProfile({
         innerWidth: piece.innerWidth,
         wall: spec.wall,
@@ -344,7 +385,7 @@ export function pieceProfiles(piece, stations, spec, withRidges, padCenters = []
         floorThk: spec.floorThk,
         filletR: spec.filletR,
         deckY: 0, // origins already carry the deck elevation
-        rimY: archedRimY(piece, st.s, spec, padCenters) - deckYOffset(piece, st),
+        rimY: archedRimY(piece, st.s, spec, supportStations) - deckYOffset(piece, st),
         ridge: withRidges ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) : 0
     }));
 }

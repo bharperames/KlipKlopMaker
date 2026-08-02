@@ -18,11 +18,11 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
-import { SPEC, STANDARD, stationsForPiece, planPosAt } from './track.js';
+import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
-    ridgeStationSpacing,
+    ridgeStationSpacing, arcadeBulkheads,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
@@ -131,10 +131,21 @@ function planToWorld(pts, face) {
 // Track pieces
 // ---------------------------------------------------------------------------
 
+/**
+ * Arc-length stations carrying a socket boss. The arcade seeds a window
+ * boundary — and therefore a bulkhead — at each of them, so the bulkhead
+ * doubles as the boss's gusset. `undefined` (no support info at all, e.g. a
+ * standalone display build) falls back to the usual mid-piece boss.
+ */
+export const supportStations = (support, piece) =>
+    support === undefined ? [piece.planLen / 2]
+        : support && support.mode !== 'none' ? [support.s]
+            : [];
+
 /** Fast, ridgeless shell for the interactive scene. */
-export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters, support) {
+export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
     const stations = stationsForPiece(piece, 6);
-    const profiles = pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]);
+    const profiles = pieceProfiles(piece, stations, spec, false, bossStations ?? [piece.planLen / 2]);
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
     const ops = [];
 
@@ -194,6 +205,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, padCenters, suppor
         ));
     }
 
+    ops.push(...bulkheadOps(piece, spec, bossStations ?? [piece.planLen / 2]));
     ops.push(...bossOps(piece, spec, support));
 
     return toBufferGeometry(csgChain(shell, ops));
@@ -218,11 +230,11 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
 }
 
 /** Display union of a switch's two route shells with an open frog. */
-export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, padCenters, support) {
+export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, bossStations, support) {
     const mk = (piece) => {
         const stations = stationsForPiece(piece, 8);
         return toBufferGeometry(sweepSolid(
-            pieceProfiles(piece, stations, spec, false, padCenters ?? [piece.planLen / 2]), stations));
+            pieceProfiles(piece, stations, spec, false, bossStations ?? [piece.planLen / 2]), stations));
     };
 
     const shell = mk(mainPiece);
@@ -255,9 +267,9 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 }
 
 /** Fine washboard shell (positions/indices) for one piece. */
-function fineShell(piece, spec, padCenters) {
+function fineShell(piece, spec, bossStations) {
     const stations = stationsForPiece(piece, ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch));
-    const profiles = pieceProfiles(piece, stations, spec, true, padCenters ?? [piece.planLen / 2]);
+    const profiles = pieceProfiles(piece, stations, spec, true, bossStations ?? [piece.planLen / 2]);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
@@ -317,15 +329,19 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     // Lightening windows either side of the pocket. The rib is a solid slab
     // 50 x 12 mm by the full skirt-to-floor height — on an uphill face that is
     // ~40 mm tall and the ribs together are 25% of all track plastic. Only
-    // three jobs actually need material: carrying the pocket, sealing the
-    // chamber end, and giving the end a flat pad to print on. The pocket
-    // already voids the middle, so the mass left is the two side slabs.
+    // three jobs actually need material: carrying the pocket, closing the end,
+    // and giving the end a flat pad to print on. The pocket already voids the
+    // middle, so the mass left is the two side slabs.
     //
     // Windows open DOWNWARD to the bed exactly like the pocket, so they add no
-    // overhang, and they stop short of z = pocket depth so the back wall that
-    // seals the chamber stays intact.
-    const WALL = 2.5;                       // material kept around each window
-    const winZ0 = 1.5, winZ1 = K.depth - 0.5;
+    // overhang. They run from just inside the mating face to one wall
+    // thickness short of the back, which turns each side slab into a pair of
+    // 1.5/1.6 mm skins on 2 mm posts. They used to stop at the pocket depth
+    // instead, leaving 3.5 mm of solid backing across the whole face — 5 g per
+    // tall rib, and its only job was sealing the chamber, which is not
+    // something this part needs to do.
+    const WALL = 2.0;                       // material kept around each window
+    const winZ0 = 1.5, winZ1 = K.ribThk - spec.wall;
     const winInner = K.tipHalf + WALL;
     const winOuter = Wi + 1 - WALL;
     const ribTop = deckY - spec.floorThk + 0.5;
@@ -434,6 +450,36 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
 }
 
 /**
+ * Bulkheads: a plate one wall thick across the channel at every interior
+ * arcade boundary, standing on the bed and running up to just under the floor.
+ * See `windowBounds` in geometry.js for why the arcade needs them — briefly,
+ * a flat window ceiling is a bridge and needs an anchor at both ends, and a
+ * bulkhead is a lighter, more stable and less visible anchor than the 8 mm
+ * skirt foot it replaces.
+ *
+ * The top stops 0.5 mm short of the floor underside AT ITS DOWNHILL EDGE. The
+ * deck falls 0.2 mm/mm, so a level top that just met the floor on its uphill
+ * edge would break through it on the downhill one — the same trap the boss
+ * itself fell into before it was slanted.
+ */
+function bulkheadOps(piece, spec, bossStations) {
+    const Wo = piece.innerWidth / 2 + spec.wall;
+    const half = spec.wall / 2;
+    const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
+    return arcadeBulkheads(piece, spec, bossStations).map(s => {
+        const pos = planPosAt(piece, s);
+        const under = deckYAt(piece, s) - spec.floorThk - grad * half;
+        return {
+            op: ADDITION,
+            geometry: toBufferGeometry(extrudePolygonY(
+                planToWorld([[-Wo, -half], [Wo, -half], [Wo, half], [-Wo, half]],
+                    { x: pos.x, z: pos.z, h: pos.h }),
+                piece.rimY, under - 0.5))
+        };
+    });
+}
+
+/**
  * Pillar-socket boss ops. `support` comes from planPillarPositions (collision-
  * aware); without one, a center boss at the midpoint is used (ground pieces).
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
@@ -518,7 +564,8 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const spec = opts.spec ?? SPEC;
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
-    const shell = fineShell(piece, spec, (opts.support && opts.support.mode !== 'none') ? [opts.support.s] : undefined);
+    const stations = supportStations(opts.support, piece);
+    const shell = fineShell(piece, spec, stations);
     const ops = [];
     if (piece.type === 'elevator' || piece.isElevator) {
         const Wo = piece.innerWidth / 2 + spec.wall;
@@ -573,6 +620,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             piece.exitDeck, piece.exitDeck, piece.rimY, piece.innerWidth, spec
         ));
     }
+    ops.push(...bulkheadOps(piece, spec, stations));
     ops.push(...bossOps(piece, spec, opts.support));
     return csgChain(shell, ops, opts.simplifyTol);
 }
@@ -583,8 +631,11 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  */
 export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const spec = opts.spec ?? SPEC;
-    const shell = fineShell(mainPiece, spec, (opts.support && opts.support.mode !== 'none') ? [opts.support.s] : undefined);
+    const stations = supportStations(opts.support, mainPiece);
+    const shell = fineShell(mainPiece, spec, stations);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
+    // before the frog cuts, so an envelope trims them if one ever reaches up
+    ops.push(...bulkheadOps(mainPiece, spec, stations));
 
     // open the frog: neither route's rails may cross the other's channel
     ops.push(
