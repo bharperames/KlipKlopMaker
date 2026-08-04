@@ -199,35 +199,38 @@ describe('washboard station rate', () => {
 });
 
 describe('skirt arch windows print without support', () => {
-    test('no rim tangent is shallower than 45 degrees', async () => {
-        const { archedRimY } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
-
-        for (const pc of pieces) {
-            const pads = [pc.planLen / 2];
-            const d = 0.05;
-            let worst = 0;
-            for (let s = d; s < pc.planLen - d; s += d) {
-                const a = archedRimY(pc, s, SPEC, pads) - pc.rimY;
-                const b = archedRimY(pc, s + d, SPEC, pads) - pc.rimY;
-                // only inside a window: the foot and pad edges are step changes,
-                // and a finite difference across a step is meaningless
-                if (a < 0.5 || b < 0.5) continue;
-                // Test the slope on BOTH sides. A single shallow difference is
-                // just a corner between a compliant flank and a compliant flat
-                // top; a genuinely shallow RUN is shallow on both sides. That
-                // distinction is what catches a real defect (the deck-capped
-                // tops used to slope at 0.198 for tens of mm) without tripping
-                // over every kink.
-                const prev = archedRimY(pc, s - d, SPEC, pads) - pc.rimY;
-                if (prev < 0.5) continue;
-                const mL = Math.abs(a - prev) / d;
-                const mR = Math.abs(b - a) / d;
-                const shallow = m => m > 1e-6 && m < 1;
-                if (shallow(mL) && shallow(mR)) worst = Math.max(worst, 1 - Math.max(mL, mR));
+    test('no unsupported run of crown exceeds the bridge limit', async () => {
+        // The arch is a circle springing vertically off a pier, so it carries
+        // itself until sqrt(2)/2 of the way up. Past that — and across any flat
+        // the deck clips into it — the crown is a bridge, and what matters is
+        // that no single bridged run gets too long. (The old rule here said no
+        // tangent may be shallower than 45 deg at all, which outlaws every real
+        // arch: a crown is horizontal by definition.)
+        const { archedRimY, ARCH } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack, planPillarPositions } = await import('../js/track.js');
+        for (const seq of [
+            ['straight', 'curveL', 'straight'],
+            ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
+            ['lift', 'straight', 'curveR']
+        ]) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const supports = planPillarPositions(pieces);
+            for (const pc of pieces) {
+                const sup = supports.find(s => s.pieceIndex === pc.index);
+                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
+                const forced = sup && sup.mode === 'outrigger' ? sup.s : null;
+                const N = 3000, d = pc.planLen / N;
+                let prev = archedRimY(pc, 0, SPEC, pads, forced), run = 0, worst = 0;
+                for (let k = 1; k <= N; k++) {
+                    const y = archedRimY(pc, k * d, SPEC, pads, forced);
+                    const shallow = Math.abs(y - prev) / d < 1 && y > pc.rimY + 0.05;
+                    run = shallow ? run + d : 0;
+                    worst = Math.max(worst, run);
+                    prev = y;
+                }
+                expect(`${pc.name} longest bridged run ${worst.toFixed(0)} mm`)
+                    .toBe(`${pc.name} longest bridged run ${Math.min(worst, ARCH.maxBridge).toFixed(0)} mm`);
             }
-            expect(worst).toBeLessThan(0.02);
         }
     });
 
@@ -260,47 +263,26 @@ describe('skirt arch windows print without support', () => {
         }
     });
 
-    test('the rim never returns to the bed between the end pads', async () => {
-        // Interior boundaries are mullions carried by a bulkhead, not 8 mm
-        // feet. If a foot ever comes back, this is what notices.
-        const { archedRimY, ARCH } = await import('../js/geometry.js');
+    test('every interior boundary is a pier of the full width, on the bed', async () => {
+        // The skirt is piers and arches and nothing else — no mullions, no
+        // bulkheads, no internal webs. Each interior boundary must put the rim
+        // on the bed for the full pier width.
+        const { archedRimY, windowBounds, ARCH } = await import('../js/geometry.js');
         const { SPEC, layoutTrack } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
-        for (const pc of pieces) {
-            if (pc.type === 'start' || pc.type === 'end') continue;
-            const pads = [pc.planLen / 2];
-            let peak = 0;
-            for (let s = 0; s <= pc.planLen; s += 0.25) {
-                peak = Math.max(peak, archedRimY(pc, s, SPEC, pads) - pc.rimY);
-            }
-            if (peak < 1) continue;          // level piece: no arcade at all
-            for (let s = ARCH.pad + ARCH.margin + 1; s < pc.planLen - ARCH.pad - ARCH.margin - 1; s += 0.25) {
-                expect(archedRimY(pc, s, SPEC, pads) - pc.rimY).toBeGreaterThan(0);
-            }
-        }
-    });
-
-    test('every window boundary inside the arcade carries a bulkhead', async () => {
-        const { arcadeBulkheads, windowBounds, archedRimY } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], { slopeDeg: 11.2167 });
         for (const pc of pieces) {
             const pads = [pc.planLen / 2];
             const bounds = windowBounds(pc, SPEC, pads);
-            const bulk = arcadeBulkheads(pc, SPEC, pads);
             for (let i = 1; i + 1 < bounds.length; i++) {
-                const open = [
-                    (bounds[i - 1] + bounds[i]) / 2,
-                    (bounds[i] + bounds[i + 1]) / 2
-                ].some(s => archedRimY(pc, s, SPEC, pads) > pc.rimY + 1);
-                // an open window on either side means the ceiling steps here
-                // and its bridge needs an anchor
-                if (open) expect(bulk).toContain(bounds[i]);
+                for (const off of [-ARCH.pier / 2 + 0.2, 0, ARCH.pier / 2 - 0.2]) {
+                    expect(`pier@${bounds[i].toFixed(0)}${off.toFixed(1)}: ${(archedRimY(pc, bounds[i] + off, SPEC, pads) - pc.rimY).toFixed(2)}`)
+                        .toBe(`pier@${bounds[i].toFixed(0)}${off.toFixed(1)}: 0.00`);
+                }
             }
         }
     });
 
-    test('a lancet window rises further than the straight tent it replaces', async () => {
+    test('an arch actually opens', async () => {
         const { archedRimY } = await import('../js/geometry.js');
         const { SPEC, layoutTrack } = await import('../js/track.js');
         const { pieces } = layoutTrack(['straight'], { slopeDeg: 11.2167 });
@@ -309,7 +291,7 @@ describe('skirt arch windows print without support', () => {
         for (let s = 0; s <= pc.planLen; s += 0.25) {
             peak = Math.max(peak, archedRimY(pc, s, SPEC, [pc.planLen / 2]) - pc.rimY);
         }
-        expect(peak).toBeGreaterThan(0);
+        expect(peak).toBeGreaterThan(5);
     });
 });
 

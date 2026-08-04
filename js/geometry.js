@@ -237,83 +237,66 @@ export function channelProfile(o) {
 }
 
 /**
- * Skirt-rim height at arc length s, carving arch windows between support pads
- * on running pieces. Pads (ends + the pillar-boss station) keep the flat rim so
- * the piece prints on them and joints/bosses stay anchored.
+ * The skirt is a VIADUCT: piers standing on the bed with segmental arches
+ * between them. It carries no load — this is a light toy — it is print
+ * scaffold. The deck falls at 11.2 deg, which as an overhang is 79 deg off
+ * vertical, so it cannot carry itself: it needs a continuous lintel under each
+ * edge and that lintel needs periodic contact with the bed. End pads, `band`
+ * of lintel, and piers in between is that structure and nothing more.
  *
- * The window shape is dictated by printing, not taste. The part prints rim-down,
- * so raising the rim carves a void whose CEILING FACES DOWN — every tangent
- * must stay within 45° of vertical or it needs support. That rules out the
- * obvious shapes:
+ * The arch shape is a real one, not a printing compromise. A circle springing
+ * vertically off a pier is the friendliest opening there is: vertical at the
+ * springing, and inside 45 deg of vertical until sqrt(2)/2 of the way up.
+ * Above that the crown is a short bridge anchored on its own haunches, which
+ * in a 1.6 mm wall is just the top of a round hole. (An earlier note here
+ * called the Roman arch unprintable for exactly that horizontal crown tangent.
+ * That was wrong in the same way as calling a bridge an overhang.)
  *
- *   Roman semicircle   crown tangent is horizontal            unprintable
- *   circular gothic    self-supporting only up to h = 0.414a  removes LESS
- *                      — i.e. shallower than a plain 45° tent
- *
- * The one direction that curves AND stays printable is concave: flanks that
- * start at exactly 45° where they spring off the foot and get STEEPER toward a
- * pointed apex. That is a lancet arch — genuinely arched, self-supporting, and
- * it removes more material than the straight tent it replaces, because the
- * extra steepness buys extra rise for the same span.
- *
- * slope(t) = 1 + ARCH_CURVE·t/half  ≥ 1 everywhere, so the overhang limit holds
- * by construction. ARCH_CURVE = 0 recovers the old straight 45° tent.
- *
- * A flat top, where the rise is clipped by the cap, is fine: that is a bridge
- * between two flanks, which FDM handles.
+ * Where the deck is too low for the full semicircle, the crown is clipped flat
+ * — a segmental arch, which is what most masonry bridges actually are.
  */
 export const ARCH = {
     // 14 mm clears the 12 mm end rib, which is what the pad is actually for —
     // the rib and its bowtie pocket must sit on the bed. 20 mm was arbitrary.
     pad: 14,
     margin: 4,      // set-back from a pad edge to the springing of its window
-    maxRise: 100,   // window height cap
-    // Lintel left under the deck over a window. The floor is 2 mm, so 5 leaves
-    // 3 mm of skirt wall above the opening — enough to pull a sagged bridge
-    // back flat over a few layers. 8 was carrying a stiffness requirement this
-    // toy does not have.
-    band: 5,
-    // Longest run of FLAT window ceiling allowed before the arcade subdivides.
-    // That flat is a bridge: a 1.6 mm strand printed across open air, with the
-    // 8 mm band and then the floor built on top of it. It sags a little and
-    // then self-corrects, and it is on a hidden face carrying no load, so a
-    // long one is a cosmetic cost — but a mullion is not free either, so this
-    // is the dial between the two. Every extra division adds a bulkhead.
-    maxBridge: 70,
-    curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
+    // Width of a PIER between two arches — the skirt wall carried straight down
+    // to the bed. This is the old foot with its 45 deg flanks removed: vertical
+    // faces waste nothing and print just as well, and 8 mm is the same column
+    // the foot always was, so it is no more slender.
+    pier: 8,
+    maxRise: 100,   // crown height cap
+    band: 5,        // lintel kept under the deck over an arch
+    // Longest run of FLAT crown before the arcade adds a pier. The flat is a
+    // bridge: a 1.6 mm strand printed across open air with the lintel and floor
+    // built on top. It sags a little and then self-corrects, and it is on a
+    // hidden face carrying no load — but a shorter one is better, and this is
+    // the dial. Weight barely moves across its useful range.
+    maxBridge: 70
 };
 
 /**
- * Ceiling height for a window spanning [w0, w1]: `band` below the LOWEST deck
- * anywhere over it, not the deck at its centre.
- *
- * Centre was wrong and the error grew with window length. A window is capped
- * flat, so one number has to hold for its whole span; taken at the centre, the
- * downhill half of a long window has its ceiling above the local floor
- * underside. The skirt wall there is not merely thin, it is gone — and
- * channelProfile, handed a rim above its own ceiling, folds inside out. On a
- * 150 mm tile with one window that put the ceiling 1.5 mm ABOVE the floor and
- * the piece exported as two shells.
+ * Half-width of the FLAT crown of a segmental arch: a circular arch of radius
+ * `a` springing from the bed reaches height `cap` at x = sqrt(a^2 - cap^2),
+ * and is clipped flat from there in.
  */
-function capAbove(piece, w0, w1, springLo, springHi) {
-    const a = (w1 - w0) / 2;
-    const k = ARCH.curve;
-    // ...but only over the FLAT. The lancet flanks are below the cap, so the
-    // deck at the very ends of the window never binds — clearing it there
-    // holds the ceiling ~3 mm lower than it needs to be, which both wastes
-    // skirt and lengthens the flat (a taller window has longer flanks, so less
-    // of its span is left to bridge). The flat runs [w0+t, w1-t] where t is
-    // itself set by the cap, so settle the two against each other.
-    // Only a SPRINGING end has a ramp below the cap. A mullion end is a
-    // vertical face, so the flat runs right up to it and the deck there binds.
+const flatHalf = (a, cap) => (cap >= a ? 0 : Math.sqrt(Math.max(0, a * a - cap * cap)));
+
+/**
+ * Crown height for an arch spanning [w0, w1]: `band` below the LOWEST deck
+ * over its FLAT, which is the only part that has to clear anything — the
+ * curved haunches are well below it. Measured at the window's ends instead,
+ * the ceiling sits ~3 mm lower than it needs to, which is both wasted skirt
+ * and a longer bridge, since a taller arch is clipped later.
+ *
+ * Cap and flat set each other, so settle them against one another.
+ */
+function capAbove(piece, w0, w1) {
+    const a = (w1 - w0) / 2, c = (w0 + w1) / 2;
     let cap = Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
     for (let i = 0; i < 6; i++) {
-        const c = cap - piece.rimY;
-        if (c <= 0) break;
-        const t = Math.min(a, k > 0 ? a * (Math.sqrt(1 + 2 * k * c / a) - 1) / k : c);
-        const next = Math.min(
-            deckYAt(piece, springLo ? w0 + t : w0),
-            deckYAt(piece, springHi ? w1 - t : w1)) - ARCH.band;
+        const h = flatHalf(a, cap - piece.rimY);
+        const next = Math.min(deckYAt(piece, c - h), deckYAt(piece, c + h)) - ARCH.band;
         if (Math.abs(next - cap) < 0.01) { cap = next; break; }
         cap = next;
     }
@@ -321,135 +304,96 @@ function capAbove(piece, w0, w1, springLo, springHi) {
 }
 
 /**
- * Horizontal run of FLAT ceiling a window would end up with — i.e. how much of
- * it has to be bridged. The lancet flanks eat into the span from any end that
- * SPRINGS off solid rim; a mullion end is a vertical face and eats nothing.
+ * Horizontal run of arch crown that has to be BRIDGED — i.e. is shallower than
+ * 45 deg and so cannot support itself. That is the flat, plus any part of the
+ * curve above sqrt(2)/2 of the radius where the tangent has gone shallow. The
+ * two meet exactly at a/sqrt(2), so it is whichever is wider.
  *
- * rise(t) = t + k·t²/(2a) hits the cap at t = a(√(1 + 2k·cap/a) − 1)/k.
+ * Counting only the flat under-reports it, which made ARCH.maxBridge mean
+ * something narrower than its name.
  */
-function windowFlat(piece, w0, w1, springLo, springHi) {
-    const span = w1 - w0;
-    const a = span / 2;
-    if (a <= 0) return 0;
-    const cap = capAbove(piece, w0, w1, springLo, springHi) - piece.rimY;
-    if (cap <= 0) return 0;                    // no window opens here at all
-    const k = ARCH.curve;
-    const t = k > 0 ? a * (Math.sqrt(1 + 2 * k * cap / a) - 1) / k : Math.min(cap, a);
-    const ramp = Math.min(t, a);
-    return Math.max(0, span - ramp * ((springLo ? 1 : 0) + (springHi ? 1 : 0)));
+function unsupportedRun(piece, w0, w1) {
+    const a = (w1 - w0) / 2;
+    const cap = capAbove(piece, w0, w1) - piece.rimY;
+    if (cap <= 0) return 0;
+    return 2 * Math.max(flatHalf(a, cap), a / Math.SQRT2);
 }
 
 /**
- * Window boundaries for one piece, in arc length. The two end pads bracket the
- * arcade; every interior boundary is a MULLION.
+ * Window boundaries for one piece, in arc length: the two end pads bracket the
+ * arcade, and every interior boundary is a PIER.
  *
- * A window ceiling that is clipped flat by the cap is a bridge, and a bridge
- * has to be anchored at BOTH ends, so consecutive windows cannot simply abut —
- * something has to reach the bed between them. That used to be an 8 mm foot:
- * the rim dropped to the bed and both neighbours grew a 45° flank down to it.
- * On a 25 mm-deep window that pair of flanks is ~2 000 mm3 of skirt, and it is
- * the lump of plastic that reads as a leftover middle skirt from outside.
+ * The skirt is a VIADUCT — piers standing on the bed with segmental arches
+ * between them — and nothing else. No mullions, no bulkheads, no internal
+ * webs: those were all attempts to hold up a boundary too thin to hold itself,
+ * and an 8 mm pier holds itself.
  *
- * A transverse bulkhead one wall thick does the same job for less: it ties both
- * walls together, lets the ceiling simply STEP between neighbours instead of
- * ramping down and back up, and shows only a 1.6 mm mullion from outside.
+ * Divisions are not free (a pier is plastic and a visible interruption), so
+ * the count comes from the one thing that argues for one: the fewest arches
+ * that keep every flat crown under ARCH.maxBridge.
  *
- * The ONLY thing that justifies a division is the bridge, so the count comes
- * straight from it: the fewest windows that keep every flat run under
- * ARCH.maxBridge. Support stations used to seed a division as well, back when
- * the boss was a stub cup needing something to attach it to. The boss runs to
- * the deck under its own steam, so a straight tile now gets one window and no
- * bulkhead at all. A station is still used to NUDGE a division that is
- * happening anyway, so the bulkhead lands on the boss and merges with it
- * instead of standing a few millimetres off it.
+ * A support station is used to NUDGE a division that is happening anyway, so a
+ * pier lands on the boss rather than a few millimetres off it. An OUTRIGGER
+ * station forces one: its arm lands 2 mm inboard of the wall and is only 11 mm
+ * tall, so it needs solid skirt under it or the piece exports in two parts.
  */
-export function windowBounds(piece, spec, supportStations = []) {
-    const { pad: PAD, margin: MARGIN } = ARCH;
+export function windowBounds(piece, spec, supportStations = [], forced = null) {
+    const { pad: PAD, margin: MARGIN, pier: PIER } = ARCH;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return [];
     const s0 = PAD, s1 = piece.planLen - PAD;
+    const edges = (lo, hi, n, k) => [
+        lo + (k === 0 ? MARGIN : PIER / 2),
+        hi - (k === n - 1 ? MARGIN : PIER / 2)
+    ];
 
-    let n = 1;
-    for (; n < 6; n++) {
-        const unit = (s1 - s0) / n;
-        let worst = 0;
-        for (let k = 0; k < n; k++) {
-            const lo = s0 + k * unit, hi = lo + unit;
-            worst = Math.max(worst, windowFlat(piece,
-                lo + (k === 0 ? MARGIN : 0), hi - (k === n - 1 ? MARGIN : 0),
-                k === 0, k === n - 1));
-        }
-        if (worst <= ARCH.maxBridge) break;
-    }
-
-    const unit = (s1 - s0) / n;
+    const stops = [s0, ...(forced != null && forced > s0 + PIER && forced < s1 - PIER ? [forced] : []), s1];
     const bounds = [s0];
-    for (let k = 1; k < n; k++) {
-        const even = s0 + k * unit;
-        // snap onto a boss if one is close enough that the two would otherwise
-        // clash rather than merge
-        const near = supportStations.filter(c => Math.abs(c - even) < unit / 3);
-        bounds.push(near.length ? near[0] : even);
+    for (let i = 0; i + 1 < stops.length; i++) {
+        const a = stops[i], b = stops[i + 1];
+        let n = 1;
+        for (; n < 6; n++) {
+            const unit = (b - a) / n;
+            let worst = 0;
+            for (let k = 0; k < n; k++) {
+                const [w0, w1] = edges(a + k * unit, a + (k + 1) * unit, n, k);
+                worst = Math.max(worst, unsupportedRun(piece, w0, w1));
+            }
+            if (worst <= ARCH.maxBridge) break;
+        }
+        const unit = (b - a) / n;
+        for (let k = 1; k <= n; k++) {
+            const even = a + k * unit;
+            const near = k < n ? supportStations.filter(c => Math.abs(c - even) < unit / 3) : [];
+            bounds.push(near.length ? near[0] : even);
+        }
     }
-    bounds.push(s1);
     return bounds;
 }
 
-export function archedRimY(piece, s, spec, supportStations = []) {
-    const { pad: PAD, margin: MARGIN, maxRise: ARCH_MAX_RISE, curve: ARCH_CURVE } = ARCH;
+export function archedRimY(piece, s, spec, supportStations = [], forced = null) {
+    const { pad: PAD, margin: MARGIN, pier: PIER, maxRise: ARCH_MAX_RISE } = ARCH;
     const flat = piece.rimY;
-    const bounds = windowBounds(piece, spec, supportStations);
+    const bounds = windowBounds(piece, spec, supportStations, forced);
     if (!bounds.length) return flat;
     if (s <= PAD || s >= piece.planLen - PAD) return flat;   // end pads
-    // Subdivide into an ARCADE of lancet windows — regular and calm, instead of
-    // one giant sawtooth per piece.
+
     let lo = bounds[0], hi = bounds[bounds.length - 1];
     for (let i = 0; i + 1 < bounds.length; i++) {
         if (s >= bounds[i] && s <= bounds[i + 1]) { lo = bounds[i]; hi = bounds[i + 1]; break; }
     }
-    // Only the end pads are set back; interior boundaries are mullions, and a
-    // window runs right up to one.
-    const atPad0 = lo === bounds[0], atPad1 = hi === bounds[bounds.length - 1];
-    const w0 = lo + (atPad0 ? MARGIN : 0);
-    const w1 = hi - (atPad1 ? MARGIN : 0);
-    // Only a pad end closes the window; a mullion end is a vertical face, and
-    // dipping to the bed for the one station that lands exactly on it would
-    // leave a degenerate sliver where the bulkhead already is.
-    if ((atPad0 && s <= w0) || (atPad1 && s >= w1)) return flat;
-    // A window SPRINGS off an end pad — the lancet flank rises out of solid
-    // rim. It does not spring off a mullion: there the rim jumps straight to
-    // the cap and the bulkhead behind carries the ceiling. Ramping down to the
-    // bed on both sides of a mullion is what left a triangular wedge of skirt
-    // hanging under every window boundary, and the wedge is not doing anything
-    // a 1.6 mm plate cannot do better.
-    const t = Math.min(
-        atPad0 ? s - w0 : Infinity,
-        atPad1 ? w1 - s : Infinity
-    );
-    const half = (w1 - w0) / 2;
-    const rise = !Number.isFinite(t) ? Infinity
-        : half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
-    // One cap for the whole window, so its top is a true horizontal bridge.
-    // Taken per-station instead, the cap follows the ramp and a clipped top
-    // comes out as an 11.2° ceiling — ~1 mm of horizontal overhang per 0.2 mm
-    // layer, which droops. See capAbove for why it is the window's LOWEST deck.
-    const deckCap = capAbove(piece, w0, w1, atPad0, atPad1);
-    return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
-}
+    const w0 = lo + (lo === bounds[0] ? MARGIN : PIER / 2);
+    const w1 = hi - (hi === bounds[bounds.length - 1] ? MARGIN : PIER / 2);
+    if (s <= w0 || s >= w1) return flat;                     // standing on a pier
 
-/**
- * Arc lengths needing a bulkhead: the interior boundaries, minus any where
- * neither neighbouring window actually opens (a piece running level under its
- * own deck has no arcade to brace).
- */
-export function arcadeBulkheads(piece, spec, supportStations = []) {
-    const bounds = windowBounds(piece, spec, supportStations);
-    const out = [];
-    for (let i = 1; i + 1 < bounds.length; i++) {
-        const before = archedRimY(piece, (bounds[i - 1] + bounds[i]) / 2, spec, supportStations);
-        const after = archedRimY(piece, (bounds[i] + bounds[i + 1]) / 2, spec, supportStations);
-        if (before > piece.rimY + 1 || after > piece.rimY + 1) out.push(bounds[i]);
-    }
-    return out;
+    // Segmental arch: a circle springing vertically off the pier, clipped flat
+    // where it meets the lintel. Vertical at the springing is the friendliest
+    // thing an opening can do to a printer, and it stays inside 45 deg of
+    // vertical until sqrt(2)/2 of the way up. Above that the crown is a short
+    // bridge anchored on its own haunches — the top of a round hole in a thin
+    // wall, which every printer does without being asked.
+    const a = (w1 - w0) / 2, x = s - (w0 + w1) / 2;
+    const arch = Math.sqrt(Math.max(0, a * a - x * x));
+    return Math.min(flat + Math.min(arch, ARCH_MAX_RISE), Math.max(flat, capAbove(piece, w0, w1)));
 }
 
 /**
@@ -457,7 +401,7 @@ export function arcadeBulkheads(piece, spec, supportStations = []) {
  * washboard ridge as a function of arc length (seams always land in valleys
  * because the pitch was snapped to the piece length) and the arched skirt rim.
  */
-export function pieceProfiles(piece, stations, spec, withRidges, supportStations = []) {
+export function pieceProfiles(piece, stations, spec, withRidges, supportStations = [], forced = null) {
     return stations.map(st => channelProfile({
         innerWidth: innerWidthAt(piece, st.s),
         wall: spec.wall,
@@ -465,7 +409,7 @@ export function pieceProfiles(piece, stations, spec, withRidges, supportStations
         floorThk: spec.floorThk,
         filletR: spec.filletR,
         deckY: 0, // origins already carry the deck elevation
-        rimY: archedRimY(piece, st.s, spec, supportStations) - deckYOffset(piece, st),
+        rimY: archedRimY(piece, st.s, spec, supportStations, forced) - deckYOffset(piece, st),
         ridge: withRidges ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) : 0
     }));
 }

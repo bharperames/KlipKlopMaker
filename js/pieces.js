@@ -22,7 +22,7 @@ import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt } fr
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
-    ridgeStationSpacing, arcadeBulkheads,
+    ridgeStationSpacing,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
@@ -132,9 +132,9 @@ function planToWorld(pts, face) {
 // ---------------------------------------------------------------------------
 
 /**
- * Arc-length stations carrying a socket boss. The arcade seeds a window
- * boundary — and therefore a bulkhead — at each of them, so the bulkhead
- * doubles as the boss's gusset. `undefined` (no support info at all, e.g. a
+ * Arc-length stations carrying a socket boss. A pier is nudged onto one when a
+ * division is happening anyway, so it merges with the boss instead of standing
+ * a few millimetres off it. `undefined` (no support info at all, e.g. a
  * standalone display build) falls back to the usual mid-piece boss.
  */
 /** Arc length of an OUTRIGGER arm, which needs solid skirt to land on. */
@@ -149,7 +149,8 @@ export const supportStations = (support, piece) =>
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
     const stations = stationsForPiece(piece, 6);
-    const profiles = pieceProfiles(piece, stations, spec, false, bossStations ?? [piece.planLen / 2]);
+    const profiles = pieceProfiles(piece, stations, spec, false,
+        bossStations ?? [piece.planLen / 2], armStation(support));
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
     const ops = [];
 
@@ -209,7 +210,6 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
         ));
     }
 
-    ops.push(...bulkheadOps(piece, spec, bossStations ?? [piece.planLen / 2], armStation(support)));
     ops.push(...bossOps(piece, spec, support));
 
     return toBufferGeometry(csgChain(shell, ops));
@@ -274,9 +274,9 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 }
 
 /** Fine washboard shell (positions/indices) for one piece. */
-function fineShell(piece, spec, bossStations) {
+function fineShell(piece, spec, bossStations, forced) {
     const stations = stationsForPiece(piece, ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch));
-    const profiles = pieceProfiles(piece, stations, spec, true, bossStations ?? [piece.planLen / 2]);
+    const profiles = pieceProfiles(piece, stations, spec, true, bossStations ?? [piece.planLen / 2], forced);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
@@ -457,57 +457,6 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
 }
 
 /**
- * Bulkheads. Not a slab — a BRACKET: full height where it meets the skirt
- * walls, tapering in at 45 deg to a low sill across the middle that picks up
- * the socket cup. The full-height corners are the part that matters (they are
- * what the window ceiling bridges land on, and the mullion you see from
- * outside); the middle only has to reach the cup, so the slab that used to
- * fill it was ~35% of the plate doing nothing.
- *
- * The top OVERLAPS 0.5 mm into the floor rather than stopping short of it.
- * Stopping short left a 0.5 mm slot of open air between the bracket and the
- * ramp — visible in the part inspector, and it would have printed as an
- * unbonded wall standing under a floor it never touched. Overlap is measured
- * from the floor underside at the plate's UPHILL edge, since the deck falls
- * 0.2 mm/mm across it, and 0.5 mm into a 2 mm floor leaves the walking
- * surface untouched.
- */
-function bulkheadOps(piece, spec, bossStations, armStation) {
-    const half = spec.wall / 2;
-    const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
-    // An OUTRIGGER arm lands 2 mm inboard of the wall and is only 11 mm tall,
-    // so it needs solid skirt there. Once the arcade stopped dividing at
-    // support stations, the window under one such arm opened 20 mm up and the
-    // arm reached into air: the piece exported as two shells. A bulkhead at
-    // that station is what it lands on. (A CENTRE boss needs nothing — it runs
-    // to the deck on its own.)
-    const at = arcadeBulkheads(piece, spec, bossStations);
-    if (armStation != null && !at.some(x => Math.abs(x - armStation) < 0.5)) at.push(armStation);
-    return at.sort((a, b) => a - b).map(s => {
-        const pos = planPosAt(piece, s);
-        const Wo = innerWidthAt(piece, s) / 2 + spec.wall;
-        // highest the floor underside gets anywhere across the plate
-        const topY = deckYAt(piece, s) + grad * half - spec.floorThk + 0.5;
-        const sillY = piece.rimY + 4;
-
-        const prof = [[-Wo, piece.rimY], [Wo, piece.rimY], [Wo, topY]];
-        const uStar = sillY - topY + Wo;      // where a 45 deg taper hits the sill
-        if (uStar > 0.2) prof.push([uStar, sillY], [-uStar, sillY]);
-        else prof.push([0, Math.max(sillY, topY - Wo)]);
-        prof.push([-Wo, topY]);
-
-        const dir = [Math.cos(pos.h), Math.sin(pos.h)];
-        const right = [Math.sin(pos.h), -Math.cos(pos.h)];
-        const stations = [-half, half].map(d => ({
-            origin: [pos.x + dir[0] * d, 0, pos.z + dir[1] * d],
-            right: [right[0], 0, right[1]],
-            up: [0, 1, 0]
-        }));
-        return { op: ADDITION, geometry: toBufferGeometry(sweepSolid([prof, prof], stations)) };
-    });
-}
-
-/**
  * Pillar-socket boss ops. `support` comes from planPillarPositions (collision-
  * aware); without one, a center boss at the midpoint is used (ground pieces).
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
@@ -591,7 +540,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
     const stations = supportStations(opts.support, piece);
-    const shell = fineShell(piece, spec, stations);
+    const shell = fineShell(piece, spec, stations, armStation(opts.support));
     const ops = [];
     if (piece.type === 'elevator' || piece.isElevator) {
         const Wo = piece.innerWidth / 2 + spec.wall;
@@ -646,7 +595,6 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
         ));
     }
-    ops.push(...bulkheadOps(piece, spec, stations, armStation(opts.support)));
     ops.push(...bossOps(piece, spec, opts.support));
     return csgChain(shell, ops, opts.simplifyTol);
 }
@@ -658,10 +606,8 @@ export function buildPieceExportGeometry(piece, opts = {}) {
 export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const spec = opts.spec ?? SPEC;
     const stations = supportStations(opts.support, mainPiece);
-    const shell = fineShell(mainPiece, spec, stations);
+    const shell = fineShell(mainPiece, spec, stations, armStation(opts.support));
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
-    // before the frog cuts, so an envelope trims them if one ever reaches up
-    ops.push(...bulkheadOps(mainPiece, spec, stations, armStation(opts.support)));
 
     // open the frog: neither route's rails may cross the other's channel
     ops.push(
