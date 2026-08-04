@@ -308,7 +308,12 @@ describe('arcade bulkheads', () => {
                 // Look for a horizontal FACE, not stray vertices: a plate that
                 // stops short spans the channel with its top, and a rectangle's
                 // top face only has vertices at its outer corners.
-                const under = deckYAt(pc, s) - SPEC.floorThk;
+                // Datum is the floor underside at the DOWNHILL edge of the
+                // slice — the deck falls 0.2 mm/mm, so measuring at the centre
+                // puts the floor's own underside 0.16 mm "below" the datum and
+                // it reads as a lid.
+                const grad = pc.planLen > 0 ? pc.drop / pc.planLen : 0;
+                const under = deckYAt(pc, s) - Math.abs(grad) * SPEC.wall / 2 - SPEC.floorThk;
                 let lids = 0;
                 for (let t = 0; t < g.indices.length; t += 3) {
                     const v = [0, 1, 2].map(k => g.indices[t + k] * 3);
@@ -318,7 +323,13 @@ describe('arcade bulkheads', () => {
                     const cx = v.reduce((a, i) => a + g.positions[i], 0) / 3 - pos.x;
                     const cz = v.reduce((a, i) => a + g.positions[i + 2], 0) / 3 - pos.z;
                     if (Math.abs(cx * dir[0] + cz * dir[1]) > SPEC.wall / 2 + 0.05) continue;
-                    if (Math.abs(cx * right[0] + cz * right[1]) > Wi - 1) continue;
+                    // Reach, not centroid, and skip anything that fits inside
+                    // the boss: the bore's own lid is a deliberate Ø13 cap
+                    // 0.7 mm under the floor. What this is hunting is a lid
+                    // that spans out towards the walls.
+                    const reach = Math.max(...v.map(i =>
+                        Math.abs((g.positions[i] - pos.x) * right[0] + (g.positions[i + 2] - pos.z) * right[1])));
+                    if (reach <= SPEC.socket.bossR + 2 || reach > Wi) continue;
                     lids++;
                 }
                 expect(`${pc.name}@${s.toFixed(0)}: ${lids} lid face(s) below the floor`)
@@ -350,6 +361,32 @@ describe('every part is ONE solid', () => {
         }
         return new Set([...key.values()].map(find)).size;
     };
+
+    test('an outrigger arm lands on solid skirt, not on a window', async () => {
+        // The arm sits 2 mm inboard of the wall and is 11 mm tall. If the
+        // arcade opens a window under it the arm reaches into air and the
+        // piece exports as two objects. A plain layout never plans an
+        // outrigger — it takes a blocked column two tiers up — so the record
+        // is built directly here rather than waiting for one to turn up.
+        const { SPEC, planPosAt } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        for (const pc of pieces) {
+            if (pc.type === 'start' || pc.type === 'end') continue;
+            for (const f of [0.35, 0.5, 0.65]) {
+                const s = f * pc.planLen;
+                const at = planPosAt(pc, s);
+                const side = pc.turn > 0 ? 1 : -1;
+                const off = (pc.innerWidth / 2 + SPEC.wall + SPEC.socket.bossR + 4) * side;
+                const support = {
+                    pieceIndex: pc.index, mode: 'outrigger', side, s, h: at.h,
+                    x: at.x + Math.sin(at.h) * off, z: at.z - Math.cos(at.h) * off
+                };
+                const g = buildPieceExportGeometry(pc, { support });
+                expect(`${pc.name}@${f}: ${componentCount(g)} shell(s)`)
+                    .toBe(`${pc.name}@${f}: 1 shell(s)`);
+            }
+        }
+    });
 
     test('no track piece exports as two disconnected shells', async () => {
         const { planPillarPositions } = await import('../js/track.js');

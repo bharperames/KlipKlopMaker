@@ -231,6 +231,35 @@ describe('skirt arch windows print without support', () => {
         }
     });
 
+    test('a window never cuts into the floor it is under', async () => {
+        // The cap is one number for a whole window, so it has to clear the
+        // LOWEST deck over that window. Taken at the window centre instead,
+        // the downhill end of a long window put its ceiling above the local
+        // floor underside: the skirt wall there is gone, and channelProfile
+        // handed a rim above its own ceiling folds inside out.
+        const { archedRimY, ARCH } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack, deckYAt, planPillarPositions } = await import('../js/track.js');
+        for (const seq of [
+            ['straight', 'curveL', 'straight'],
+            ['straight', 'straight', 'curveL', 'curveL', 'straight'],
+            ['lift', 'straight', 'curveR']
+        ]) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const supports = planPillarPositions(pieces);
+            for (const pc of pieces) {
+                const sup = supports.find(s => s.pieceIndex === pc.index);
+                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
+                for (let s = 0; s <= pc.planLen; s += 0.5) {
+                    const headroom = deckYAt(pc, s) - archedRimY(pc, s, SPEC, pads);
+                    // rim must stay at least `band` below the deck line, which
+                    // keeps the full floor plus a lintel above every opening
+                    expect(`${pc.name}@${s.toFixed(0)} headroom ${headroom.toFixed(2)}`)
+                        .toBe(`${pc.name}@${s.toFixed(0)} headroom ${Math.max(headroom, ARCH.band - 0.01).toFixed(2)}`);
+                }
+            }
+        }
+    });
+
     test('the rim never returns to the bed between the end pads', async () => {
         // Interior boundaries are mullions carried by a bulkhead, not 8 mm
         // feet. If a foot ever comes back, this is what notices.

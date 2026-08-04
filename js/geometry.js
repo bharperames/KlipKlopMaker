@@ -279,9 +279,25 @@ export const ARCH = {
     // then self-corrects, and it is on a hidden face carrying no load, so a
     // long one is a cosmetic cost — but a mullion is not free either, so this
     // is the dial between the two. Every extra division adds a bulkhead.
-    maxBridge: 90,
+    maxBridge: 110,
     curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
 };
+
+/**
+ * Ceiling height for a window spanning [w0, w1]: `band` below the LOWEST deck
+ * anywhere over it, not the deck at its centre.
+ *
+ * Centre was wrong and the error grew with window length. A window is capped
+ * flat, so one number has to hold for its whole span; taken at the centre, the
+ * downhill half of a long window has its ceiling above the local floor
+ * underside. The skirt wall there is not merely thin, it is gone — and
+ * channelProfile, handed a rim above its own ceiling, folds inside out. On a
+ * 150 mm tile with one window that put the ceiling 1.5 mm ABOVE the floor and
+ * the piece exported as two shells.
+ */
+function capAbove(piece, w0, w1) {
+    return Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
+}
 
 /**
  * Horizontal run of FLAT ceiling a window would end up with — i.e. how much of
@@ -294,7 +310,7 @@ function windowFlat(piece, w0, w1, springLo, springHi) {
     const span = w1 - w0;
     const a = span / 2;
     if (a <= 0) return 0;
-    const cap = deckYAt(piece, (w0 + w1) / 2) - ARCH.band - piece.rimY;
+    const cap = capAbove(piece, w0, w1) - piece.rimY;
     if (cap <= 0) return 0;                    // no window opens here at all
     const k = ARCH.curve;
     const t = k > 0 ? a * (Math.sqrt(1 + 2 * k * cap / a) - 1) / k : Math.min(cap, a);
@@ -313,46 +329,47 @@ function windowFlat(piece, w0, w1, springLo, springHi) {
  * On a 25 mm-deep window that pair of flanks is ~2 000 mm3 of skirt, and it is
  * the lump of plastic that reads as a leftover middle skirt from outside.
  *
- * A transverse BULKHEAD one wall thick does the same job for less: it stands on
- * the bed as a plain vertical plate, ties both walls together (far more stable
- * while printing than a slender foot, and 82 mm2 of bed contact against a
- * foot's ~15), lets the ceiling simply STEP between neighbours instead of
- * ramping down and back up, and from outside shows only a 1.6 mm mullion.
+ * A transverse bulkhead one wall thick does the same job for less: it ties both
+ * walls together, lets the ceiling simply STEP between neighbours instead of
+ * ramping down and back up, and shows only a 1.6 mm mullion from outside.
  *
- * Boundaries are seeded at any support station first, so that a centre boss
- * gets its bulkhead as a gusset — the boss is a Ø19 cylinder on the centreline
- * and the walls are ±25.6 mm out, so on its own it braces nothing.
+ * The ONLY thing that justifies a division is the bridge, so the count comes
+ * straight from it: the fewest windows that keep every flat run under
+ * ARCH.maxBridge. Support stations used to seed a division as well, back when
+ * the boss was a stub cup needing something to attach it to. The boss runs to
+ * the deck under its own steam, so a straight tile now gets one window and no
+ * bulkhead at all. A station is still used to NUDGE a division that is
+ * happening anyway, so the bulkhead lands on the boss and merges with it
+ * instead of standing a few millimetres off it.
  */
 export function windowBounds(piece, spec, supportStations = []) {
     const { pad: PAD, margin: MARGIN } = ARCH;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return [];
     const s0 = PAD, s1 = piece.planLen - PAD;
-    const minRun = spec.socket.bossR + 6;
-    const stops = [
-        s0,
-        ...supportStations.filter(c => c > s0 + minRun && c < s1 - minRun).sort((a, b) => a - b),
-        s1
-    ];
-    const bounds = [s0];
-    for (let i = 0; i + 1 < stops.length; i++) {
-        const a = stops[i], b = stops[i + 1];
-        // Fewest divisions that keep every bridge under the limit. Divisions
-        // are not free — each one is a bulkhead and a mullion — so this only
-        // subdivides when the ceiling would genuinely be a long span.
-        let n = 1;
-        for (; n < 6; n++) {
-            const unit = (b - a) / n;
-            let worst = 0;
-            for (let k = 0; k < n; k++) {
-                const lo = a + k * unit, hi = lo + unit;
-                const springLo = lo === s0, springHi = hi === s1;
-                worst = Math.max(worst, windowFlat(piece,
-                    lo + (springLo ? MARGIN : 0), hi - (springHi ? MARGIN : 0), springLo, springHi));
-            }
-            if (worst <= ARCH.maxBridge) break;
+
+    let n = 1;
+    for (; n < 6; n++) {
+        const unit = (s1 - s0) / n;
+        let worst = 0;
+        for (let k = 0; k < n; k++) {
+            const lo = s0 + k * unit, hi = lo + unit;
+            worst = Math.max(worst, windowFlat(piece,
+                lo + (k === 0 ? MARGIN : 0), hi - (k === n - 1 ? MARGIN : 0),
+                k === 0, k === n - 1));
         }
-        for (let k = 1; k <= n; k++) bounds.push(a + k * (b - a) / n);
+        if (worst <= ARCH.maxBridge) break;
     }
+
+    const unit = (s1 - s0) / n;
+    const bounds = [s0];
+    for (let k = 1; k < n; k++) {
+        const even = s0 + k * unit;
+        // snap onto a boss if one is close enough that the two would otherwise
+        // clash rather than merge
+        const near = supportStations.filter(c => Math.abs(c - even) < unit / 3);
+        bounds.push(near.length ? near[0] : even);
+    }
+    bounds.push(s1);
     return bounds;
 }
 
@@ -390,12 +407,11 @@ export function archedRimY(piece, s, spec, supportStations = []) {
     const half = (w1 - w0) / 2;
     const rise = !Number.isFinite(t) ? Infinity
         : half > 0 ? t + ARCH_CURVE * t * t / (2 * half) : t;
-    // Cap from the deck at THIS WINDOW's centre, not at s. Taken per-station the
-    // cap follows the ramp, so a clipped window top came out as a 11.2° ceiling
-    // — roughly 1 mm of horizontal overhang per 0.2 mm layer, which droops.
-    // Held constant across the window it is a true horizontal bridge.
-    const winCentre = (w0 + w1) / 2;
-    const deckCap = deckYAt(piece, winCentre) - ARCH.band;
+    // One cap for the whole window, so its top is a true horizontal bridge.
+    // Taken per-station instead, the cap follows the ramp and a clipped top
+    // comes out as an 11.2° ceiling — ~1 mm of horizontal overhang per 0.2 mm
+    // layer, which droops. See capAbove for why it is the window's LOWEST deck.
+    const deckCap = capAbove(piece, w0, w1);
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 
