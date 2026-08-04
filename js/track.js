@@ -538,11 +538,20 @@ export function planPosAt(piece, s) {
     return { x: piece.center[0] + rx, z: piece.center[1] + rz, h: piece.entry.h + a };
 }
 
-export function stationsForPiece(piece, maxStep = 8) {
+export function stationsForPiece(piece, maxStep = 8, extra = []) {
     const n = Math.max(2, Math.ceil(piece.planLen / maxStep) + 1);
+    const cuts = [];
+    for (let i = 0; i < n; i++) cuts.push((piece.planLen * i) / (n - 1));
+    // `extra` lets the arcade ask for stations where IT needs them. The sweep
+    // samples the rim uniformly along the track, which is the wrong variable
+    // for an arch: near the springing the curve is vertical, so one 6 mm step
+    // can jump 17 mm in height and the opening comes out visibly faceted.
+    for (const s of extra) if (s > 0.01 && s < piece.planLen - 0.01) cuts.push(s);
+    cuts.sort((a, b) => a - b);
+
     const stations = [];
-    for (let i = 0; i < n; i++) {
-        const s = (piece.planLen * i) / (n - 1);
+    for (const s of cuts) {
+        if (stations.length && s - stations[stations.length - 1].s < 1e-6) continue;
         const { x, z, h } = planPosAt(piece, s);
         stations.push({
             s,

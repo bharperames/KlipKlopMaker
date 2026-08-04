@@ -385,6 +385,34 @@ export function windowBounds(piece, spec, supportStations = [], forced = null) {
     return bounds;
 }
 
+/**
+ * Arc lengths where the sweep should take a station so the arches come out
+ * smooth: each one sampled at equal ANGLE rather than equal arc length, which
+ * clusters them at the springings where the curve is steep and spends none on
+ * the crown where it is nearly flat. Uniform sampling is what left the builder
+ * view visibly faceted while the export — 10x finer for the washboard's sake —
+ * looked fine.
+ */
+export function archStations(piece, spec, supportStations = [], forced = null, perQuadrant = 12) {
+    const { pad: PAD, margin: MARGIN, pier: PIER } = ARCH;
+    const bounds = windowBounds(piece, spec, supportStations, forced);
+    const out = [];
+    for (let i = 0; i + 1 < bounds.length; i++) {
+        const w0 = bounds[i] + (i === 0 ? MARGIN : PIER / 2);
+        const w1 = bounds[i + 1] - (i + 2 === bounds.length ? MARGIN : PIER / 2);
+        const a = (w1 - w0) / 2, c = (w0 + w1) / 2;
+        if (a <= 0) continue;
+        for (let k = 0; k <= perQuadrant; k++) {
+            const phi = (Math.PI / 2) * (k / perQuadrant);
+            const dx = a * Math.cos(phi);
+            out.push(c - dx, c + dx);
+        }
+        // and just inside each pier face, so the springing lands crisply
+        out.push(w0 + 0.01, w1 - 0.01);
+    }
+    return out.sort((a, b) => a - b);
+}
+
 export function archedRimY(piece, s, spec, supportStations = [], forced = null) {
     const { pad: PAD, margin: MARGIN, pier: PIER, maxRise: ARCH_MAX_RISE } = ARCH;
     const flat = piece.rimY;

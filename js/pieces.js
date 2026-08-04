@@ -22,7 +22,7 @@ import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt } fr
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
-    ridgeStationSpacing,
+    ridgeStationSpacing, archStations,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
@@ -148,9 +148,10 @@ export const supportStations = (support, piece) =>
 
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
-    const stations = stationsForPiece(piece, 6);
-    const profiles = pieceProfiles(piece, stations, spec, false,
-        bossStations ?? [piece.planLen / 2], armStation(support));
+    const pads = bossStations ?? [piece.planLen / 2];
+    const forced = armStation(support);
+    const stations = stationsForPiece(piece, 6, archStations(piece, spec, pads, forced));
+    const profiles = pieceProfiles(piece, stations, spec, false, pads, forced);
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
     const ops = [];
 
@@ -239,9 +240,9 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
 /** Display union of a switch's two route shells with an open frog. */
 export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, bossStations, support) {
     const mk = (piece) => {
-        const stations = stationsForPiece(piece, 8);
-        return toBufferGeometry(sweepSolid(
-            pieceProfiles(piece, stations, spec, false, bossStations ?? [piece.planLen / 2]), stations));
+        const pads = bossStations ?? [piece.planLen / 2];
+        const stations = stationsForPiece(piece, 8, archStations(piece, spec, pads));
+        return toBufferGeometry(sweepSolid(pieceProfiles(piece, stations, spec, false, pads), stations));
     };
 
     const shell = mk(mainPiece);
@@ -275,8 +276,11 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 
 /** Fine washboard shell (positions/indices) for one piece. */
 function fineShell(piece, spec, bossStations, forced) {
-    const stations = stationsForPiece(piece, ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch));
-    const profiles = pieceProfiles(piece, stations, spec, true, bossStations ?? [piece.planLen / 2], forced);
+    const pads = bossStations ?? [piece.planLen / 2];
+    const stations = stationsForPiece(piece,
+        ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch),
+        archStations(piece, spec, pads, forced));
+    const profiles = pieceProfiles(piece, stations, spec, true, pads, forced);
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
 
