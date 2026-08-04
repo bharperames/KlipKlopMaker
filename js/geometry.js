@@ -272,7 +272,16 @@ export const ARCH = {
     // built on top. It sags a little and then self-corrects, and it is on a
     // hidden face carrying no load — but a shorter one is better, and this is
     // the dial. Weight barely moves across its useful range.
-    maxBridge: 70
+    maxBridge: 70,
+    // Rise of the shallow CROWN arc that finishes an arch off, instead of
+    // clipping it flat where it meets the lintel. Where the deck is low the
+    // circle gets cut almost immediately and the opening reads as a rectangle
+    // with rounded corners; a crown carries it across as a gentle curve.
+    // Together the two make a three-centred arch — steep haunches off the
+    // piers, flat-ish span between — which is the shape shallow masonry bridges
+    // actually use, and for the same reason: the haunches hold themselves up
+    // and the span is bridged.
+    crownRise: 3
 };
 
 /**
@@ -281,6 +290,12 @@ export const ARCH = {
  * and is clipped flat from there in.
  */
 const flatHalf = (a, cap) => (cap >= a ? 0 : Math.sqrt(Math.max(0, a * a - cap * cap)));
+
+/** How much of `cap` the crown arc takes; the haunch circle is cut below it. */
+const crownDrop = (cap) => Math.min(ARCH.crownRise, Math.max(0, cap) * 0.4);
+
+/** Half-width of the crown — where the haunch circle hands over to it. */
+const crownHalf = (a, cap) => flatHalf(a, cap - crownDrop(cap));
 
 /**
  * Crown height for an arch spanning [w0, w1]: `band` below the LOWEST deck
@@ -295,7 +310,7 @@ function capAbove(piece, w0, w1) {
     const a = (w1 - w0) / 2, c = (w0 + w1) / 2;
     let cap = Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
     for (let i = 0; i < 6; i++) {
-        const h = flatHalf(a, cap - piece.rimY);
+        const h = crownHalf(a, cap - piece.rimY);
         const next = Math.min(deckYAt(piece, c - h), deckYAt(piece, c + h)) - ARCH.band;
         if (Math.abs(next - cap) < 0.01) { cap = next; break; }
         cap = next;
@@ -316,7 +331,7 @@ function unsupportedRun(piece, w0, w1) {
     const a = (w1 - w0) / 2;
     const cap = capAbove(piece, w0, w1) - piece.rimY;
     if (cap <= 0) return 0;
-    return 2 * Math.max(flatHalf(a, cap), a / Math.SQRT2);
+    return 2 * Math.max(crownHalf(a, cap), a / Math.SQRT2);
 }
 
 /**
@@ -392,8 +407,18 @@ export function archedRimY(piece, s, spec, supportStations = [], forced = null) 
     // bridge anchored on its own haunches — the top of a round hole in a thin
     // wall, which every printer does without being asked.
     const a = (w1 - w0) / 2, x = s - (w0 + w1) / 2;
-    const arch = Math.sqrt(Math.max(0, a * a - x * x));
-    return Math.min(flat + Math.min(arch, ARCH_MAX_RISE), Math.max(flat, capAbove(piece, w0, w1)));
+    const cap = Math.min(capAbove(piece, w0, w1) - flat, ARCH_MAX_RISE);
+    if (cap <= 0) return flat;
+    const d = crownDrop(cap), h = crownHalf(a, cap);
+    let y;
+    if (Math.abs(x) >= h || d <= 0) {
+        y = Math.min(Math.sqrt(Math.max(0, a * a - x * x)), cap - d);
+    } else {
+        // crown: a circle through (±h, cap−d) cresting at (0, cap)
+        const R = (h * h + d * d) / (2 * d);
+        y = (cap - d) + Math.sqrt(Math.max(0, R * R - x * x)) - (R - d);
+    }
+    return flat + Math.min(y, cap);
 }
 
 /**
