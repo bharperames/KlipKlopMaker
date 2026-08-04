@@ -8,6 +8,8 @@
  */
 
 import { SIMPLE_TYPES, isSwitchNode, STANDARD, GEOMETRY_VERSION, isStandardParams } from './track.js';
+
+const major = (v) => String(v).split('.')[0];
 import { FRICTION_PRESETS, DEFAULT_WALKER } from './physics.js';
 import { FIGURE_STYLES } from './geometry.js';
 
@@ -109,7 +111,9 @@ export function deserializeScene(obj) {
         innerWidth: STANDARD.innerWidth,
         curveRadius: +STANDARD.curveRadius.toFixed(2),
         geometryOfFile: obj.geometry ?? null,
-        nonStandard: (obj.geometry != null && obj.geometry !== GEOMETRY_VERSION)
+        // Same MAJOR mates — that is the promise the export README makes, and
+        // an exact-string check broke it the first time a MINOR shipped.
+        nonStandard: (obj.geometry != null && major(obj.geometry) !== major(GEOMETRY_VERSION))
             || (obj.params != null && !isStandardParams(obj.params)),
         muKey: obj.surface && FRICTION_PRESETS[obj.surface] ? obj.surface : 'washboard',
         walker: { ...DEFAULT_WALKER, ...(obj.walker ?? {}) },

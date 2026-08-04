@@ -368,3 +368,68 @@ describe('the Klip Klop Standard', () => {
     });
 });
 
+
+import { innerWidthAt } from '../js/track.js';
+
+describe('seam widths', () => {
+    // A curve is +3 mm wider than a straight. Butted together that left a
+    // 1.5 mm ledge per side, and downhill of a curve the ledge faces the
+    // figure square-on where it is still riding wide off the turn.
+    const seams = (pieces) => pieces
+        .map(pc => [pc.prevIndex == null ? null : pieces.find(q => q.index === pc.prevIndex), pc])
+        .filter(([a]) => a);
+
+    test('both faces of every seam are the same width', () => {
+        for (const seq of [
+            ['straight', 'curveL', 'straight'],
+            ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'],
+            ['curveR', 'straight', 'curveL'],
+            [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['curveL'] }]
+        ]) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            for (const [a, b] of seams(pieces)) {
+                expect(a.exitWidth).toBeCloseTo(b.entryWidth, 6);
+                expect(innerWidthAt(a, a.planLen)).toBeCloseTo(innerWidthAt(b, 0), 6);
+            }
+        }
+    });
+
+    test('a curve keeps its full widening through the body', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        for (const pc of pieces) {
+            if (!pc.radius) continue;
+            expect(innerWidthAt(pc, pc.planLen / 2)).toBeCloseTo(pc.innerWidth, 6);
+            // and the taper is monotone out from each face — no waist
+            let prev = innerWidthAt(pc, 0);
+            for (let s = 0; s <= pc.planLen / 2; s += 1) {
+                const w = innerWidthAt(pc, s);
+                expect(w).toBeGreaterThanOrEqual(prev - 1e-9);
+                prev = w;
+            }
+        }
+    });
+
+    test('a helix is not pinched at its interior seams', () => {
+        // every seam between two curves stays at the full curve width; only
+        // the two ends of the run step down to meet the straights
+        const { pieces } = layoutTrack(
+            ['straight', ...appendSpiralTier([], 'L'), ...appendSpiralTier([], 'L'), 'straight'],
+            { slopeDeg: 11.2167 });
+        for (const [a, b] of seams(pieces)) {
+            if (a.radius && b.radius) expect(a.exitWidth).toBeCloseTo(a.innerWidth, 6);
+        }
+    });
+
+    test('the wall leaves a mating face parallel to its neighbour', () => {
+        // smoothstep, so the taper has zero slope at the seam: a finite
+        // difference across the face must not show a kink
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        const curve = pieces.find(pc => pc.radius);
+        for (const s of [0, curve.planLen]) {
+            const d = 0.5;
+            const inner = s === 0 ? d : curve.planLen - d;
+            const slope = Math.abs(innerWidthAt(curve, inner) - innerWidthAt(curve, s)) / d;
+            expect(slope).toBeLessThan(0.01);
+        }
+    });
+});

@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '1.0.0';
+export const GEOMETRY_VERSION = '1.1.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -312,6 +312,11 @@ export function layoutTrack(sequence, params = {}) {
     const walk = (nodes, prevExit, containerPath, active, capEnd = true) => {
         let cursor = prevExit.cursor;
         let deck = prevExit.deck;
+        // uphill neighbour, threaded through so seam widths can be resolved
+        // later. Matching seams by coincident endpoints does not work: a full
+        // spiral tier lands back over its own start, so every tier's first
+        // curve looks like a neighbour of every other tier's last one.
+        let prev = prevExit.piece ?? null;
         for (let i = 0; i < nodes.length; i++) {
             const node = nodes[i];
             const address = [...containerPath, i];
@@ -332,21 +337,27 @@ export function layoutTrack(sequence, params = {}) {
                 if (i < nodes.length - 1) {
                     issues.push({ level: 'error', code: 'switch-not-last', msg: 'A switch must be the last piece of its branch — pieces after it are unreachable.' });
                 }
-                walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck }, [...address, 'main'], active && gate === 'main');
-                walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck }, [...address, 'branch'], active && gate === 'branch');
+                main.prevIndex = prev ? prev.index : null;
+                branch.prevIndex = prev ? prev.index : null;
+                walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck, piece: main }, [...address, 'main'], active && gate === 'main');
+                walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck, piece: branch }, [...address, 'branch'], active && gate === 'branch');
                 return null;
             }
             const kind = typeof node === 'string' ? node : node.type;
             const piece = makePiece(kind, node, cursor, entryDeck, { address, active });
+            piece.prevIndex = prev ? prev.index : null;
+            prev = piece;
             cursor = piece.exit;
             deck = piece.exitDeck;
         }
         if (capEnd) {
             // leaf: implicit end platform + an open build end just before it
             openEnds.push({ containerPath, cursor: { ...cursor }, deck });
-            makePiece('end', 'end', cursor, deck - p.waterfall, { address: [...containerPath, nodes.length], active, isImplicitEnd: true });
+            const cap = makePiece('end', 'end', cursor, deck - p.waterfall, { address: [...containerPath, nodes.length], active, isImplicitEnd: true });
+            cap.prevIndex = prev ? prev.index : null;
+            prev = cap;
         }
-        return { cursor, deck };
+        return { cursor, deck, piece: prev };
     };
 
     // IMPLICIT TOPOLOGY: a design is a circuit because its geometry closes,
@@ -413,10 +424,12 @@ export function layoutTrack(sequence, params = {}) {
     }
 
     if (isCircuit) {
-        walk(sequence, { cursor: { x: 0, z: 0, h: 0 }, deck: 0 }, [], true, false);
+        const tail = walk(sequence, { cursor: { x: 0, z: 0, h: 0 }, deck: 0 }, [], true, false);
+        // the ring closes onto its own head, so that is a seam like any other
+        if (tail && tail.piece && pieces.length) pieces[0].prevIndex = tail.piece.index;
     } else {
         const start = makePiece('start', 'start', { x: 0, z: 0, h: 0 }, 0, { address: [-1], active: true, isImplicitStart: true }, false);
-        walk(sequence, { cursor: start.exit, deck: start.exitDeck }, [], true);
+        walk(sequence, { cursor: start.exit, deck: start.exitDeck, piece: start }, [], true);
         if (sequence.length && !rootHasSwitch) {
             // the ring's head is buildable: activating this end PREPENDS
             openEnds.push({ containerPath: 'head', cursor: { x: 0, z: 0, h: Math.PI }, deck: 0 });
@@ -433,10 +446,65 @@ export function layoutTrack(sequence, params = {}) {
     for (const sw of switches) sw.deck -= minRim;
     for (const oe of openEnds) oe.deck -= minRim;
 
+    resolveSeamWidths(pieces);
+
     const active = pieces.filter(pc => pc.active);
     const totalDropMm = active.length ? active[0].entryDeck - active[active.length - 1].exitDeck : 0;
     issues.push(...checkClearances(pieces, p));
     return { pieces, issues, totalDropMm, params: p, openEnds, switches, isCircuit };
+}
+
+/**
+ * Distance over which a piece blends between its seam width and its body
+ * width. 30 mm puts the wall at ~3° off the centreline for the 1.5 mm/side
+ * curve widening — nothing to a printer, and nothing a hoof can catch.
+ */
+export const SEAM_TAPER_MM = 30;
+
+/**
+ * Gives every piece an `entryWidth` and `exitWidth`: the channel width at each
+ * mating face, which is the NARROWER of the two pieces meeting there.
+ *
+ * A curve is `curveWidenMm` wider than a straight, and butting them together
+ * left a 1.5 mm ledge per side. Downhill of a curve that ledge faces the
+ * figure square-on, exactly where it is still riding wide off the turn — it is
+ * a hoof-catcher, not a cosmetic step. Matching the faces and blending back to
+ * the body width inside the piece removes it, and keeps the full +3 mm through
+ * the part of the curve where the figure is actually yawing.
+ *
+ * Seams are found by coincident endpoints rather than by walking the tree, so
+ * a switch — where two pieces share one entry face — resolves correctly: both
+ * roles take the width of whatever feeds them.
+ */
+function resolveSeamWidths(pieces) {
+    const byIndex = new Map(pieces.map(pc => [pc.index, pc]));
+    for (const pc of pieces) {
+        pc.entryWidth = pc.innerWidth;
+        pc.exitWidth = pc.innerWidth;
+    }
+    for (const pc of pieces) {
+        const prev = pc.prevIndex == null ? null : byIndex.get(pc.prevIndex);
+        if (!prev) continue;
+        const w = Math.min(prev.innerWidth, pc.innerWidth);
+        pc.entryWidth = Math.min(pc.entryWidth, w);
+        prev.exitWidth = Math.min(prev.exitWidth, w);
+    }
+}
+
+/**
+ * Channel width at arc length s. Smoothstep rather than a straight ramp: its
+ * slope is zero at both ends, so the wall leaves the mating face exactly
+ * parallel to the neighbour's and there is no crease where the taper stops.
+ */
+export function innerWidthAt(piece, s) {
+    const body = piece.innerWidth;
+    const e = piece.entryWidth ?? body, x = piece.exitWidth ?? body;
+    if (e === body && x === body) return body;
+    const blend = (u) => { const t = Math.min(1, Math.max(0, u)); return t * t * (3 - 2 * t); };
+    return Math.min(
+        e + (body - e) * blend(s / SEAM_TAPER_MM),
+        x + (body - x) * blend((piece.planLen - s) / SEAM_TAPER_MM)
+    );
 }
 
 /**

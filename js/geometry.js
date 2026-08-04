@@ -8,7 +8,7 @@
  */
 
 import { signedMeshVolumeMm3 } from './mesh_utils.js';
-import { ridgeOffset, deckYAt } from './track.js';
+import { ridgeOffset, deckYAt, innerWidthAt } from './track.js';
 
 /** Shoelace signed area of a 2D polygon [[x,y],...]. Positive = CCW. */
 export function signedArea2D(pts) {
@@ -379,7 +379,7 @@ export function arcadeBulkheads(piece, spec, supportStations = []) {
  */
 export function pieceProfiles(piece, stations, spec, withRidges, supportStations = []) {
     return stations.map(st => channelProfile({
-        innerWidth: piece.innerWidth,
+        innerWidth: innerWidthAt(piece, st.s),
         wall: spec.wall,
         railH: spec.railHeight,
         floorThk: spec.floorThk,

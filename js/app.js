@@ -3086,6 +3086,11 @@ function assembleParts() {
         const sigParts = [
             pc.type,
             pc.innerWidth.toFixed(1),
+            // The seam taper is neighbour-dependent, so a curve entering from a
+            // straight is genuinely a different solid from one mid-helix. Two
+            // of them must not share a part number.
+            (pc.entryWidth ?? pc.innerWidth).toFixed(1),
+            (pc.exitWidth ?? pc.innerWidth).toFixed(1),
             pc.planLen.toFixed(1),
             pc.drop.toFixed(3),
             pc.slopeDeg.toFixed(3),

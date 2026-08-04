@@ -18,7 +18,7 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
-import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt } from './track.js';
+import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
@@ -195,13 +195,13 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     if (hasEntryJoint) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.innerWidth, spec
+            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.innerWidth, spec
+            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
         ));
     }
 
@@ -220,13 +220,16 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
  */
 function routeClearanceEnvelope(piece, spec, maxStep = 10) {
     const stations = stationsForPiece(piece, maxStep);
-    const w = piece.innerWidth / 2 - 0.05;
     const h0 = spec.ridge.height + 0.05;   // spare this route's own washboard
     const h1 = spec.railHeight + 8;
-    const profile = [[-w, h0], [w, h0], [w, h1], [-w, h1]];
-    // extend past both faces so the cut runs cleanly through the mouth
-    const ext = [...stations];
-    return sweepSolid(ext.map(() => profile), ext);
+    // Follows the seam taper. Cutting at the body width all the way to the
+    // mouth would eat into the other route's rails where the channel has
+    // already narrowed back to the mating face.
+    const profiles = stations.map(st => {
+        const w = innerWidthAt(piece, st.s) / 2 - 0.05;
+        return [[-w, h0], [w, h0], [w, h1], [-w, h1]];
+    });
+    return sweepSolid(profiles, stations);
 }
 
 /** Display union of a switch's two route shells with an open frog. */
@@ -247,12 +250,12 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.innerWidth, spec
+        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.innerWidth, spec
+            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec
         ));
     }
     ops.push(...bossOps(mainPiece, spec, support));
@@ -463,11 +466,11 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
  * itself fell into before it was slanted.
  */
 function bulkheadOps(piece, spec, bossStations) {
-    const Wo = piece.innerWidth / 2 + spec.wall;
     const half = spec.wall / 2;
     const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
     return arcadeBulkheads(piece, spec, bossStations).map(s => {
         const pos = planPosAt(piece, s);
+        const Wo = innerWidthAt(piece, s) / 2 + spec.wall;
         const under = deckYAt(piece, s) - spec.floorThk - grad * half;
         return {
             op: ADDITION,
@@ -517,8 +520,9 @@ function bossOps(piece, spec, support) {
         bx = support.x; bz = support.z;
         const right = [Math.sin(support.h), -Math.cos(support.h)];
         const dirV = [Math.cos(support.h), Math.sin(support.h)];
-        const armEnd = piece.innerWidth / 2 + spec.wall + spec.socket.bossR + 4;
-        const armStart = piece.innerWidth / 2 - 2; // overlap 2 mm into the skirt
+        const wAt = innerWidthAt(piece, support.s);
+        const armEnd = wAt / 2 + spec.wall + spec.socket.bossR + 4;
+        const armStart = wAt / 2 - 2;      // overlap 2 mm into the skirt
         const centerline = [bx - right[0] * armEnd * support.side, bz - right[1] * armEnd * support.side];
         const armPts = [
             [armStart * support.side, -11], [armEnd * support.side, -11],
@@ -611,13 +615,13 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         // seam's uphill deck = this entry + the waterfall step
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.innerWidth, spec
+            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.innerWidth, spec
+            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
         ));
     }
     ops.push(...bulkheadOps(piece, spec, stations));
@@ -645,12 +649,12 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.innerWidth, spec
+        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.innerWidth, spec
+            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec
         ));
     }
     ops.push(...bossOps(mainPiece, spec, opts.support));

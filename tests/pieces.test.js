@@ -305,6 +305,47 @@ describe('arcade bulkheads', () => {
     });
 });
 
+describe('mating faces line up', () => {
+    // The width taper is only worth anything if it survives to the mesh, so
+    // measure the widest point of the actual export solid at each face.
+    test('no lateral step at any seam of a straight/curve/straight run', async () => {
+        const { planPillarPositions } = await import('../js/track.js');
+        const { pieces } = layoutTrack(
+            ['straight', 'curveL', 'curveL', 'straight', 'curveR', 'straight'],
+            { slopeDeg: 11.2167 });
+        const supports = planPillarPositions(pieces);
+        const mesh = new Map();
+        for (const pc of pieces) {
+            if (pc.role === 'branch') continue;
+            mesh.set(pc.index, buildPieceExportGeometry(pc, { support: supports.find(s => s.pieceIndex === pc.index) }));
+        }
+        /** Widest outer half-width within 0.6 mm inboard of a face plane. */
+        const faceHalfWidth = (g, face, inward) => {
+            const dir = [Math.cos(face.h), Math.sin(face.h)];
+            const right = [Math.sin(face.h), -Math.cos(face.h)];
+            let w = 0;
+            for (let i = 0; i < g.positions.length; i += 3) {
+                const dx = g.positions[i] - face.x, dz = g.positions[i + 2] - face.z;
+                const along = (dx * dir[0] + dz * dir[1]) * inward;
+                if (along < -0.05 || along > 0.6) continue;
+                w = Math.max(w, Math.abs(dx * right[0] + dz * right[1]));
+            }
+            return w;
+        };
+        let checked = 0;
+        for (const pc of pieces) {
+            if (pc.prevIndex == null || pc.role === 'branch') continue;
+            const prev = pieces.find(q => q.index === pc.prevIndex);
+            if (!prev || prev.role === 'branch') continue;
+            const up = faceHalfWidth(mesh.get(prev.index), { x: prev.exit.x, z: prev.exit.z, h: prev.exit.h }, -1);
+            const down = faceHalfWidth(mesh.get(pc.index), { x: pc.entry.x, z: pc.entry.z, h: pc.entry.h }, +1);
+            expect(Math.abs(down - up)).toBeLessThan(0.02);
+            checked++;
+        }
+        expect(checked).toBeGreaterThan(4);
+    });
+});
+
 describe('bowtie pocket detent retains the key', () => {
     test('the detent is a ledge around the pocket, not a plug', async () => {
         const { SPEC } = await import('../js/track.js');
