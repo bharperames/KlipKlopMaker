@@ -279,65 +279,103 @@ export const ARCH = {
     // hidden face carrying no load — but a shorter one is better, and this is
     // the dial. Weight barely moves across its useful range.
     maxBridge: 70,
-    // Rise of the shallow CROWN arc that finishes an arch off, instead of
-    // clipping it flat where it meets the lintel. Where the deck is low the
-    // circle gets cut almost immediately and the opening reads as a rectangle
-    // with rounded corners; a crown carries it across as a gentle curve.
-    // Together the two make a three-centred arch — steep haunches off the
-    // piers, flat-ish span between — which is the shape shallow masonry bridges
-    // actually use, and for the same reason: the haunches hold themselves up
-    // and the span is bridged.
-    crownRise: 3
+    // Haunch radius as a fraction of the half-span, for the three-centred
+    // arch. Bigger = rounder shoulders and a tighter crown; smaller = a
+    // sharper spring off the pier and a flatter span.
+    haunch: 0.38
 };
 
 /**
- * Half-width of the FLAT crown of a segmental arch: a circular arch of radius
- * `a` springing from the bed reaches height `cap` at x = sqrt(a^2 - cap^2),
- * and is clipped flat from there in.
- */
-const flatHalf = (a, cap) => (cap >= a ? 0 : Math.sqrt(Math.max(0, a * a - cap * cap)));
-
-/** How much of `cap` the crown arc takes; the haunch circle is cut below it. */
-const crownDrop = (cap) => Math.min(ARCH.crownRise, Math.max(0, cap) * 0.4);
-
-/** Half-width of the crown — where the haunch circle hands over to it. */
-const crownHalf = (a, cap) => flatHalf(a, cap - crownDrop(cap));
-
-/**
- * Crown height for an arch spanning [w0, w1]: `band` below the LOWEST deck
- * over its FLAT, which is the only part that has to clear anything — the
- * curved haunches are well below it. Measured at the window's ends instead,
- * the ceiling sits ~3 mm lower than it needs to, which is both wasted skirt
- * and a longer bridge, since a taller arch is clipped later.
+ * THREE-CENTRED ARCH for a half-span `a` and rise `cap`: a small haunch circle
+ * springing vertically off each pier, and one large crown circle between them.
  *
- * Cap and flat set each other, so settle them against one another.
+ * The two are TANGENT, which is the whole point. The previous version drew a
+ * big circle, cut it where it met the lintel, and started a crown arc from the
+ * cut — the two merely met, so every shallow opening had a visible notch at
+ * the shoulder. Tangency needs the junction to lie on the line joining the two
+ * centres, i.e. |HC| = R - rh, which fixes R once rh is chosen.
+ *
+ * Returns null when `cap` is large enough that the opening is just a
+ * semicircle, or when the geometry degenerates.
  */
-function capAbove(piece, w0, w1) {
-    const a = (w1 - w0) / 2, c = (w0 + w1) / 2;
-    let cap = Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
-    for (let i = 0; i < 6; i++) {
-        const h = crownHalf(a, cap - piece.rimY);
-        const next = Math.min(deckYAt(piece, c - h), deckYAt(piece, c + h)) - ARCH.band;
-        if (Math.abs(next - cap) < 0.01) { cap = next; break; }
-        cap = next;
-    }
-    return cap;
+function archArcs(a, cap) {
+    if (!(a > 0) || !(cap > 0) || cap >= a) return null;
+    const rh = Math.min(ARCH.haunch * a, 0.7 * cap);
+    if (!(rh > 0) || rh >= cap) return null;
+    const R = ((a - rh) ** 2 + cap * cap - rh * rh) / (2 * (cap - rh));
+    if (!(R > a)) return null;
+    return { rh, R, Hx: a - rh, Cy: cap - R, Jx: R * (a - rh) / (R - rh) };
+}
+
+/** Height of the arch above the rim at offset x from the opening's centre. */
+function archHeight(a, cap, x) {
+    if (cap <= 0) return 0;
+    const A = archArcs(a, cap);
+    if (!A) return Math.min(cap, Math.sqrt(Math.max(0, a * a - x * x)));
+    return Math.abs(x) >= A.Jx
+        ? Math.sqrt(Math.max(0, A.rh * A.rh - (Math.abs(x) - A.Hx) ** 2))
+        : A.Cy + Math.sqrt(Math.max(0, A.R * A.R - x * x));
 }
 
 /**
- * Horizontal run of arch crown that has to be BRIDGED — i.e. is shallower than
- * 45 deg and so cannot support itself. That is the flat, plus any part of the
- * curve above sqrt(2)/2 of the radius where the tangent has gone shallow. The
- * two meet exactly at a/sqrt(2), so it is whichever is wider.
- *
- * Counting only the flat under-reports it, which made ARCH.maxBridge mean
- * something narrower than its name.
+ * Both capAbove and windowBounds are sampled/iterative and both are called
+ * once per sweep station — hundreds of times per piece, always with the same
+ * few arguments. Memoised per piece, stamped with the ARCH values so tests and
+ * scripts that tune them are not served stale answers. Pieces are rebuilt on
+ * every layout, so a WeakMap keeps nothing alive.
+ */
+const memo = new WeakMap();
+function cached(piece, key, compute) {
+    const stamp = `${ARCH.pad}|${ARCH.margin}|${ARCH.pier}|${ARCH.band}|${ARCH.maxRise}|${ARCH.maxBridge}|${ARCH.haunch}`;
+    let m = memo.get(piece);
+    if (!m || m.stamp !== stamp) { m = { stamp, v: new Map() }; memo.set(piece, m); }
+    if (!m.v.has(key)) m.v.set(key, compute());
+    return m.v.get(key);
+}
+
+/**
+ * Crown height for an arch spanning [w0, w1]: as high as it can go while
+ * keeping `band` of lintel under the deck EVERYWHERE across it. Sampled and
+ * relaxed rather than solved, because the arch's shape depends on the very
+ * rise being solved for.
+ */
+function capAbove(piece, w0, w1) {
+    return cached(piece, `cap:${w0.toFixed(4)},${w1.toFixed(4)}`, () => capSolve(piece, w0, w1));
+}
+
+function capSolve(piece, w0, w1) {
+    const a = (w1 - w0) / 2, c = (w0 + w1) / 2;
+    let cap = Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band - piece.rimY;
+    for (let i = 0; i < 8 && cap > 0; i++) {
+        let over = 0;
+        for (let k = 0; k <= 24; k++) {
+            const x = -a + (2 * a * k) / 24;
+            over = Math.max(over,
+                archHeight(a, cap, x) + piece.rimY + ARCH.band - deckYAt(piece, c + x));
+        }
+        if (over <= 0.005) break;
+        cap -= over;
+    }
+    return piece.rimY + Math.max(0, cap);
+}
+
+/**
+ * Horizontal run of arch that has to be BRIDGED — the part whose tangent has
+ * gone shallower than 45 deg and so cannot hold itself up. Sampled, since the
+ * arch is two arcs and the changeover is not where either alone would put it.
  */
 function unsupportedRun(piece, w0, w1) {
     const a = (w1 - w0) / 2;
     const cap = capAbove(piece, w0, w1) - piece.rimY;
     if (cap <= 0) return 0;
-    return 2 * Math.max(crownHalf(a, cap), a / Math.SQRT2);
+    const N = 200, step = (2 * a) / N;
+    let run = 0;
+    for (let k = 0; k < N; k++) {
+        const x0 = -a + k * step;
+        const slope = (archHeight(a, cap, x0 + step) - archHeight(a, cap, x0)) / step;
+        if (Math.abs(slope) < 1) run += step;
+    }
+    return run;
 }
 
 /**
@@ -359,6 +397,11 @@ function unsupportedRun(piece, w0, w1) {
  * tall, so it needs solid skirt under it or the piece exports in two parts.
  */
 export function windowBounds(piece, spec, supportStations = [], forced = null) {
+    return cached(piece, `bounds:${supportStations.join(',')}|${forced}`,
+        () => boundsSolve(piece, spec, supportStations, forced));
+}
+
+function boundsSolve(piece, spec, supportStations, forced) {
     const { pad: PAD, margin: MARGIN, pier: PIER } = ARCH;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return [];
     const s0 = PAD, s1 = piece.planLen - PAD;
@@ -442,17 +485,7 @@ export function archedRimY(piece, s, spec, supportStations = [], forced = null) 
     // wall, which every printer does without being asked.
     const a = (w1 - w0) / 2, x = s - (w0 + w1) / 2;
     const cap = Math.min(capAbove(piece, w0, w1) - flat, ARCH_MAX_RISE);
-    if (cap <= 0) return flat;
-    const d = crownDrop(cap), h = crownHalf(a, cap);
-    let y;
-    if (Math.abs(x) >= h || d <= 0) {
-        y = Math.min(Math.sqrt(Math.max(0, a * a - x * x)), cap - d);
-    } else {
-        // crown: a circle through (±h, cap−d) cresting at (0, cap)
-        const R = (h * h + d * d) / (2 * d);
-        y = (cap - d) + Math.sqrt(Math.max(0, R * R - x * x)) - (R - d);
-    }
-    return flat + Math.min(y, cap);
+    return flat + Math.min(archHeight(a, cap, x), Math.max(0, cap));
 }
 
 /**
