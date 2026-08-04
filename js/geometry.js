@@ -266,13 +266,19 @@ export const ARCH = {
     // the foot always was, so it is no more slender.
     pier: 8,
     maxRise: 100,   // crown height cap
-    band: 5,        // lintel kept under the deck over an arch
+    // Lintel kept under the deck over an arch, measured from the deck LINE.
+    // The floor takes 2 mm of it, so 3.6 leaves exactly one wall thickness of
+    // skirt above every crown — the thinnest thing that is still a wall, and
+    // 8 layers is plenty to pull a sagged crown flat again. This is not a
+    // rigidity number; the skirt carries nothing. It is simply what the deck
+    // stands on while it prints.
+    band: 3.6,
     // Longest run of FLAT crown before the arcade adds a pier. The flat is a
     // bridge: a 1.6 mm strand printed across open air with the lintel and floor
     // built on top. It sags a little and then self-corrects, and it is on a
     // hidden face carrying no load — but a shorter one is better, and this is
     // the dial. Weight barely moves across its useful range.
-    maxBridge: 70,
+    maxBridge: 45,
     // Rise of the shallow CROWN arc that finishes an arch off, instead of
     // clipping it flat where it meets the lintel. Where the deck is low the
     // circle gets cut almost immediately and the opening reads as a rectangle
