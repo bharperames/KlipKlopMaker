@@ -3524,9 +3524,11 @@ function makeDimGroup(box, part) {
                 mkLine(V(socketX + 9, 0, socketZ), V(socketX + 9, 10, socketZ));
                 mkLabel('Depth 10.0 mm', V(socketX + 15, 5, socketZ));
 
-                // Boss OD
-                mkLine(V(socketX - 10, -0.2, socketZ + 8), V(socketX + 10, -0.2, socketZ + 8));
-                mkLabel('Boss Ø 20.0 mm', V(socketX, -8, socketZ + 12));
+                // Boss OD — from the spec, not typed in. It read 20.0 while the
+                // boss has always been 2 x socket.bossR = 19.0.
+                const bossOD = 2 * SPEC.socket.bossR;
+                mkLine(V(socketX - bossOD / 2, -0.2, socketZ + 8), V(socketX + bossOD / 2, -0.2, socketZ + 8));
+                mkLabel(`Boss Ø ${bossOD.toFixed(1)} mm`, V(socketX, -8, socketZ + 12));
             }
 
             // Bowtie Pocket dimensions at exit face
@@ -3623,10 +3625,16 @@ function makeDimGroup(box, part) {
  * pocket from a shadow, and it reveals internal features (socket bores, the
  * bowtie pocket) that an opaque render simply hides.
  *
+ * The hidden pass draws with depthTest OFF, which is the only way to see an
+ * edge that is behind material — and exactly why it must NOT be drawn over a
+ * shaded part. Painting it there ignores the solid entirely and the plastic
+ * reads as transparent. So `withHidden` is on only for HLR-only mode, where
+ * seeing through the part is the whole point.
+ *
  * The part mesh is opaque and already writes depth, so no prepass is needed
  * here — only the polygonOffset on GALLERY_MATS so edges win the depth test.
  */
-function makePartEdges(geo, res) {
+function makePartEdges(geo, res, withHidden) {
     const g = new THREE.Group();
     // LineMaterial.resolution is a COPY-ON-SET accessor (it does
     // uniforms.resolution.value.copy(v)), so handing it a shared Vector2 and
@@ -3644,8 +3652,11 @@ function makePartEdges(geo, res) {
         color: 0x23180a, linewidth: 2.0, resolution: res
     }));
     visible.renderOrder = 3;
-    g.add(hidden, visible);
-    g.userData.lineMats = [hidden.material, visible.material];
+    if (withHidden) g.add(hidden);
+    g.add(visible);
+    g.userData.lineMats = withHidden
+        ? [hidden.material, visible.material]
+        : [visible.material];
     return g;
 }
 
@@ -3746,7 +3757,7 @@ function applyViewerStyle(target, resizeFn) {
 
     if (showEdges) {
         target.lineRes = target.lineRes ?? new THREE.Vector2(1, 1);
-        target.edges = makePartEdges(target.geo, target.lineRes);
+        target.edges = makePartEdges(target.geo, target.lineRes, mode === 'hlr');
         target.lineMats = target.edges.userData.lineMats;
         target.scene.add(target.edges);
         settleResize(resizeFn);      // seed the Line2 resolution

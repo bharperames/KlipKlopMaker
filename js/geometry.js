@@ -278,7 +278,7 @@ export const ARCH = {
     // built on top. It sags a little and then self-corrects, and it is on a
     // hidden face carrying no load — but a shorter one is better, and this is
     // the dial. Weight barely moves across its useful range.
-    maxBridge: 45,
+    maxBridge: 70,
     // Rise of the shallow CROWN arc that finishes an arch off, instead of
     // clipping it flat where it meets the lintel. Where the deck is low the
     // circle gets cut almost immediately and the opening reads as a rectangle
