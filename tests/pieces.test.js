@@ -305,6 +305,43 @@ describe('arcade bulkheads', () => {
     });
 });
 
+describe('every part is ONE solid', () => {
+    // analyzeMesh cannot catch this: two closed shells are still manifold,
+    // consistently wound and outward-facing. The socket boss is a 12 mm cup
+    // standing on the bed that reaches neither the floor nor a wall by itself,
+    // so if its bulkhead ever goes missing the export silently becomes two
+    // objects — a loose ring rattling around the plate.
+    const componentCount = (g) => {
+        const p = g.positions, ix = g.indices;
+        const key = new Map(), rep = [], vid = [];
+        const find = (a) => { while (rep[a] !== a) { rep[a] = rep[rep[a]]; a = rep[a]; } return a; };
+        const union = (a, b) => { a = find(a); b = find(b); if (a !== b) rep[a] = b; };
+        for (let i = 0; i < p.length; i += 3) {
+            const k = `${p[i].toFixed(3)},${p[i + 1].toFixed(3)},${p[i + 2].toFixed(3)}`;
+            if (!key.has(k)) { key.set(k, rep.length); rep.push(rep.length); }
+            vid.push(key.get(k));
+        }
+        for (let i = 0; i < ix.length; i += 3) {
+            union(vid[ix[i]], vid[ix[i + 1]]);
+            union(vid[ix[i + 1]], vid[ix[i + 2]]);
+        }
+        return new Set([...key.values()].map(find)).size;
+    };
+
+    test('no track piece exports as two disconnected shells', async () => {
+        const { planPillarPositions } = await import('../js/track.js');
+        const { pieces } = layoutTrack(
+            ['straight', 'curveL', 'curveL', 'curveL', 'straight', 'lift', 'straight'],
+            { slopeDeg: 11.2167 });
+        const supports = planPillarPositions(pieces);
+        for (const pc of pieces) {
+            if (pc.role === 'branch') continue;
+            const g = buildPieceExportGeometry(pc, { support: supports.find(s => s.pieceIndex === pc.index) });
+            expect(`${pc.name}: ${componentCount(g)} shell(s)`).toBe(`${pc.name}: 1 shell(s)`);
+        }
+    });
+});
+
 describe('mating faces line up', () => {
     // The width taper is only worth anything if it survives to the mesh, so
     // measure the widest point of the actual export solid at each face.

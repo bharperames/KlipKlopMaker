@@ -142,6 +142,16 @@ export const supportStations = (support, piece) =>
         : support && support.mode !== 'none' ? [support.s]
             : [];
 
+/**
+ * Arc length of a CENTRE boss, or null. Only that boss sits under the deck and
+ * therefore needs a bulkhead to attach it; an outrigger's cup rides an arm that
+ * is already welded to the skirt wall.
+ */
+export const pierStation = (support, piece) =>
+    support === undefined ? piece.planLen / 2
+        : support && support.mode === 'center' ? support.s
+            : null;
+
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
     const stations = stationsForPiece(piece, 6);
@@ -205,7 +215,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
         ));
     }
 
-    ops.push(...bulkheadOps(piece, spec, bossStations ?? [piece.planLen / 2]));
+    ops.push(...bulkheadOps(piece, spec, bossStations ?? [piece.planLen / 2], pierStation(support, piece)));
     ops.push(...bossOps(piece, spec, support));
 
     return toBufferGeometry(csgChain(shell, ops));
@@ -389,67 +399,29 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
 
 
 /**
- * A cylinder whose TOP FOLLOWS THE DECK instead of being level.
- *
- * The boss sits under a floor that falls at the ramp slope — 0.198 mm/mm, so
- * across a Ø19 boss the floor drops 3.8 mm. A flat-topped cylinder tall enough
- * to meet the floor on its uphill side therefore overshoots the underside on
- * its downhill side by 2.4 mm, and the floor is only 2 mm thick: the boss broke
- * through the walking surface, and the bore inside it cut a hole right through.
- * Raising or lowering a level top cannot fix that — one edge or the other is
- * always wrong — so the top has to slope with the deck.
- *
- * Built as a loft: stations march along the track through the boss, each
- * carrying the chord at that offset and its own top height. Ends are clamped to
- * a sliver rather than a point, since a zero-width profile has no cap to
- * triangulate.
+ * Top of a socket boss. Normally rim + socket depth + a 2 mm shoulder; on a
+ * piece with a shallow skirt that is already at the floor, so it is clamped
+ * there and the cup simply merges into it as the old post did.
  */
-function slantedCylinder(bx, bz, heading, r, yBottom, topAt, segs = 28) {
-    const dir = [Math.cos(heading), Math.sin(heading)];
-    const right = [Math.sin(heading), -Math.cos(heading)];
-    const profiles = [], stations = [];
-    for (let i = 0; i <= segs; i++) {
-        const a = (Math.PI * i) / segs;
-        const ds = -r * Math.cos(a);
-        const w = Math.max(0.15, r * Math.sin(a));
-        const h = Math.max(0.2, topAt(ds) - yBottom);
-        profiles.push([[-w, 0], [w, 0], [w, h], [-w, h]]);
-        stations.push({
-            origin: [bx + dir[0] * ds, yBottom, bz + dir[1] * ds],
-            right: [right[0], 0, right[1]],
-            up: [0, 1, 0]
-        });
-    }
-    return toBufferGeometry(sweepSolid(profiles, stations));
+function bossCupTop(piece, spec, s) {
+    return Math.min(piece.rimY + spec.socket.depth + 2,
+        deckYAt(piece, s) - spec.floorThk + 0.5);
 }
 
 /**
- * Upward bore that hollows a boss above its socket. Returns null when the boss
- * is too short for a bore to be worth it (outrigger bosses are only 11 mm tall).
+ * Where bulkheads go: every interior arcade boundary, plus the centre-boss
+ * station whenever the cup there stops short of the floor. That second case is
+ * not optional — a cup that reaches neither the floor nor a wall is a solid
+ * disconnected from the rest of the part, i.e. a second object on the plate.
  */
-function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
-    const rSock = spec.socket.hexAF / 2;          // inscribed in the hex: no ledge
-    const rBore = spec.socket.bossR - 3;          // leave a 3 mm wall
-    const yStart = piece.rimY + spec.socket.depth;
-    const flare = rBore - rSock;
-    // CAP is what stops the bore breaking through the deck: it stays this far
-    // below the floor underside at every point, so the floor keeps its full
-    // thickness plus a bridgeable lid over the void.
-    const CAP = 0.7;
-    if (underside(spec.socket.bossR) - CAP - (yStart + flare) < 3) return [];
-
-    // 45 deg cone off the socket mouth — self-supporting, and no horizontal
-    // ledge for the print to start from
-    const n = segmentsForCircle(rBore);
-    const cone = toBufferGeometry(sweepSolid(
-        [{ y: yStart, r: rSock }, { y: yStart + flare, r: rBore }]
-            .map(l => circlePlan(l.r, n).map(([x, z]) => [cx + x, -(cz + z)])),
-        [{ y: yStart }, { y: yStart + flare }]
-            .map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
-    ));
-    const shaft = slantedCylinder(cx, cz, heading, rBore, yStart + flare - 0.01,
-        (ds) => underside(ds) - CAP);
-    return [cone, shaft];
+function bulkheadStations(piece, spec, bossStations, pierStation) {
+    const at = arcadeBulkheads(piece, spec, bossStations);
+    if (pierStation != null
+        && bossCupTop(piece, spec, pierStation) < deckYAt(piece, pierStation) - spec.floorThk - 0.01
+        && !at.some(x => Math.abs(x - pierStation) < 0.5)) {
+        at.push(pierStation);
+    }
+    return at.sort((a, b) => a - b);
 }
 
 /**
@@ -465,10 +437,10 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
  * edge would break through it on the downhill one — the same trap the boss
  * itself fell into before it was slanted.
  */
-function bulkheadOps(piece, spec, bossStations) {
+function bulkheadOps(piece, spec, bossStations, pierStation) {
     const half = spec.wall / 2;
     const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
-    return arcadeBulkheads(piece, spec, bossStations).map(s => {
+    return bulkheadStations(piece, spec, bossStations, pierStation).map(s => {
         const pos = planPosAt(piece, s);
         const Wo = innerWidthAt(piece, s) / 2 + spec.wall;
         const under = deckYAt(piece, s) - spec.floorThk - grad * half;
@@ -491,11 +463,10 @@ function bulkheadOps(piece, spec, bossStations) {
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
-    let bx, bz, bossCeilY = null, bossHeading = 0, bossUnderside = null;
+    let bx, bz;
 
     if (!support || support.mode === 'center') {
         const s = support?.s ?? piece.planLen / 2;
-        const f = s / piece.planLen;
         if (support) {
             bx = support.x; bz = support.z;
         } else {
@@ -503,16 +474,22 @@ function bossOps(piece, spec, support) {
             const m = stations[Math.floor(stations.length / 2)];
             bx = m.origin[0]; bz = m.origin[2];
         }
-        const ceilY = (piece.entryDeck - piece.drop * f) - spec.floorThk;
-        bossCeilY = ceilY;      // deck at the BOSS, not the piece's lowest deck
-        // floor underside at an offset ds along the track from the boss centre
-        const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
-        bossHeading = support?.h ?? planPosAt(piece, s).h;
-        bossUnderside = (ds) => ceilY - grad * ds;
+        // A CUP, not a post. The socket mouth has to be at the rim plane —
+        // that is where the pillar's tenon arrives — so the boss has to reach
+        // the bed. What it does NOT have to do is carry on up to the deck as a
+        // Ø19 tube: the bulkhead at this station already ties the station to
+        // both skirt walls and to the floor, so it takes the pillar's reaction
+        // out to the shell far more directly than a slender post did. On a
+        // 42 mm skirt that post was ~30 mm of tube doing nothing but existing.
+        //
+        // It also removes a whole class of bug: the post had to be lofted with
+        // a sloping top to avoid punching through the walking surface, and
+        // bored out to avoid being solid. A 12 mm cup has neither problem.
         ops.push({
             op: ADDITION,
-            geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
-                piece.rimY, (ds) => bossUnderside(ds) + 0.5)
+            geometry: toBufferGeometry(extrudePolygonY(
+                circlePlan(spec.socket.bossR).map(([px, pz]) => [bx + px, bz + pz]),
+                piece.rimY, bossCupTop(piece, spec, s)))
         });
     } else {
         // outrigger: printable arm at rim level (sits on the bed) carrying the
@@ -546,17 +523,6 @@ function bossOps(piece, spec, support) {
         op: SUBTRACTION,
         geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec)
     });
-    // Core the boss out above the socket. It was a solid Ø19 post from the rim
-    // to the drumhead — on a tall piece that is ~6.6 cm3 of plastic doing no
-    // work, since only the socket walls carry the tenon. The bore continues the
-    // socket upward so the void stays open to the bed (no trapped cavity), and
-    // flares at 45 deg, which is self-supporting, rather than stepping out to a
-    // horizontal ledge that would need support.
-    if (bossUnderside) {
-        for (const g of bossBoreSolids(bx, bz, bossHeading, piece, spec, bossUnderside)) {
-            ops.push({ op: SUBTRACTION, geometry: g });
-        }
-    }
     return ops;
 }
 
@@ -624,7 +590,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
         ));
     }
-    ops.push(...bulkheadOps(piece, spec, stations));
+    ops.push(...bulkheadOps(piece, spec, stations, pierStation(opts.support, piece)));
     ops.push(...bossOps(piece, spec, opts.support));
     return csgChain(shell, ops, opts.simplifyTol);
 }
@@ -639,7 +605,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const shell = fineShell(mainPiece, spec, stations);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
     // before the frog cuts, so an envelope trims them if one ever reaches up
-    ops.push(...bulkheadOps(mainPiece, spec, stations));
+    ops.push(...bulkheadOps(mainPiece, spec, stations, pierStation(opts.support, mainPiece)));
 
     // open the frog: neither route's rails may cross the other's channel
     ops.push(

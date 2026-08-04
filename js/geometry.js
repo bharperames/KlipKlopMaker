@@ -268,10 +268,39 @@ export const ARCH = {
     pad: 14,
     margin: 4,      // set-back from a pad edge to the springing of its window
     maxRise: 100,   // window height cap
-    band: 8,        // material kept under the deck above a window
-    targetW: 75,    // preferred window width; spans subdivide evenly
+    // Lintel left under the deck over a window. The floor is 2 mm, so 5 leaves
+    // 3 mm of skirt wall above the opening — enough to pull a sagged bridge
+    // back flat over a few layers. 8 was carrying a stiffness requirement this
+    // toy does not have.
+    band: 5,
+    // Longest run of FLAT window ceiling allowed before the arcade subdivides.
+    // That flat is a bridge: a 1.6 mm strand printed across open air, with the
+    // 8 mm band and then the floor built on top of it. It sags a little and
+    // then self-corrects, and it is on a hidden face carrying no load, so a
+    // long one is a cosmetic cost — but a mullion is not free either, so this
+    // is the dial between the two. Every extra division adds a bulkhead.
+    maxBridge: 90,
     curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
 };
+
+/**
+ * Horizontal run of FLAT ceiling a window would end up with — i.e. how much of
+ * it has to be bridged. The lancet flanks eat into the span from any end that
+ * SPRINGS off solid rim; a mullion end is a vertical face and eats nothing.
+ *
+ * rise(t) = t + k·t²/(2a) hits the cap at t = a(√(1 + 2k·cap/a) − 1)/k.
+ */
+function windowFlat(piece, w0, w1, springLo, springHi) {
+    const span = w1 - w0;
+    const a = span / 2;
+    if (a <= 0) return 0;
+    const cap = deckYAt(piece, (w0 + w1) / 2) - ARCH.band - piece.rimY;
+    if (cap <= 0) return 0;                    // no window opens here at all
+    const k = ARCH.curve;
+    const t = k > 0 ? a * (Math.sqrt(1 + 2 * k * cap / a) - 1) / k : Math.min(cap, a);
+    const ramp = Math.min(t, a);
+    return Math.max(0, span - ramp * ((springLo ? 1 : 0) + (springHi ? 1 : 0)));
+}
 
 /**
  * Window boundaries for one piece, in arc length. The two end pads bracket the
@@ -295,10 +324,10 @@ export const ARCH = {
  * and the walls are ±25.6 mm out, so on its own it braces nothing.
  */
 export function windowBounds(piece, spec, supportStations = []) {
-    const { pad: PAD, targetW: ARCH_TARGET_W } = ARCH;
+    const { pad: PAD, margin: MARGIN } = ARCH;
     if (piece.type === 'start' || piece.type === 'end' || piece.planLen < 2.5 * PAD) return [];
     const s0 = PAD, s1 = piece.planLen - PAD;
-    const minRun = Math.max(spec.socket.bossR + 6, ARCH_TARGET_W / 3);
+    const minRun = spec.socket.bossR + 6;
     const stops = [
         s0,
         ...supportStations.filter(c => c > s0 + minRun && c < s1 - minRun).sort((a, b) => a - b),
@@ -307,7 +336,21 @@ export function windowBounds(piece, spec, supportStations = []) {
     const bounds = [s0];
     for (let i = 0; i + 1 < stops.length; i++) {
         const a = stops[i], b = stops[i + 1];
-        const n = Math.max(1, Math.round((b - a) / ARCH_TARGET_W));
+        // Fewest divisions that keep every bridge under the limit. Divisions
+        // are not free — each one is a bulkhead and a mullion — so this only
+        // subdivides when the ceiling would genuinely be a long span.
+        let n = 1;
+        for (; n < 6; n++) {
+            const unit = (b - a) / n;
+            let worst = 0;
+            for (let k = 0; k < n; k++) {
+                const lo = a + k * unit, hi = lo + unit;
+                const springLo = lo === s0, springHi = hi === s1;
+                worst = Math.max(worst, windowFlat(piece,
+                    lo + (springLo ? MARGIN : 0), hi - (springHi ? MARGIN : 0), springLo, springHi));
+            }
+            if (worst <= ARCH.maxBridge) break;
+        }
         for (let k = 1; k <= n; k++) bounds.push(a + k * (b - a) / n);
     }
     return bounds;
