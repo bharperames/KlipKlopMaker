@@ -85,8 +85,23 @@ function toManifold(g) {
     return new wasm.Manifold(mesh);
 }
 
-/** Gate blade: 2.6 mm thick, 52 mm long — matches buildGateGeometry's vane. */
-export const GATE = { vaneThk: 2.6, len: 52 };
+/**
+ * Gate blade. The pivot sits ON THE WALL LINE, not inside the channel: a 44 mm
+ * figure in a 48 mm channel has 4 mm of play in total, and an R5 hub inboard
+ * of the wall ate 6.3 mm of it — the figure could not pass the pivot in either
+ * gate position. On the wall line only `hubR - vaneThk/2` intrudes.
+ *
+ * The bore cannot live in a 1.6 mm wall (it is Ø3.3, wider than the wall), so
+ * the switch grows a local boss for it BELOW the deck, where it is out of the
+ * walking channel altogether, and the rail is slotted away over the blade's
+ * length so the parked blade becomes that stretch of wall.
+ */
+export const GATE = {
+    vaneThk: 2.6,
+    len: 52,
+    hubR: 2.6,      // was 5; the pin is only Ø2.9, the rest was grip
+    bossR: 3.6      // material around the Ø3.3 bore, below the deck
+};
 
 export const ADDITION = 'add';
 export const SUBTRACTION = 'subtract';
@@ -258,6 +273,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
         { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(branchPiece, spec, 12)) }
     );
 
+    ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
         mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec
@@ -636,11 +652,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     }
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
-    // gate pivot bore: vertical Ø3.3 through the deck at the divergence point
-    const pinPos = gatePinPosition(mainPiece, branchPiece);
-    const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, segmentsForCircle(1.65));
-    pin.translate(pinPos.x, pinPos.deckY + spec.railHeight / 2, pinPos.z);
-    ops.push({ op: SUBTRACTION, geometry: pin });
+    ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
 
     return csgChain(shell, ops);
 }
@@ -651,6 +663,50 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
  * swung inward → it sweeps across the channel and deflects the figure into
  * the diverging route (how the original playset gates work).
  */
+/**
+ * The switch-side half of the gate: a boss to carry the pivot bore, a slot in
+ * the rail for the blade to live in, and the bore itself.
+ *
+ * The BOSS sits below the deck. A Ø3.3 bore is wider than the 1.6 mm wall it
+ * would otherwise pass through, so the wall is thickened locally — and put
+ * below the deck it takes nothing from the walking channel.
+ *
+ * The SLOT removes the rail over the blade's length. That is the point of the
+ * whole arrangement: parked, the blade FILLS the slot and is that stretch of
+ * wall, so the figure runs straight past it; swung, the blade leaves and the
+ * gap it leaves behind is outboard of the branch's own wall, which by then has
+ * taken over.
+ */
+function gateSeatOps(mainPiece, branchPiece, spec) {
+    const pin = gatePinPosition(mainPiece, branchPiece);
+    const h = mainPiece.entry.h;
+    const face = { x: mainPiece.entry.x, z: mainPiece.entry.z, h };
+    const Wi = mainPiece.innerWidth / 2, Wo = Wi + spec.wall;
+    const side = pin.hingeSide;
+    const deck = pin.deckY;
+
+    // boss: local thickening under the wall, from the rim up to the deck
+    const boss = toBufferGeometry(extrudePolygonY(
+        circlePlan(GATE.bossR).map(([px, pz]) => [pin.x + px, pin.z + pz]),
+        mainPiece.rimY, deck + 0.2));
+
+    // slot: the rail, removed over the blade's length
+    const slot = toBufferGeometry(extrudePolygonY(planToWorld([
+        [(Wi - 0.3) * side, pin.s], [(Wo + 1.5) * side, pin.s],
+        [(Wo + 1.5) * side, pin.s + GATE.len], [(Wi - 0.3) * side, pin.s + GATE.len]
+    ], face), deck + 0.05, deck + spec.railHeight + 2));
+
+    const bore = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 20,
+        segmentsForCircle(1.65));
+    bore.translate(pin.x, deck + spec.railHeight / 2 - 4, pin.z);
+
+    return [
+        { op: ADDITION, geometry: boss },
+        { op: SUBTRACTION, geometry: slot },
+        { op: SUBTRACTION, geometry: bore }
+    ];
+}
+
 /**
  * Where the gate blade pivots, and how far it swings.
  *
@@ -695,7 +751,8 @@ export function gatePinPosition(mainPiece, branchPiece) {
     sHinge = Math.min(sHinge, mainPiece.planLen - GATE.len);
 
     const reach = Math.max(0, wall - branchOuter(sHinge + GATE.len));
-    const lat = (wall - GATE.vaneThk / 2) * hingeSide;   // parked flush with the wall
+    // pivot on the wall line: parked, the blade's inner face IS the wall
+    const lat = (wall + GATE.vaneThk / 2) * hingeSide;
     return {
         x: mainPiece.entry.x + dir[0] * sHinge + right[0] * lat,
         z: mainPiece.entry.z + dir[1] * sHinge + right[1] * lat,
@@ -749,8 +806,8 @@ export function buildGateGeometry(spec = SPEC) {
     const levels = [
         { y: -8, r: 1.45 },                    // pin (Ø2.9 into the Ø3.3 bore)
         { y: 0, r: 1.45 },
-        { y: 0, r: 5 },                        // hub
-        { y: spec.railHeight - 2, r: 5 }
+        { y: 0, r: GATE.hubR },                // hub
+        { y: spec.railHeight - 2, r: GATE.hubR }
     ];
     const nHub = segmentsForCircle(Math.max(...levels.map(l => l.r)));
     const profiles = levels.map(l => circlePlan(l.r, nHub).map(([x, z]) => [x, -z]));
