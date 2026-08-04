@@ -1,5 +1,5 @@
 /**
- * app.js — Klip Klop Maker main application.
+ * app.js — Klip Klop Konstructor main application.
  *
  * RCT-style editor paradigm: construction arrows mark every open track end
  * (click one to make it the active build point), palette buttons append there

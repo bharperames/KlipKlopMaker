@@ -1,4 +1,4 @@
-# 🐴 Klip Klop Maker
+# 🐴 Klip Klop Konstructor
 
 A Roller-Coaster-Tycoon-style web app for designing, physics-simulating, and
 3D-printing **gravity-trot ramp towers** compatible with Fisher-Price

@@ -13,7 +13,7 @@ node scripts/generate_reports.mjs   # solve all scenes/ → reports/index.html (
 
 ## What this is
 
-A client-side web app ("Klip Klop Maker") for designing 3D-printable ramp
+A client-side web app ("Klip Klop Konstructor") for designing 3D-printable ramp
 towers for Fisher-Price-style passive dynamic walker toys. RCT-style path
 building, gait physics simulation, and watertight STL/3MF export.
 `PHYSICS.md` documents the physics model and its sources.
@@ -59,8 +59,10 @@ building, gait physics simulation, and watertight STL/3MF export.
   "rim-down" and "deck-up" describe one thing, not a flip):
   *bed* = build plate · *rim* = flat bottom edge of the skirt walls, at a
   constant `rimY` per piece, the only thing touching the bed · *skirt* = the
-  wedge between rim and deck, carved into an *arcade* of *windows* separated
-  by *mullions* (the 1.6 mm strips where a *bracket* crosses the wall) ·
+  wedge between rim and deck, carved into a VIADUCT: *piers* standing on the
+  bed with three-centred *arches* between them, and nothing internal (an
+  earlier design put mullions, bulkheads and brackets in here; all deleted) ·
+  *lintel* = the `ARCH.band` of skirt kept under the deck over each arch ·
   *floor*/*drumhead*/*deck* = the walking surface · *rails* above it.
   "Rim plane" is shorthand for the horizontal plane at `rimY`; it is this
   project's word, not a 3D-printing term (that would be "first layer").

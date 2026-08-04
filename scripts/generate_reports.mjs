@@ -179,7 +179,7 @@ const summaryRows = summary.map(s =>
 const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Klip Klop Maker — Scene Verification Report</title>
+<title>Klip Klop Konstructor — Scene Verification Report</title>
 <style>
 :root { color-scheme: light dark;
   --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
@@ -214,7 +214,7 @@ section { border-top:2px solid var(--line); margin-top:26px; }
 .meta { color:var(--text-secondary); font-size:12.5px; }
 @media (max-width:720px){ .cols{grid-template-columns:1fr;} }
 </style></head><body>
-<h1>🐴 Klip Klop Maker — Scene Verification Report</h1>
+<h1>🐴 Klip Klop Konstructor — Scene Verification Report</h1>
 <p class="meta">Every bundled scene laid out, simulated with the rimless-wheel + sliding dynamics engine
 (<code>js/simulate.js</code> — the same code the Jest harness runs), and checked against its embedded expectations.
 Charts: speed trace with regime underlays (<span class="modechip" style="--c:${MODE_COLORS.walk}">walk</span>

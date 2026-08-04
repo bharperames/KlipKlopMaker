@@ -1,6 +1,6 @@
 /**
  * scene_format.js
- * Versioned persistence format for Klip Klop Maker designs — pure module.
+ * Versioned persistence format for Klip Klop Konstructor designs — pure module.
  *
  * v2 adds: tree-structured sequences (switch nodes with gates), 'lift'
  * segments, and a `scenery` array of placed decorative parts. v1 documents

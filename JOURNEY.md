@@ -1,4 +1,4 @@
-# 🐴 Klip Klop Maker — The Journey
+# 🐴 Klip Klop Konstructor — The Journey
 
 *How a toy-physics question became a full track-design studio, physics lab, and 3D-print pipeline — the complete record of the founding session (July 15–18, 2026).*
 
