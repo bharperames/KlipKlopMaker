@@ -54,6 +54,16 @@ building, gait physics simulation, and watertight STL/3MF export.
   LAST node of their container. `layoutTrack` emits two role pieces per switch
   (exported merged); `resolveRidePath(pieces)` gives the gate-selected linear
   path — always simulate THAT, never the raw pieces array.
+- **Vocabulary** (bottom to top of a track piece, as printed AND as used —
+  these are the same orientation; the exporter maps app-up to printer-up, so
+  "rim-down" and "deck-up" describe one thing, not a flip):
+  *bed* = build plate · *rim* = flat bottom edge of the skirt walls, at a
+  constant `rimY` per piece, the only thing touching the bed · *skirt* = the
+  wedge between rim and deck, carved into an *arcade* of *windows* separated
+  by *mullions* (the 1.6 mm strips where a *bracket* crosses the wall) ·
+  *floor*/*drumhead*/*deck* = the walking surface · *rails* above it.
+  "Rim plane" is shorthand for the horizontal plane at `rimY`; it is this
+  project's word, not a 3D-printing term (that would be "first layer").
 - **Print-friendliness is a contract**: parts print rim-down with no supports.
   Never add geometry that protrudes past an end face or floats above the bed
   (the original dovetail tab failed in the slicer as a floating cantilever) —
