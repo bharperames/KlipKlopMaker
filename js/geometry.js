@@ -279,7 +279,7 @@ export const ARCH = {
     // then self-corrects, and it is on a hidden face carrying no load, so a
     // long one is a cosmetic cost — but a mullion is not free either, so this
     // is the dial between the two. Every extra division adds a bulkhead.
-    maxBridge: 110,
+    maxBridge: 70,
     curve: 1.0      // 0 = straight 45° tent; >0 curves the flanks steeper (lancet)
 };
 
@@ -295,8 +295,29 @@ export const ARCH = {
  * 150 mm tile with one window that put the ceiling 1.5 mm ABOVE the floor and
  * the piece exported as two shells.
  */
-function capAbove(piece, w0, w1) {
-    return Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
+function capAbove(piece, w0, w1, springLo, springHi) {
+    const a = (w1 - w0) / 2;
+    const k = ARCH.curve;
+    // ...but only over the FLAT. The lancet flanks are below the cap, so the
+    // deck at the very ends of the window never binds — clearing it there
+    // holds the ceiling ~3 mm lower than it needs to be, which both wastes
+    // skirt and lengthens the flat (a taller window has longer flanks, so less
+    // of its span is left to bridge). The flat runs [w0+t, w1-t] where t is
+    // itself set by the cap, so settle the two against each other.
+    // Only a SPRINGING end has a ramp below the cap. A mullion end is a
+    // vertical face, so the flat runs right up to it and the deck there binds.
+    let cap = Math.min(deckYAt(piece, w0), deckYAt(piece, w1)) - ARCH.band;
+    for (let i = 0; i < 6; i++) {
+        const c = cap - piece.rimY;
+        if (c <= 0) break;
+        const t = Math.min(a, k > 0 ? a * (Math.sqrt(1 + 2 * k * c / a) - 1) / k : c);
+        const next = Math.min(
+            deckYAt(piece, springLo ? w0 + t : w0),
+            deckYAt(piece, springHi ? w1 - t : w1)) - ARCH.band;
+        if (Math.abs(next - cap) < 0.01) { cap = next; break; }
+        cap = next;
+    }
+    return cap;
 }
 
 /**
@@ -310,7 +331,7 @@ function windowFlat(piece, w0, w1, springLo, springHi) {
     const span = w1 - w0;
     const a = span / 2;
     if (a <= 0) return 0;
-    const cap = capAbove(piece, w0, w1) - piece.rimY;
+    const cap = capAbove(piece, w0, w1, springLo, springHi) - piece.rimY;
     if (cap <= 0) return 0;                    // no window opens here at all
     const k = ARCH.curve;
     const t = k > 0 ? a * (Math.sqrt(1 + 2 * k * cap / a) - 1) / k : Math.min(cap, a);
@@ -411,7 +432,7 @@ export function archedRimY(piece, s, spec, supportStations = []) {
     // Taken per-station instead, the cap follows the ramp and a clipped top
     // comes out as an 11.2° ceiling — ~1 mm of horizontal overhang per 0.2 mm
     // layer, which droops. See capAbove for why it is the window's LOWEST deck.
-    const deckCap = capAbove(piece, w0, w1);
+    const deckCap = capAbove(piece, w0, w1, atPad0, atPad1);
     return Math.min(flat + Math.min(rise, ARCH_MAX_RISE), Math.max(flat, deckCap));
 }
 

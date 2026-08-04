@@ -284,7 +284,7 @@ describe('arcade bulkheads', () => {
                 const dir = [Math.cos(pos.h), Math.sin(pos.h)];
                 const right = [Math.sin(pos.h), -Math.cos(pos.h)];
                 const Wi = pc.innerWidth / 2;
-                let top = -Infinity, bottom = Infinity;
+                let top = -Infinity;
                 for (let i = 0; i < g.positions.length; i += 3) {
                     const dx = g.positions[i] - pos.x, dz = g.positions[i + 2] - pos.z;
                     const along = dx * dir[0] + dz * dir[1];
@@ -292,14 +292,32 @@ describe('arcade bulkheads', () => {
                     // inside the channel, in the bulkhead's own slice: only the
                     // bulkhead (and the boss where they coincide) lives here
                     if (Math.abs(along) > SPEC.wall / 2 + 0.05) continue;
-                    if (Math.abs(lat) > Wi - 1) continue;
+                    // stop short of the hoof-recentering fillets: they arc
+                    // filletR up the wall, so near the walls "above the deck
+                    // line" is normal and says nothing about the bulkhead
+                    if (Math.abs(lat) > Wi - SPEC.filletR - 1) continue;
                     top = Math.max(top, g.positions[i + 1]);
-                    bottom = Math.min(bottom, g.positions[i + 1]);
                 }
                 // nothing in that slice may break the walking surface …
                 expect(top).toBeLessThan(deckYAt(pc, s) + SPEC.ridge.height + 0.05);
-                // … and the bulkhead must actually reach the bed to anchor
-                expect(bottom).toBeLessThan(pc.rimY + 0.01);
+
+                // … and the bracket must stand ON the bed. Count its footprint
+                // as a FACE: the bottom edge is one straight segment, so it has
+                // vertices only at its two outer corners and a vertex-based
+                // check passes or fails on where CSG happens to put them. The
+                // skirt walls are windowed at a bulkhead station, so anything
+                // horizontal at rim level here is the bracket.
+                let bedFaces = 0;
+                for (let t = 0; t < g.indices.length; t += 3) {
+                    const v = [0, 1, 2].map(k => g.indices[t + k] * 3);
+                    if (!v.every(i => Math.abs(g.positions[i + 1] - pc.rimY) < 0.05)) continue;
+                    const cx = v.reduce((a, i) => a + g.positions[i], 0) / 3 - pos.x;
+                    const cz = v.reduce((a, i) => a + g.positions[i + 2], 0) / 3 - pos.z;
+                    if (Math.abs(cx * dir[0] + cz * dir[1]) > SPEC.wall / 2 + 0.05) continue;
+                    bedFaces++;
+                }
+                expect(`${pc.name}@${s.toFixed(0)}: ${bedFaces > 0 ? 'on' : 'off'} the bed`)
+                    .toBe(`${pc.name}@${s.toFixed(0)}: on the bed`);
 
                 // No horizontal face may sit in a thin band just under the
                 // floor. A bracket top stopping short of the floor leaves
