@@ -36,9 +36,10 @@ Open the served URL in any modern browser. Everything runs client-side.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
   overhangs** (slicer-verified):
-  - track pieces with **washboard friction floors**, sealed **acoustic
-    chambers**, **waterfall seams** (downhill floor 0.25 mm lower — a seam
-    can never trip the toy), and hex **pillar sockets**
+  - track pieces with **washboard friction floors**, an **arcade skirt** of
+    piers and three-centred arches under the deck, **waterfall seams**
+    (downhill floor 0.25 mm lower — a seam can never trip the toy), and hex
+    **pillar sockets**
   - **bowtie connector keys** (Hot-Wheels-style separate connectors that drop
     into pockets recessed in bed-supported end ribs — the print-friendly
     replacement for protruding dovetails)
@@ -97,6 +98,9 @@ outward-wound manifold.
 
 ## Safety
 
-Designed for toddler use per the original toy's class: 4–5 print perimeters,
-no printed axles (use 3 mm metal rod), and **all ballast bores and axle ends
-must be sealed with glued plugs** — BBs and rods are choke hazards.
+Designed for toddler use per the original toy's class: no printed axles
+(use 3 mm metal rod), and **all ballast bores and axle ends must be sealed
+with glued plugs** — BBs and rods are choke hazards. (Perimeter count used to
+be listed here as a safety measure; it is not one. The track is a 1.6 mm
+shell — four lines wide at a 0.4 nozzle — so it prints solid regardless of
+the setting.)

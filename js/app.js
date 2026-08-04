@@ -245,13 +245,18 @@ const sceneryGroup = new THREE.Group();
 const ghostGroup = new THREE.Group();
 scene.add(trackGroup, arrowGroup, sceneryGroup, ghostGroup);
 
+// One filament, one colour. Any two track pieces shaded differently only make
+// the seam between them read as a defect — that is what the near-identical
+// gold on curves and on switches was doing. The exceptions below are not
+// materials pretending to differ: powered sections are flagged red because
+// they are the one place gravity is not doing the work, and the start/end
+// corrals are translucent so they read as markers rather than as parts.
+const TRACK_GOLD = 0xe8b23a;
 const MAT = {
-    // Straights and curves print in the same filament, so shading them
-    // differently only made the seam between them read as a defect.
-    ramp: new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
-    curve: new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
+    ramp: new THREE.MeshLambertMaterial({ color: TRACK_GOLD }),
+    curve: new THREE.MeshLambertMaterial({ color: TRACK_GOLD }),
+    switch: new THREE.MeshLambertMaterial({ color: TRACK_GOLD }),
     lift: new THREE.MeshLambertMaterial({ color: 0xc95a3c }),
-    switch: new THREE.MeshLambertMaterial({ color: 0xd8983b }),
     start: new THREE.MeshLambertMaterial({ color: 0x74b06c, transparent: true, opacity: 0.6 }),
     end: new THREE.MeshLambertMaterial({ color: 0xb9b3a4, transparent: true, opacity: 0.6 }),
     pillar: new THREE.MeshLambertMaterial({ color: 0x7a5230 }),
@@ -4047,41 +4052,70 @@ function exportReadme(joints, switchCount) {
     const sceneryLines = state.scenery.length
         ? state.scenery.map(s => `  - ${s.kind} at (${s.x}, ${s.z}) mm`).join('\n')
         : '  (none placed)';
-    return `KLIP KLOP MAKER — print & assembly notes
-=========================================
+    // Numbered as a list, not as literal digits: a design with no switches used
+    // to print an empty step "3." where the gate instructions would have gone.
+    const steps = [
+        `Slide a bowtie connector key UP into each seam from underneath. The
+   pocket is a through-slot open at the rim, so the key goes in from below,
+   not down from the deck. Push until it snaps past the retention ledge
+   (${SPEC.key.detentProud} mm) and rests on it. ${joints} seams, ${joints} keys.`,
+        `The downhill floor at every seam sits ${SPEC.waterfallStepMm} mm lower than the uphill
+   one. That is the waterfall rule and it is deliberate — do not sand it flat.`,
+        `Stack a support under each socket: one foot plus risers (120/60/30/15 mm)
+   summing to that piece's rim height, which is always a multiple of 15 mm.
+   The app's parts list already tells you how many of each.`,
+        switchCount
+            ? `Insert the ${switchCount} gate paddle(s) into the switch bores; flick to route
+   the figure. The paddle must swing freely.`
+            : null,
+        `Cut a 3 mm steel/brass rod to ${(state.innerWidth - 4 + 3).toFixed(0)} mm for the figure's axle.
+   The pendulum must swing DEAD FREE — dry graphite, never oil.`,
+        `Drop steel BBs into the ballast bores (see the app's Ballast plan),
+   biased rear and low.`,
+        `GLUE ALL PLUGS AND THE AXLE ENDS (CA glue) — mandatory choke-hazard
+   seal for children under 3.`
+    ].filter(Boolean);
+
+    return `KLIP KLOP KONSTRUCTOR — print & assembly notes
+==============================================
 CANONICAL GEOMETRY v${GEOMETRY_VERSION} — parts from any same-major export mate.
 Design: "${state.name}" — slope ${state.slopeDeg}°, channel ${state.innerWidth} mm, curves R${state.curveRadius} mm.
-All meshes are watertight (Manifold CSG kernel) and pre-oriented for printing —
-no supports needed anywhere.
+${joints} seam${joints === 1 ? '' : 's'}. Every mesh is watertight (Manifold CSG kernel), a single
+solid, and pre-oriented. No support material is needed anywhere.
+
+A filename ending in "_6x" means print six of that file.
 
 PRINTING
-- Material: PLA. 0.2 mm layers, 4-5 wall perimeters (toddler-proof), 10% gyroid infill.
-- Track pieces: print as oriented (skirt rim on the bed, deck up). The washboard
-  ridges and the sealed end-rib acoustic chambers are modeled in.
-- Connector keys: print ${joints}x flat (file is one key — multiply in your slicer).
-- ${switchCount ? `Gate paddles: print ${switchCount}x lying on their sides. Pin drops into the deck bore; it must swing freely.` : 'No switches in this design.'}
-- Pillars & towers: print upright. Everything shares one interlock: hex tenon
-  8.6 mm AF into hex socket 9 mm AF × 10 deep.
-- Palm trees: pre-rotated crown-down. Figure body & pendulum: pre-rotated onto
-  their sides so the hoof cams print as smooth arcs. NEVER print the figure upright.
+- Material: PLA. 0.2 mm layers.
+- Perimeters and infill barely matter here: the track is a ${SPEC.wall} mm shell, which
+  is ${Math.round(SPEC.wall / 0.4)} lines wide at a 0.4 nozzle, so it comes out solid whatever you
+  set. Two or three perimeters and any infill is fine.
+- COOLING MATTERS. The skirt is an arcade, and the crown of each arch is
+  bridged across open air — up to about 55 mm on the widest one. Full part
+  cooling; slow down for bridges if your slicer offers it. The walking
+  surface also bridges the channel, so the same setting protects it.
+- Track pieces print rim-down (the flat bottom edge of the skirt on the bed,
+  walking surface up) — which is also how they sit in use, so "this way up"
+  is simply the way they are oriented in the file.
+- A piece touches the bed only on its two end pads, its arcade piers and its
+  socket boss. That is a modest footprint for a 150-225 mm part: use a brim
+  if your first layer is at all marginal.
+- Pillars, risers, feet and towers: print upright. Everything shares one
+  interlock — hex tenon ${SPEC.socket.hexAF - 0.4} mm AF into hex socket ${SPEC.socket.hexAF} mm AF x ${SPEC.socket.depth} deep.
+- Connector keys print flat. Gate paddles print on their sides.
+- Palm trees are pre-rotated crown-down. The figure's body and pendulum are
+  pre-rotated onto their sides so the hoof cams print as smooth arcs —
+  NEVER print the figure upright.
 
 ASSEMBLY (in order)
-1. Butt each seam together and drop a bowtie connector key into the shared
-   pocket under the floor (Hot-Wheels style). The downhill floor sits 0.25 mm
-   lower by design (waterfall rule) — do not "fix" this.
-2. Plug pillars/towers into the hex sockets; heights are pre-computed.
-3. ${switchCount ? 'Insert gate paddles into switch bores; flick to route the horse.' : ''}
-4. Cut a 3 mm steel/brass rod to ${(state.innerWidth - 4 + 3).toFixed(0)} mm for the axle.
-   Pendulum must swing DEAD FREE — add dry graphite.
-5. Drop steel BBs into the ballast bores (see the app's Ballast plan), rear/low bias.
-6. GLUE ALL PLUGS AND THE AXLE ENDS (CA glue) — mandatory choke-hazard seal
-   for children under 3.
+${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
 SCENERY PLACEMENT (from your design)
 ${sceneryLines}
 
 TUNING
-Use the app's Troubleshooting matrix. First test on a single straight ramp at 11°.
+Use the app's Troubleshooting matrix. Test one straight tile first, at the
+design slope of ${state.slopeDeg}°, before committing to a whole tower.
 `;
 }
 

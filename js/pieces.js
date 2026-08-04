@@ -5,8 +5,10 @@
  *  - export geometry: fine washboard sweep + print-friendly joints
  *
  * Joint system (v2, slicer-verified friendly): every mating end face gets a
- * full-height internal END RIB (bed → drumhead ceiling — prints as a plain
- * wall and seals the acoustic chamber) with a BOWTIE POCKET recessed into it.
+ * full-height internal END RIB (bed → drumhead ceiling, printing as a plain
+ * wall) with a BOWTIE POCKET recessed into it. The rib is windowed through to
+ * its back face — it used to keep a solid slab there to seal the underside,
+ * which is not a job this part has.
  * A separate print-flat bowtie key bridges each seam, Hot-Wheels style.
  * No geometry ever overhangs: the old protruding dovetail tab was a floating
  * cantilever on the build plate.

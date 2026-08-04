@@ -79,7 +79,7 @@ lower. A toy can step *down* a microscopic ledge but stubs its toe on even a
 | Channel width | 46–50 mm | figure width + 3–4 mm total clearance |
 | Rail height | 14 mm | guides the base, clears the swinging torso |
 | Floor fillets | r = 2 mm | re-centers a wandering hoof without snagging |
-| Floor thickness | 2.0–2.6 mm over a hollow skirt | acoustic drumhead ("klip-klop" amplifier) |
+| Floor thickness | 2.0–2.6 mm over an open skirt | acoustic drumhead ("klip-klop" amplifier) |
 | Tier clearance | ≥ 100 mm vertical where the path overlaps itself | figure + rails + structure |
 
 ## 5. Mass properties

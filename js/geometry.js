@@ -168,7 +168,10 @@ export function extrudeOutlineX(pts, x0, x1) {
 /**
  * The Klip-Klop U-channel cross-section — a closed "staple" outline giving a
  * constant-thickness shell: guide rails, floor with hoof-recentering fillets,
- * hollow acoustic chamber below, and skirt walls down to a flat rim.
+ * open underside, and skirt walls down to a flat rim. (The underside used to
+ * be described as a sealed acoustic chamber; the arcade opens it to the air
+ * and the end ribs are windowed through, so it is not sealed and does not
+ * need to be.)
  *
  *          railTop ┌t┐               ┌t┐
  *                  │ │  fillet    fillet│ │
