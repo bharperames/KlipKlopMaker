@@ -425,17 +425,20 @@ function bulkheadStations(piece, spec, bossStations, pierStation) {
 }
 
 /**
- * Bulkheads: a plate one wall thick across the channel at every interior
- * arcade boundary, standing on the bed and running up to just under the floor.
- * See `windowBounds` in geometry.js for why the arcade needs them — briefly,
- * a flat window ceiling is a bridge and needs an anchor at both ends, and a
- * bulkhead is a lighter, more stable and less visible anchor than the 8 mm
- * skirt foot it replaces.
+ * Bulkheads. Not a slab — a BRACKET: full height where it meets the skirt
+ * walls, tapering in at 45 deg to a low sill across the middle that picks up
+ * the socket cup. The full-height corners are the part that matters (they are
+ * what the window ceiling bridges land on, and the mullion you see from
+ * outside); the middle only has to reach the cup, so the slab that used to
+ * fill it was ~35% of the plate doing nothing.
  *
- * The top stops 0.5 mm short of the floor underside AT ITS DOWNHILL EDGE. The
- * deck falls 0.2 mm/mm, so a level top that just met the floor on its uphill
- * edge would break through it on the downhill one — the same trap the boss
- * itself fell into before it was slanted.
+ * The top OVERLAPS 0.5 mm into the floor rather than stopping short of it.
+ * Stopping short left a 0.5 mm slot of open air between the bracket and the
+ * ramp — visible in the part inspector, and it would have printed as an
+ * unbonded wall standing under a floor it never touched. Overlap is measured
+ * from the floor underside at the plate's UPHILL edge, since the deck falls
+ * 0.2 mm/mm across it, and 0.5 mm into a 2 mm floor leaves the walking
+ * surface untouched.
  */
 function bulkheadOps(piece, spec, bossStations, pierStation) {
     const half = spec.wall / 2;
@@ -443,14 +446,25 @@ function bulkheadOps(piece, spec, bossStations, pierStation) {
     return bulkheadStations(piece, spec, bossStations, pierStation).map(s => {
         const pos = planPosAt(piece, s);
         const Wo = innerWidthAt(piece, s) / 2 + spec.wall;
-        const under = deckYAt(piece, s) - spec.floorThk - grad * half;
-        return {
-            op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(
-                planToWorld([[-Wo, -half], [Wo, -half], [Wo, half], [-Wo, half]],
-                    { x: pos.x, z: pos.z, h: pos.h }),
-                piece.rimY, under - 0.5))
-        };
+        // highest the floor underside gets anywhere across the plate
+        const topY = deckYAt(piece, s) + grad * half - spec.floorThk + 0.5;
+        const atPier = pierStation != null && Math.abs(s - pierStation) < 0.5;
+        const sillY = atPier ? bossCupTop(piece, spec, s) : piece.rimY + 4;
+
+        const prof = [[-Wo, piece.rimY], [Wo, piece.rimY], [Wo, topY]];
+        const uStar = sillY - topY + Wo;      // where a 45 deg taper hits the sill
+        if (uStar > 0.2) prof.push([uStar, sillY], [-uStar, sillY]);
+        else prof.push([0, Math.max(sillY, topY - Wo)]);
+        prof.push([-Wo, topY]);
+
+        const dir = [Math.cos(pos.h), Math.sin(pos.h)];
+        const right = [Math.sin(pos.h), -Math.cos(pos.h)];
+        const stations = [-half, half].map(d => ({
+            origin: [pos.x + dir[0] * d, 0, pos.z + dir[1] * d],
+            right: [right[0], 0, right[1]],
+            up: [0, 1, 0]
+        }));
+        return { op: ADDITION, geometry: toBufferGeometry(sweepSolid([prof, prof], stations)) };
     });
 }
 

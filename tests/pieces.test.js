@@ -300,6 +300,29 @@ describe('arcade bulkheads', () => {
                 expect(top).toBeLessThan(deckYAt(pc, s) + SPEC.ridge.height + 0.05);
                 // … and the bulkhead must actually reach the bed to anchor
                 expect(bottom).toBeLessThan(pc.rimY + 0.01);
+
+                // No horizontal face may sit in a thin band just under the
+                // floor. A bracket top stopping short of the floor leaves
+                // exactly that: a slot of open air the width of the channel,
+                // with a wall standing under a ramp it never touches.
+                // Look for a horizontal FACE, not stray vertices: a plate that
+                // stops short spans the channel with its top, and a rectangle's
+                // top face only has vertices at its outer corners.
+                const under = deckYAt(pc, s) - SPEC.floorThk;
+                let lids = 0;
+                for (let t = 0; t < g.indices.length; t += 3) {
+                    const v = [0, 1, 2].map(k => g.indices[t + k] * 3);
+                    const ys = v.map(i => g.positions[i + 1]);
+                    if (Math.max(...ys) - Math.min(...ys) > 0.05) continue;   // not horizontal
+                    if (ys[0] >= under - 0.02 || ys[0] <= under - 2) continue; // not in the slot band
+                    const cx = v.reduce((a, i) => a + g.positions[i], 0) / 3 - pos.x;
+                    const cz = v.reduce((a, i) => a + g.positions[i + 2], 0) / 3 - pos.z;
+                    if (Math.abs(cx * dir[0] + cz * dir[1]) > SPEC.wall / 2 + 0.05) continue;
+                    if (Math.abs(cx * right[0] + cz * right[1]) > Wi - 1) continue;
+                    lids++;
+                }
+                expect(`${pc.name}@${s.toFixed(0)}: ${lids} lid face(s) below the floor`)
+                    .toBe(`${pc.name}@${s.toFixed(0)}: 0 lid face(s) below the floor`);
             }
         }
     });
