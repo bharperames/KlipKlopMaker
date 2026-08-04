@@ -85,6 +85,9 @@ function toManifold(g) {
     return new wasm.Manifold(mesh);
 }
 
+/** Gate blade: 2.6 mm thick, 52 mm long — matches buildGateGeometry's vane. */
+export const GATE = { vaneThk: 2.6, len: 52 };
+
 export const ADDITION = 'add';
 export const SUBTRACTION = 'subtract';
 
@@ -268,7 +271,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
     ops.push(...bossOps(mainPiece, spec, support));
 
     // gate pivot bore
-    const pinPos = gatePinPosition(mainPiece);
+    const pinPos = gatePinPosition(mainPiece, branchPiece);
     const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, segmentsForCircle(1.65));
     pin.translate(pinPos.x, pinPos.deckY + spec.railHeight / 2, pinPos.z);
     ops.push({ op: SUBTRACTION, geometry: pin });
@@ -634,7 +637,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
     // gate pivot bore: vertical Ø3.3 through the deck at the divergence point
-    const pinPos = gatePinPosition(mainPiece);
+    const pinPos = gatePinPosition(mainPiece, branchPiece);
     const pin = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 10, segmentsForCircle(1.65));
     pin.translate(pinPos.x, pinPos.deckY + spec.railHeight / 2, pinPos.z);
     ops.push({ op: SUBTRACTION, geometry: pin });
@@ -648,23 +651,59 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
  * swung inward → it sweeps across the channel and deflects the figure into
  * the diverging route (how the original playset gates work).
  */
-export function gatePinPosition(mainPiece) {
+/**
+ * Where the gate blade pivots, and how far it swings.
+ *
+ * It is a railway POINT BLADE, not a barrier: parked it continues the main
+ * route's wall so the figure runs straight past; swung, its tip lands on the
+ * branch's outer wall so the two form one continuous curve into the turn.
+ * Both positions are therefore read off the geometry rather than chosen:
+ *
+ *  - the hinge goes where the branch's outer wall first LEAVES the main's,
+ *    which is the actual point of divergence (~25 mm in on the standard
+ *    switch). It used to sit at a flat 16 mm and 4 mm inboard of the wall —
+ *    floating in mid-channel, upstream of anything to divert.
+ *  - the swing is whatever puts the blade's tip on the branch's outer wall at
+ *    the blade's far end (~18 deg). It used to be asin((innerWidth-4)/50),
+ *    which has no relation to the blade and came out at 62 deg: a 52 mm blade
+ *    thrown 46 mm across a 48 mm channel, i.e. a door, and one that closed the
+ *    branch as surely as the main since at 16 mm in the two routes are still
+ *    the same channel.
+ */
+export function gatePinPosition(mainPiece, branchPiece) {
     const h = mainPiece.entry.h;
     const dir = [Math.cos(h), Math.sin(h)];
     const right = [Math.sin(h), -Math.cos(h)];
     // branch curls toward −right for switchL → hinge on +right wall (and vice versa)
     const hingeSide = mainPiece.switchType === 'switchL' ? 1 : -1;
-    const s = 16;
-    const lat = (mainPiece.innerWidth / 2 - 4) * hingeSide;
+    const wall = mainPiece.innerWidth / 2;
+
+    /** Branch's outer (hinge-side) wall as a lateral offset in the main frame. */
+    const branchOuter = (s) => {
+        if (!branchPiece) return wall;
+        const q = planPosAt(branchPiece, Math.min(s, branchPiece.planLen));
+        const dx = q.x - mainPiece.entry.x, dz = q.z - mainPiece.entry.z;
+        const off = (dx * right[0] + dz * right[1]) * hingeSide;
+        const turn = Math.abs(branchPiece.turn ?? 0) * Math.min(s, branchPiece.planLen)
+            / (branchPiece.planLen || 1);
+        return off + (branchPiece.innerWidth / 2) / Math.max(0.2, Math.cos(turn));
+    };
+
+    // divergence: first station where the branch wall has pulled clear
+    let sHinge = 0;
+    while (sHinge < mainPiece.planLen && wall - branchOuter(sHinge) < 0.5) sHinge += 1;
+    sHinge = Math.min(sHinge, mainPiece.planLen - GATE.len);
+
+    const reach = Math.max(0, wall - branchOuter(sHinge + GATE.len));
+    const lat = (wall - GATE.vaneThk / 2) * hingeSide;   // parked flush with the wall
     return {
-        x: mainPiece.entry.x + dir[0] * s + right[0] * lat,
-        z: mainPiece.entry.z + dir[1] * s + right[1] * lat,
-        deckY: mainPiece.entryDeck - (s / mainPiece.planLen) * mainPiece.drop,
+        x: mainPiece.entry.x + dir[0] * sHinge + right[0] * lat,
+        z: mainPiece.entry.z + dir[1] * sHinge + right[1] * lat,
+        deckY: mainPiece.entryDeck - (sHinge / mainPiece.planLen) * mainPiece.drop,
         hingeSide,
-        // yaw of the blade (which extends forward from the hinge):
-        // parked along the wall vs swung ~33° across the channel toward the branch
+        s: sHinge,
         yawParked: h,
-        yawDiverting: h + (mainPiece.switchType === 'switchL' ? 1 : -1) * Math.asin(Math.min(0.99, (mainPiece.innerWidth - 4) / 50))
+        yawDiverting: h - hingeSide * Math.asin(Math.min(0.95, reach / GATE.len))
     };
 }
 
@@ -717,8 +756,8 @@ export function buildGateGeometry(spec = SPEC) {
     const profiles = levels.map(l => circlePlan(l.r, nHub).map(([x, z]) => [x, -z]));
     const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
     const hub = toBufferGeometry(sweepSolid(profiles, stations));
-    const vane = new THREE.BoxGeometry(2.6, spec.railHeight - 2, 52);
-    vane.translate(0, (spec.railHeight - 2) / 2, 24);
+    const vane = new THREE.BoxGeometry(GATE.vaneThk, spec.railHeight - 2, GATE.len);
+    vane.translate(0, (spec.railHeight - 2) / 2, GATE.len / 2 - 2);
     return csgChain(hub, [{ op: ADDITION, geometry: vane }]);
 }
 

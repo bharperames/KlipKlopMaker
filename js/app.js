@@ -37,7 +37,7 @@ import {
     buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
-    sectionGeometry, supportStations
+    sectionGeometry, supportStations, GATE
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
@@ -405,9 +405,9 @@ function rebuild() {
     // the wall (straight through) or swung in to deflect into the branch
     for (const sw of switches) {
         const pair = switchPairs.get(sw.key);
-        const pin = gatePinPosition(pair.main);
-        const vane = new THREE.BoxGeometry(2.6, SPEC.railHeight - 2, 52);
-        vane.translate(0, (SPEC.railHeight - 2) / 2, 24); // hinge at one end
+        const pin = gatePinPosition(pair.main, pair.branch);
+        const vane = new THREE.BoxGeometry(GATE.vaneThk, SPEC.railHeight - 2, GATE.len);
+        vane.translate(0, (SPEC.railHeight - 2) / 2, GATE.len / 2 - 2); // hinge at one end
         const paddle = new THREE.Mesh(vane, MAT.gate);
         const yaw = sw.gate === 'branch' ? pin.yawDiverting : pin.yawParked;
         paddle.position.set(pin.x, pin.deckY, pin.z);
