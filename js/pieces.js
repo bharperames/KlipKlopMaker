@@ -760,7 +760,9 @@ export function gatePinPosition(mainPiece, branchPiece) {
         hingeSide,
         s: sHinge,
         yawParked: h,
-        yawDiverting: h - hingeSide * Math.asin(Math.min(0.95, reach / GATE.len))
+        // + hingeSide, not −: the tip's lateral offset moves by −len·sin(δ),
+        // so a positive δ carries it INTO the channel on the +right wall.
+        yawDiverting: h + hingeSide * Math.asin(Math.min(0.95, reach / GATE.len))
     };
 }
 
