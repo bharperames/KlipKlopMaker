@@ -567,6 +567,27 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
 }
 
 /** Regular polygon (plan) for hex sockets / tenons. acrossFlats in mm. */
+/**
+ * The hex boundary sampled at `n` evenly spaced angles, so it can be LOFTED
+ * into a circle of the same point count. Stepping straight from a 6-point hex
+ * to a round bore leaves a ledge whichever radius you pick — match the
+ * inradius and the hex corners overhang, match the circumradius and the flats
+ * do — and that ledge sits inside a blind socket where support cannot be got
+ * out again.
+ */
+export function hexRingPlan(acrossFlats, n, rotation = 0) {
+    const a = acrossFlats / 2;                 // inradius
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const th = rotation + (i / n) * 2 * Math.PI;
+        // distance to the hex boundary at this angle
+        const k = ((th - rotation) % (Math.PI / 3) + Math.PI / 3) % (Math.PI / 3);
+        const r = a / Math.cos(k - Math.PI / 6);
+        pts.push([r * Math.cos(th), r * Math.sin(th)]);
+    }
+    return pts;
+}
+
 export function hexPlan(acrossFlats, rotation = 0) {
     const R = (acrossFlats / 2) / Math.cos(Math.PI / 6);
     const pts = [];

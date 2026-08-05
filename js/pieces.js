@@ -23,7 +23,7 @@ import Module from 'manifold-3d';
 import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt } from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
-    bowtieKeyPlan, bowtiePocketPlan, hexPlan, circlePlan, SIMPLIFY_TOL_MM,
+    bowtieKeyPlan, bowtiePocketPlan, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
     ridgeStationSpacing, archStations,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
@@ -461,24 +461,33 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
     const rBore = spec.socket.bossR - 3;          // leave a 3 mm wall
     const yStart = piece.rimY + spec.socket.depth;
     const flare = rBore - rSock;
-    // CAP is what stops the bore breaking through the deck: it stays this far
-    // below the floor underside at every point, so the floor keeps its full
-    // thickness plus a bridgeable lid over the void.
-    const CAP = 0.7;
-    if (underside(spec.socket.bossR) - CAP - (yStart + flare) < 3) return [];
+    // The bore's roof used to be a flat lid held CAP below the floor: a Ø13
+    // horizontal ceiling inside a blind hole, which is exactly the shape a
+    // slicer plants support under. It is a CONE now, closing at 45 deg, so the
+    // whole bore is self-supporting end to end and there is no flat anywhere
+    // in it. The apex is level rather than following the deck — over a Ø13
+    // bore the deck falls 2.6 mm, and a level apex placed under the LOWEST
+    // point of that is simpler than lofting a sloped tip.
+    const yApex = underside(rBore) - 0.4;
+    if (yApex - (yStart + flare) < rBore * 0.6) return [];
 
-    // 45 deg cone off the socket mouth — self-supporting, and no horizontal
-    // ledge for the print to start from
-    const n = segmentsForCircle(rBore);
-    const cone = toBufferGeometry(sweepSolid(
-        [{ y: yStart, r: rSock }, { y: yStart + flare, r: rBore }]
-            .map(l => circlePlan(l.r, n).map(([x, z]) => [cx + x, -(cz + z)])),
-        [{ y: yStart }, { y: yStart + flare }]
-            .map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
-    ));
-    const shaft = slantedCylinder(cx, cz, heading, rBore, yStart + flare - 0.01,
-        (ds) => underside(ds) - CAP);
-    return [cone, shaft];
+    // One lofted sleeve, sampled at a common point count so the hex can turn
+    // into the round bore without a step: hex at the socket top, flared out at
+    // 45°, straight, then closed at 45° to a point.
+    const n = Math.max(24, segmentsForCircle(rBore));
+    const place = (pts) => pts.map(([x, z]) => [cx + x, -(cz + z)]);
+    const ring = (r) => place(circlePlan(r, n));
+    const at = (y) => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] });
+
+    const yRoof = Math.max(yStart + flare + 0.2, yApex - rBore);
+    const profiles = [
+        place(hexRingPlan(spec.socket.hexAF, n)),
+        ring(rBore),
+        ring(rBore),
+        ring(Math.max(0.3, rBore - (yApex - yRoof)))
+    ];
+    const heights = [yStart, yStart + flare, yRoof, yApex];
+    return [toBufferGeometry(sweepSolid(profiles, heights.map(at)))];
 }
 
 /**
