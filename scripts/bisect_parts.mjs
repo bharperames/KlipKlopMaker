@@ -29,8 +29,16 @@ const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const OUT = path.resolve(arg('out', path.join(ROOT, 'test-parts')));
 const PIECE = arg('piece', 'straight');
 const SPACING = Number(arg('spacing', 60));
+// One file per commit instead of one combined file. Needed because a slicer's
+// per-object attribution can be unreliable: Bambu has reported a "floating
+// cantilever" against an object that slices clean once its plate-mates are
+// deleted. Only a solo plate answers "is THIS part printable".
+const SOLO = argv.includes('--solo');
+// Only these flags consume the next token; --solo is boolean, so treating
+// every flag as value-taking would eat the first commit.
+const VALUED = new Set(['--out', '--piece', '--spacing']);
 const commits = argv.filter((a, i) =>
-    !a.startsWith('--') && !(i > 0 && argv[i - 1].startsWith('--')));
+    !a.startsWith('--') && !(i > 0 && VALUED.has(argv[i - 1])));
 
 if (!commits.length) {
     console.error('give at least one commit, e.g.  node scripts/bisect_parts.mjs 2a009a4 ff55e48 HEAD');
@@ -82,7 +90,13 @@ function seat(g) {
 }
 
 fs.mkdirSync(OUT, { recursive: true });
-for (const f of fs.readdirSync(OUT)) if (f.startsWith('bisect')) fs.unlinkSync(path.join(OUT, f));
+// Clear stale output from a PREVIOUS combined run, which may have had more
+// objects than this one and would otherwise leave orphans. Solo mode needs no
+// clearing — it overwrites each plate by name — and must not run it, or a
+// second invocation would delete the plates from the first.
+if (!SOLO) {
+    for (const f of fs.readdirSync(OUT)) if (f.startsWith('bisect.')) fs.unlinkSync(path.join(OUT, f));
+}
 
 const parts = [], legend = [];
 commits.forEach((rev, i) => {
@@ -103,6 +117,23 @@ commits.forEach((rev, i) => {
 });
 
 if (!parts.length) { console.error('nothing built'); process.exit(1); }
+
+const wrap = (xml) => Buffer.from(fflate.zipSync({
+    '[Content_Types].xml': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/3D/3dmodel.model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'), { level: 0 }],
+    '_rels/.rels': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'), { level: 0 }],
+    '3D/3dmodel.model': [fflate.strToU8(xml), { level: 6 }]
+}));
+
+if (SOLO) {
+    for (const p of parts) {
+        const file = path.join(OUT, `bisect_solo_${PIECE}_${p.name}.3mf`);
+        fs.writeFileSync(file, wrap(generateMultiObject3MFXML([{ ...p, at: [0, 0, 0] }])));
+        console.log(`-> ${file}`);
+    }
+    fs.writeFileSync(path.join(OUT, `bisect_solo_${PIECE}.txt`),
+        `commit bisect (SOLO) — ${PIECE}\n\nOne plate per commit; slice each on its own.\n\n${legend.join('\n')}\n`);
+    process.exit(0);
+}
 
 const xml = generateMultiObject3MFXML(parts);
 fs.writeFileSync(path.join(OUT, 'bisect.3mf'), Buffer.from(fflate.zipSync({

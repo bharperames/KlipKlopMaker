@@ -44,6 +44,11 @@ const VALUES = arg('values', '').split(',').filter(Boolean).map(Number);
 const PIECE = arg('piece', 'straight');
 const SPACING = Number(arg('spacing', 60));
 const PLATE = Number(arg('plate', 256));      // Bambu X1C bed
+// One plate per variant. A packed plate is fine for printing but useless as a
+// diagnostic: Bambu attributes a support warning to the wrong object when
+// several are loaded, and does not re-run the check when one is deleted — only
+// on load. Every verdict gathered from a packed plate here proved unreliable.
+const SOLO = argv.includes('--solo');
 
 /** Downward skirt-wall area, split by angle from horizontal. */
 function wallAngles(g) {
@@ -94,7 +99,8 @@ fs.mkdirSync(OUT, { recursive: true });
 // otherwise leaves orphans behind, and picking the right file out of a folder
 // of near-identical names is the exact friction this script exists to remove.
 for (const f of fs.readdirSync(OUT)) {
-    if (f.startsWith(`${KEY}_`) || f.startsWith(`sweep_${KEY}.`)) fs.unlinkSync(path.join(OUT, f));
+    if (f.startsWith(`${KEY}_`) || f.startsWith(`sweep_${KEY}.`) ||
+        f.startsWith(`solo_${PIECE}_${KEY}_`)) fs.unlinkSync(path.join(OUT, f));
 }
 
 const sweep = VALUES.length ? VALUES : {
@@ -129,14 +135,24 @@ sweep.forEach((v, i) => {
 });
 ARCH[KEY] = original;
 
-const xml = generateMultiObject3MFXML(parts);
-const zip = fflate.zipSync({
+const wrap = (xml) => Buffer.from(fflate.zipSync({
     '[Content_Types].xml': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/3D/3dmodel.model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'), { level: 0 }],
     '_rels/.rels': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'), { level: 0 }],
     '3D/3dmodel.model': [fflate.strToU8(xml), { level: 6 }]
-});
-const setFile = path.join(OUT, `sweep_${KEY}.3mf`);
-fs.writeFileSync(setFile, Buffer.from(zip));
+}));
+
+let setFile;
+if (SOLO) {
+    for (const p of parts) {
+        const f = path.join(OUT, `solo_${PIECE}_${p.name}.3mf`);
+        fs.writeFileSync(f, wrap(generateMultiObject3MFXML([{ ...p, at: [0, 0, 0] }])));
+        console.log(`-> ${f}`);
+    }
+    setFile = `${sweep.length} solo plates in ${OUT}`;
+} else {
+    setFile = path.join(OUT, `sweep_${KEY}.3mf`);
+    fs.writeFileSync(setFile, wrap(generateMultiObject3MFXML(parts)));
+}
 
 const rows = legend.map(l =>
     `  Object_${l.obj}  ${l.name.padEnd(18)} ${KEY}=${String(l.value).padEnd(6)} ` +

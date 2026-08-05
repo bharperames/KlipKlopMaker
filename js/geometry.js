@@ -281,11 +281,29 @@ export const ARCH = {
     // built on top. It sags a little and then self-corrects, and it is on a
     // hidden face carrying no load — but a shorter one is better, and this is
     // the dial. Weight barely moves across its useful range.
-    maxBridge: 70,
+    // Lowered from 70. Whatever has not closed by the crown is laid down in a
+    // single layer, and 70 let a shallow window leave 52.9 mm of it — past the
+    // ~52 mm where a flat-crowned test part was rejected. 50 holds the worst
+    // case to 47.6 mm, which sliced clean.
+    //
+    // This is the loosest value that keeps a straight to TWO arches, which is
+    // the point: 45 would give more margin but adds a third pier, and the
+    // arcade is meant to look like a viaduct rather than a centipede. The
+    // measured band is narrow — 47.6 passes, 51.9 does not — so treat this as
+    // pinned by experiment, not as a number with room in it.
+    maxBridge: 50,
     // Haunch radius as a fraction of the half-span, for the three-centred
     // arch. Bigger = rounder shoulders and a tighter crown; smaller = a
     // sharper spring off the pier and a flatter span.
+    //
+    // Retained for archArcs, which capAbove still consults; archCurve is a
+    // corbel now and does not use it.
     haunch: 0.38,
+    // Steepest the arch soffit may lean from vertical, in degrees. This is the
+    // print limit, not a style choice: past it a layer oversteps the one below
+    // by more than the extrusion can bridge to, and the slicer demands
+    // supports. 55 leaves margin under the 58.6 deg that measured clean.
+    maxOverhangDeg: 55,
     // Fraction of the span given a FLAT crown. 0 is a pure arch; 1 is the
     // flat-topped opening the arcade used to have.
     //
@@ -322,11 +340,35 @@ function archArcs(a, cap) {
 
 /** The three-centred curve alone, no flat crown. */
 function archCurve(a, cap, x) {
-    const A = archArcs(a, cap);
-    if (!A) return Math.min(cap, Math.sqrt(Math.max(0, a * a - x * x)));
-    return Math.abs(x) >= A.Jx
-        ? Math.sqrt(Math.max(0, A.rh * A.rh - (Math.abs(x) - A.Hx) ** 2))
-        : A.Cy + Math.sqrt(Math.max(0, A.R * A.R - x * x));
+    // CORBELLED SEGMENTAL ARCH: a circle of radius `a` off the springing, and
+    // where its tangent reaches ARCH.maxOverhangDeg from vertical, a straight
+    // run at exactly that angle up to the crown. Tangent at the junction by
+    // construction, and it never leans past the limit anywhere.
+    //
+    // Two constraints bound this shape and only one of them is obvious:
+    //
+    //   overhang  — each layer may only overstep the one below so far before
+    //               the extrusion has nothing to sit on. The three-centred arch
+    //               this replaces reached 75.6 deg from vertical approaching
+    //               its crown and Bambu Studio called it a floating cantilever.
+    //   flat span — whatever has NOT closed by the crown is bridged in one
+    //               layer. A pure circle clipped flat (the pre-arcade shape)
+    //               stayed at 58.6 deg but left a 47.5 mm span, and a fully
+    //               flat crown left 51.9 mm and was rejected too.
+    //
+    // Optimising either one alone drives the other over its limit, which is
+    // what made this so slow to find: three separate "fixes" each moved one
+    // number the right way and the other the wrong way. The corbel satisfies
+    // both — the straight run closes the opening far faster than a circle
+    // while holding the angle fixed. See tests/geometry.test.js.
+    const t = Math.tan(Math.min(75, Math.max(30, ARCH.maxOverhangDeg)) * Math.PI / 180);
+    const ax = Math.abs(x);
+    const xt = a / Math.sqrt(1 + t * t);          // circle tangent hits the limit
+    const yt = a * t / Math.sqrt(1 + t * t);
+    const y = ax >= xt
+        ? Math.sqrt(Math.max(0, a * a - ax * ax))
+        : yt + (xt - ax) / t;
+    return Math.min(cap, y);
 }
 
 /** Height of the arch above the rim at offset x from the opening's centre. */

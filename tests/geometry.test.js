@@ -234,6 +234,72 @@ describe('skirt arch windows print without support', () => {
         }
     });
 
+    test('the arch soffit stays inside the printable envelope', async () => {
+        // Two independent limits, and satisfying only one is what made the
+        // slicer's "floating cantilever" so hard to pin down:
+        //
+        //   overhang   how far a layer may overstep the one below. The
+        //              three-centred arch reached 75.6 deg from vertical and
+        //              was rejected; the shape before it held 58.6 and passed.
+        //   flat span  what has NOT closed by the crown is bridged in one
+        //              layer. 47.6 mm passed, 51.9 mm was rejected — so the
+        //              bound here is a measured edge, not a safe margin.
+        //
+        // Bisected on solo plates against Bambu Studio (a packed plate mis-
+        // attributes the warning and caches the verdict across deletes, so
+        // every packed-plate reading proved worthless). Confirmed by a hybrid
+        // build that swapped ONLY this function and went clean.
+        const { archedRimY } = await import('../js/geometry.js');
+        const { SPEC, layoutTrack, planPillarPositions } = await import('../js/track.js');
+        for (const seq of [
+            ['straight', 'straight', 'straight'],
+            ['straight', 'curveL', 'straight'],
+            ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
+            ['lift', 'straight', 'curveR']
+        ]) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const supports = planPillarPositions(pieces);
+            for (const pc of pieces) {
+                const sup = supports.find(s => s.pieceIndex === pc.index);
+                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
+                const forced = sup && sup.mode === 'outrigger' ? sup.s : null;
+                const N = 4000, d = pc.planLen / N;
+                const ys = [];
+                for (let k = 0; k <= N; k++) ys.push(archedRimY(pc, k * d, SPEC, pads, forced));
+                // each raised run is one window
+                const runs = [];
+                let cur = null;
+                for (let k = 0; k <= N; k++) {
+                    if (ys[k] > pc.rimY + 0.05) cur = cur ? (cur.b = k, cur) : { a: k, b: k };
+                    else if (cur) { runs.push(cur); cur = null; }
+                }
+                if (cur) runs.push(cur);
+                for (const r of runs) {
+                    let top = -Infinity, ti = r.a;
+                    for (let k = r.a; k <= r.b; k++) if (ys[k] > top) { top = ys[k]; ti = k; }
+                    // walk the left limb by height and measure the lean
+                    const pts = [];
+                    for (let h = 0.4; h <= top - pc.rimY; h += 0.4) {
+                        for (let k = r.a; k <= ti; k++) {
+                            if (ys[k] - pc.rimY >= h) { pts.push([h, k * d]); break; }
+                        }
+                    }
+                    let lean = 0;
+                    for (let i = 1; i < pts.length - 3; i++) {
+                        const dh = pts[i][0] - pts[i - 1][0];
+                        const dx = Math.abs(pts[i][1] - pts[i - 1][1]);
+                        lean = Math.max(lean, Math.atan2(dx, dh) * 180 / Math.PI);
+                    }
+                    let lo = null, hi = null;
+                    for (let k = r.a; k <= r.b; k++) if (ys[k] > top - 0.2) { if (lo === null) lo = k; hi = k; }
+                    const span = (hi - lo) * d;
+                    expect(`${pc.name} lean ${lean.toFixed(0)} span ${span.toFixed(0)}`).toBe(
+                        `${pc.name} lean ${Math.min(lean, 58).toFixed(0)} span ${Math.min(span, 48).toFixed(0)}`);
+                }
+            }
+        }
+    });
+
     test('a window never cuts into the floor it is under', async () => {
         // The cap is one number for a whole window, so it has to clear the
         // LOWEST deck over that window. Taken at the window centre instead,
