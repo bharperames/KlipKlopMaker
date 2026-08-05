@@ -90,6 +90,12 @@ function buildOne() {
 
 await initCSG();
 fs.mkdirSync(OUT, { recursive: true });
+// Clear this key's previous output. A sweep with fewer values than last time
+// otherwise leaves orphans behind, and picking the right file out of a folder
+// of near-identical names is the exact friction this script exists to remove.
+for (const f of fs.readdirSync(OUT)) {
+    if (f.startsWith(`${KEY}_`) || f.startsWith(`sweep_${KEY}.`)) fs.unlinkSync(path.join(OUT, f));
+}
 
 const sweep = VALUES.length ? VALUES : {
     crownFlat: [0, 0.35, 0.7, 0.95],
