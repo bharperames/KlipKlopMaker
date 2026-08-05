@@ -67,16 +67,37 @@ function meshXML(positions, indices) {
  * a whole comparison set as one file is the point: a slicer that complains
  * about only some of them will name which, instead of needing one file opened
  * at a time.
- * @param {Array<{name: string, positions, indices, at?: [number, number, number]}>} parts
+ * Plate packing also uses this, so an item may be turned as well as moved.
+ * `rot` is degrees about the build platform's vertical (3MF Z) — a proper
+ * rotation, so chiral parts (left vs right curves, bowtie flare) are never
+ * mirrored. Only the transform changes; the mesh is written once regardless
+ * of how many copies reference it.
+ *
+ * @param {Array<{name: string, positions, indices,
+ *                at?: [number, number, number], rot?: number}>} parts
  */
 export function generateMultiObject3MFXML(parts, exportUnit = 'millimeter') {
     if (!parts || !parts.length) throw new Error('no parts given');
-    const objs = parts.map((p, i) =>
-        `<object id="${i + 1}" type="model" name="${String(p.name).replace(/[&<>"]/g, '_')}">${meshXML(p.positions, p.indices)}</object>`
-    ).join('');
+    // identical meshes are written once and referenced by several build items
+    const keyOf = (p, i) => p.meshKey ?? `__item${i}`;
+    const objs = [];
+    const objIdFor = new Map();
+    parts.forEach((p, i) => {
+        const key = keyOf(p, i);
+        if (objIdFor.has(key)) return;
+        objIdFor.set(key, objs.length + 1);
+        objs.push(`<object id="${objs.length + 1}" type="model" name="${String(p.name).replace(/[&<>"]/g, '_')}">` +
+            `${meshXML(p.positions, p.indices)}</object>`);
+    });
     const items = parts.map((p, i) => {
         const [x, y, z] = p.at ?? [0, 0, 0];
-        return `<item objectid="${i + 1}" transform="1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}" />`;
+        // 3MF transform is a row-major 4x3 with row vectors: the first nine
+        // are the 3x3, the last three the translation.
+        const th = (p.rot ?? 0) * Math.PI / 180;
+        const c = Math.abs(Math.cos(th)) < 1e-12 ? 0 : Math.cos(th);
+        const s = Math.abs(Math.sin(th)) < 1e-12 ? 0 : Math.sin(th);
+        const id = objIdFor.get(keyOf(p, i));
+        return `<item objectid="${id}" transform="${c} ${s} 0 ${-s} ${c} 0 0 0 1 ${x} ${y} ${z}" />`;
     }).join('');
     return `<?xml version="1.0" encoding="UTF-8"?><model unit="${exportUnit}" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${objs}</resources><build>${items}</build></model>`;
 }

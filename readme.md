@@ -35,7 +35,11 @@ Open the served URL in any modern browser. Everything runs client-side.
   and the troubleshooting matrix. See [PHYSICS.md](PHYSICS.md) for derivations.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
-  overhangs** (slicer-verified):
+  overhangs** (slicer-verified). Choose one file per *part*, or
+  **packed plates** — every part laid out over full 256 mm beds (Bambu X1 /
+  X1C / P1S / P2S) by a MaxRects packer, one file per plate, so a tower is a
+  handful of print jobs instead of one per part. Copies of a part share a
+  single mesh in the file and differ only by their build transform:
   - track pieces with **washboard friction floors**, an **arcade skirt** of
     piers and three-centred arches under the deck, **waterfall seams**
     (downhill floor 0.25 mm lower — a seam can never trip the toy), and hex
@@ -91,6 +95,7 @@ stall/tumble terminal outcomes, with an energy-budget invariant
 | `js/pieces.js` | Three.js + Manifold-WASM CSG assembly of printable parts |
 | `js/mesh_utils.js` | manifold/orientation verification, welding, volume |
 | `js/export_3mf.js` | 3MF XML + binary STL writers (proper rotation, no mirroring) |
+| `js/plate_pack.js` | pure MaxRects bin packing of part footprints onto build plates |
 
 Pure modules have no DOM/Three.js dependencies and are covered by Jest —
 including tests that prove every exported part is a closed, consistently

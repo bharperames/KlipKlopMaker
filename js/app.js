@@ -44,8 +44,9 @@ import {
     bowtieKeyPlan, bowtiePocketPlan
 } from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
-import { generate3MFXML, generateBinarySTL } from './export_3mf.js';
+import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
+import { packPlates, describePlates, PLATE } from './plate_pack.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -3059,6 +3060,7 @@ function toast(msg) {
 
 $('btn-export-stl').addEventListener('click', () => doExport('stl'));
 $('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
+$('btn-export-plates').addEventListener('click', () => doExportPlates());
 
 /**
  * The single source of truth for what gets printed: every unique part of the
@@ -3989,8 +3991,123 @@ function rotFlip(mesh) {
     return mesh;
 }
 
+/** The 3MF container around one `3dmodel.model` payload. */
+const CT_XML = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/3D/3dmodel.model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>';
+const RELS_XML = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
+const wrap3MF = (xml) => fflate.zipSync({
+    '[Content_Types].xml': [fflate.strToU8(CT_XML), { level: 0 }],
+    '_rels/.rels': [fflate.strToU8(RELS_XML), { level: 0 }],
+    '3D/3dmodel.model': [fflate.strToU8(xml), { level: 6 }]
+});
+
+/**
+ * Footprint on the bed. Parts are recentred before this, and the exporter
+ * turns app Y-up into printer Z-up (X=x, Y=-z, Z=y), so the plate's width
+ * comes from app X, its depth from app Z, and the print height from app Y.
+ */
+function bedFootprint(positions) {
+    let mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity, mnz = Infinity, mxz = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+        mnx = Math.min(mnx, positions[i]); mxx = Math.max(mxx, positions[i]);
+        mny = Math.min(mny, positions[i + 1]); mxy = Math.max(mxy, positions[i + 1]);
+        mnz = Math.min(mnz, positions[i + 2]); mxz = Math.max(mxz, positions[i + 2]);
+    }
+    return { w: mxx - mnx, d: mxz - mnz, h: mxy - mny };
+}
+
+/**
+ * Export as FULL PLATES rather than one file per part.
+ *
+ * A tower needs a dozen-odd distinct parts in varying quantities, and a 51 mm
+ * wide ramp alone on a 256 mm plate wastes both the bed and a print job. Each
+ * file here is one plate, ready to slice as it is.
+ *
+ * Every copy of a part references ONE mesh in the 3MF and differs only by its
+ * build-item transform, so ten pillars cost one pillar's worth of vertices.
+ */
+async function doExportPlates() {
+    const btns = [$('btn-export-stl'), $('btn-export-3mf'), $('btn-export-plates')];
+    btns.forEach(b => b.disabled = true);
+    const prog = $('export-progress');
+    const log = $('export-log');
+    prog.style.display = ''; prog.value = 0;
+    log.innerHTML = '';
+
+    try {
+        await initCSG();
+        const { parts, joints, switchCount } = assembleParts();
+
+        // build each DISTINCT part once, whatever its quantity
+        const built = new Map();
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            await new Promise(res => setTimeout(res));
+            const mesh = recenter(part.build());
+            const report = analyzeMesh(mesh.positions, mesh.indices);
+            const ok = report.isManifold && report.isConsistent && report.windsOutward;
+            const count = part.count ?? 1;
+            const fp = bedFootprint(mesh.positions);
+            built.set(part.name, { mesh, count, ...fp });
+            log.innerHTML += `<div class="row"><span>${count > 1 ? `${count}× ` : ''}${part.name}` +
+                ` <span style="opacity:.6">${fp.w.toFixed(0)}×${fp.d.toFixed(0)}×${fp.h.toFixed(0)} mm</span></span>` +
+                `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span></span></div>`;
+            prog.value = (i + 1) / parts.length;
+        }
+
+        const { plates, oversized } = packPlates(
+            [...built].map(([name, b]) => ({ name, w: b.w, d: b.d, h: b.h, count: b.count })));
+        if (!plates.length && !oversized.length) throw new Error('nothing to pack');
+
+        const files = {};
+        for (const plate of plates) {
+            const items = plate.items.map(it => {
+                const b = built.get(it.name);
+                return {
+                    name: `${it.name}_${it.copy}`,
+                    meshKey: it.name,            // one <object>, many <item>s
+                    positions: b.mesh.positions,
+                    indices: b.mesh.indices,
+                    at: [it.x, it.y, 0],
+                    rot: it.rot
+                };
+            });
+            files[`plate_${String(plate.index).padStart(2, '0')}_${plate.items.length}parts.3mf`] =
+                wrap3MF(generateMultiObject3MFXML(items));
+        }
+        // anything the plate cannot hold still has to ship, on its own
+        for (const o of oversized) {
+            const b = built.get(o.name);
+            files[`oversized_${o.name}.3mf`] = wrap3MF(generate3MFXML(b.mesh.positions, b.mesh.indices));
+        }
+
+        const manifest = describePlates(plates, oversized);
+        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount, manifest));
+        const zipped = fflate.zipSync(files);
+        const blob = new Blob([zipped], { type: 'application/zip' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
+            `_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${plates.length}plates.zip`;
+        a.click();
+
+        const total = plates.reduce((s, p) => s + p.items.length, 0);
+        const fill = plates.length
+            ? Math.round(plates.reduce((s, p) => s + p.utilisation, 0) / plates.length * 100) : 0;
+        log.innerHTML += `<div class="row"><span><b>${plates.length} plate${plates.length === 1 ? '' : 's'}</b>` +
+            `, ${total} parts</span><span>${fill}% average fill</span></div>` +
+            oversized.map(o => `<div class="row"><span>${o.name}</span><span class="bad">too big for the plate (${o.reason})</span></div>`).join('');
+        toast(`⬇ ${plates.length} plate file${plates.length === 1 ? '' : 's'}, ${total} parts`);
+    } catch (err) {
+        console.error(err);
+        toast(`Plate export failed: ${err.message}`);
+    } finally {
+        btns.forEach(b => b.disabled = false);
+        prog.style.display = 'none';
+    }
+}
+
 async function doExport(format) {
-    const btns = [$('btn-export-stl'), $('btn-export-3mf')];
+    const btns = [$('btn-export-stl'), $('btn-export-3mf'), $('btn-export-plates')];
     btns.forEach(b => b.disabled = true);
     const prog = $('export-progress');
     const log = $('export-log');
@@ -4048,7 +4165,7 @@ function toArraysFromBG(g) {
     return { positions, indices };
 }
 
-function exportReadme(joints, switchCount) {
+function exportReadme(joints, switchCount, plateManifest = null) {
     const sceneryLines = state.scenery.length
         ? state.scenery.map(s => `  - ${s.kind} at (${s.x}, ${s.z}) mm`).join('\n')
         : '  (none placed)';
@@ -4083,7 +4200,18 @@ Design: "${state.name}" — slope ${state.slopeDeg}°, channel ${state.innerWidt
 ${joints} seam${joints === 1 ? '' : 's'}. Every mesh is watertight (Manifold CSG kernel), a single
 solid, and pre-oriented. No support material is needed anywhere.
 
-A filename ending in "_6x" means print six of that file.
+${plateManifest ? `PLATES
+Each plate_NN file is one full build plate, already laid out — slice and print
+it as it comes. Parts are positioned about the plate centre, so a slicer that
+re-centres the set on load will not move anything. Sized for a Bambu
+${PLATE.width}x${PLATE.depth}x${PLATE.height} mm bed (X1 / X1C / P1S / P2S) with a ${PLATE.margin} mm edge margin and
+${PLATE.gap} mm between parts. Copies of one part share a single mesh in the file.
+
+${plateManifest}
+
+Change bed size or quantities and the layout changes, so re-export rather than
+rearranging by hand — the counts below are what the design actually needs.
+` : 'A filename ending in "_6x" means print six of that file.'}
 
 PRINTING
 - Material: PLA. 0.2 mm layers.
