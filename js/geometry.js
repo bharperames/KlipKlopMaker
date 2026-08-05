@@ -285,7 +285,17 @@ export const ARCH = {
     // Haunch radius as a fraction of the half-span, for the three-centred
     // arch. Bigger = rounder shoulders and a tighter crown; smaller = a
     // sharper spring off the pier and a flatter span.
-    haunch: 0.38
+    haunch: 0.38,
+    // Fraction of the span given a FLAT crown. 0 is a pure arch; 1 is the
+    // flat-topped opening the arcade used to have.
+    //
+    // This is the dial between the two, and it is the one that moves a
+    // slicer's support decision. A flat ceiling is a clean span with an anchor
+    // at each end, which slicers class as a BRIDGE and print unsupported. A
+    // curve instead sweeps through every angle, and the 10-30 deg part of that
+    // sweep is neither flat enough to bridge nor steep enough to hold itself
+    // up — so it gets measured against the overhang threshold and flagged.
+    crownFlat: 0
 };
 
 /**
@@ -310,14 +320,25 @@ function archArcs(a, cap) {
     return { rh, R, Hx: a - rh, Cy: cap - R, Jx: R * (a - rh) / (R - rh) };
 }
 
-/** Height of the arch above the rim at offset x from the opening's centre. */
-function archHeight(a, cap, x) {
-    if (cap <= 0) return 0;
+/** The three-centred curve alone, no flat crown. */
+function archCurve(a, cap, x) {
     const A = archArcs(a, cap);
     if (!A) return Math.min(cap, Math.sqrt(Math.max(0, a * a - x * x)));
     return Math.abs(x) >= A.Jx
         ? Math.sqrt(Math.max(0, A.rh * A.rh - (Math.abs(x) - A.Hx) ** 2))
         : A.Cy + Math.sqrt(Math.max(0, A.R * A.R - x * x));
+}
+
+/** Height of the arch above the rim at offset x from the opening's centre. */
+function archHeight(a, cap, x) {
+    if (cap <= 0) return 0;
+    // A flat crown over the middle `crownFlat` of the span; the curve springs
+    // from the piers into it.
+    const f = Math.min(0.98, Math.max(0, ARCH.crownFlat));
+    if (f <= 0) return archCurve(a, cap, x);
+    const flatHalf = a * f;
+    if (Math.abs(x) <= flatHalf) return cap;
+    return archCurve(a - flatHalf, cap, Math.abs(x) - flatHalf);
 }
 
 /**

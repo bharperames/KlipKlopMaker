@@ -6,3 +6,4 @@ reports/img/
 # older checkouts and stray runs still drop these)
 server.log
 .server.pid
+test-parts/

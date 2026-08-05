@@ -43,6 +43,44 @@ export function generate3MFXML(positions, indices, exportUnit = 'millimeter') {
     return `<?xml version="1.0" encoding="UTF-8"?><model unit="${exportUnit}" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>${v}</vertices><triangles>${t}</triangles></mesh></object></resources><build><item objectid="1" /></build></model>`;
 }
 
+/** Just the <mesh> element for one solid, in 3MF's Z-up frame. */
+function meshXML(positions, indices) {
+    const { uniqueVertices, indexRemap } = deduplicateGeometry(positions, indices);
+    let v = '';
+    for (let i = 0; i < uniqueVertices.length; i++) {
+        const px = uniqueVertices[i].x;
+        const py = uniqueVertices[i].z === 0 ? 0 : -uniqueVertices[i].z;
+        const pz = uniqueVertices[i].y;
+        v += `<vertex x="${px.toFixed(6)}" y="${py.toFixed(6)}" z="${pz.toFixed(6)}" />`;
+    }
+    let t = '';
+    for (let i = 0; i < indices.length; i += 3) {
+        const a = indexRemap[indices[i]], b = indexRemap[indices[i + 1]], c = indexRemap[indices[i + 2]];
+        if (a === b || b === c || a === c) continue;
+        t += `<triangle v1="${a}" v2="${b}" v3="${c}" />`;
+    }
+    return `<mesh><vertices>${v}</vertices><triangles>${t}</triangles></mesh>`;
+}
+
+/**
+ * One 3MF holding SEVERAL named solids, each placed by a translation. Loading
+ * a whole comparison set as one file is the point: a slicer that complains
+ * about only some of them will name which, instead of needing one file opened
+ * at a time.
+ * @param {Array<{name: string, positions, indices, at?: [number, number, number]}>} parts
+ */
+export function generateMultiObject3MFXML(parts, exportUnit = 'millimeter') {
+    if (!parts || !parts.length) throw new Error('no parts given');
+    const objs = parts.map((p, i) =>
+        `<object id="${i + 1}" type="model" name="${String(p.name).replace(/[&<>"]/g, '_')}">${meshXML(p.positions, p.indices)}</object>`
+    ).join('');
+    const items = parts.map((p, i) => {
+        const [x, y, z] = p.at ?? [0, 0, 0];
+        return `<item objectid="${i + 1}" transform="1 0 0 0 1 0 0 0 1 ${x} ${y} ${z}" />`;
+    }).join('');
+    return `<?xml version="1.0" encoding="UTF-8"?><model unit="${exportUnit}" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${objs}</resources><build>${items}</build></model>`;
+}
+
 /**
  * Binary STL writer. Applies the same +90° X rotation as the 3MF path
  * (X=x, Y=-z, Z=y) — a proper rotation, NOT an axis swap, so chiral parts
