@@ -22,7 +22,7 @@ import * as fflate from 'fflate';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
-    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier,
+    getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
     planPosAt, deckYAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
@@ -4288,8 +4288,9 @@ function shopSetCount(name, n) {
 function shopBuildList() {
     const list = $('shop-list');
     list.innerHTML = '';
-    const LABEL = { track: 'Track', gate: 'Gates', key: 'Connector keys', support: 'Supports & piers', scenery: 'Scenery' };
-    for (const kind of ['track', 'gate', 'key', 'support', 'scenery']) {
+    const LABEL = { track: 'Track', gate: 'Gates', key: 'Connector keys',
+                    support: 'Supports & piers', scenery: 'Scenery', figure: 'Walker figure' };
+    for (const kind of ['track', 'gate', 'key', 'support', 'scenery', 'figure']) {
         const group = shop.items.filter(it => it.kind === kind);
         if (!group.length) continue;
         const head = document.createElement('div');
@@ -4343,13 +4344,13 @@ async function openPrintShop() {
             // exactly what the Klip Klop Standard is for: pieces built to it mate
             // with any other export at the same major version, so a design with no
             // curve can still order one and it will fit.
-            const canon = layoutTrack(['straight', 'curveL', 'straight', 'curveR', 'straight'], {
-                slopeDeg: STANDARD.slopeDeg,
-                curveRadius: STANDARD.curveRadius,
-                innerWidth: STANDARD.innerWidth
-            });
+            const STD = { slopeDeg: STANDARD.slopeDeg, curveRadius: STANDARD.curveRadius, innerWidth: STANDARD.innerWidth };
+            // every simple type, from SIMPLE_TYPES rather than a hand-written
+            // list that quietly goes stale when a piece type is added
+            const seq = SIMPLE_TYPES.flatMap(t => [t, 'straight']);
+            const canon = layoutTrack(seq, STD);
             const canonSup = planPillarPositions(canon.pieces);
-            const canonical = ['straight', 'curveL', 'curveR']
+            const canonical = SIMPLE_TYPES
                 .filter(t => !haveTypes.has(t))
                 .map(t => {
                     const pc = canon.pieces.find(p => p.type === t);
@@ -4361,6 +4362,19 @@ async function openPrintShop() {
                     };
                 }).filter(Boolean);
 
+            // a merged switch part, if the design has no switch of its own
+            if (!parts.some(p => /switch/.test(p.name))) {
+                try {
+                    const sw = layoutTrack([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }], STD);
+                    const main = sw.pieces.find(p => p.role === 'main');
+                    const branch = sw.pieces.find(p => p.role === 'branch');
+                    if (main && branch) canonical.push({
+                        name: 'standard_switch', kind: 'track', count: 0,
+                        build: () => buildSwitchExportGeometry(main, branch, {})
+                    });
+                } catch (e) { console.warn('no standard switch part:', e.message); }
+            }
+
             const catalogue = [
                 { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry() },
                 { name: 'gate_paddle_print', kind: 'gate', build: () => buildGateGeometry() },
@@ -4370,7 +4384,10 @@ async function openPrintShop() {
                 { name: 'scenery_tower_print', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio_print', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island_print', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
-                { name: 'scenery_palm_tree_print_crown_down', kind: 'scenery', build: () => rotFlip(buildPalmIslandGeometries().palm) }
+                { name: 'scenery_palm_tree_print_crown_down', kind: 'scenery', build: () => rotFlip(buildPalmIslandGeometries().palm) },
+                { name: 'figure_body_print_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) },
+                { name: 'figure_pendulum_print_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) },
+                { name: 'figure_plugs_print', kind: 'figure', build: () => buildFigureGeometries(state.innerWidth).plugSet }
             ].filter(c => !have.has(c.name)).map(c => ({ ...c, count: 0 }));
 
             shop.items = [];

@@ -58,8 +58,14 @@ Open the served URL in any modern browser. Everything runs client-side.
   - merged **switch parts** with gate-pin bores plus printable **gate paddles**
   - auto-cut support **pillars**, plus any placed **scenery** parts
   - the **walker figure** (body + pendulum lying on their sides so hoof cams
-    print smooth) and choke-safety **plugs**
+    print smooth) and choke-safety **plugs** — Print shop only; the per-part
+    ZIPs cover track construction, which is what a design implies
   - a README with print settings, quantities, and assembly/safety steps
+
+  The Print shop catalogues every printable part, not just the ones the current
+  design uses: all six track types plus a switch (built at STANDARD parameters
+  when the canvas has none), gates, keys, the four riser sizes and a foot, all
+  scenery, and the figure.
 
 ## Physics rule set (enforced, not suggested)
 
