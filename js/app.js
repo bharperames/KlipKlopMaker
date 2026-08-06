@@ -4421,18 +4421,23 @@ function shopBuildList() {
         // outrigger variants, lifts, elevators, switches, and the design's own
         // pieces with their specific rim heights — is real but rarely wanted,
         // so it folds away instead of burying the three rows most people need.
-        const PLAIN = ['standard_straight', 'standard_curveL', 'standard_curveR'];
+        // Specialty means the piece exists only because of what it sits next
+        // to — a helix role or an outrigger arm. Everything else is regular,
+        // including the design's own straights and lone curves, which were
+        // landing in the accordion purely for not being named standard_*.
+        const isSpecialty = (n) => /_(entry|through|exit|outrigger)\b/.test(n);
         const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
             : shop.items.filter(it => it.kind === kind);
-        const group = kind === 'track' ? all.filter(it => PLAIN.includes(it.name)) : all;
-        const advanced = kind === 'track' ? all.filter(it => !PLAIN.includes(it.name)) : [];
+        const group = kind === 'track' ? all.filter(it => !isSpecialty(it.name)) : all;
+        const advanced = kind === 'track' ? all.filter(it => isSpecialty(it.name)) : [];
         if (!group.length) continue;
         const head = document.createElement('div');
         head.className = 'shop-kind';
         head.textContent = LABEL[kind] ?? kind;
         list.appendChild(head);
 
+        for (const it of group) list.appendChild(makeShopRow(it));
         shopKitsFor(kind).forEach((kit, ki) => {
             const kr = document.createElement('div');
             kr.className = 'shop-row shop-kit';
@@ -4448,7 +4453,6 @@ function shopBuildList() {
                 shopAddKit(kind, ki, Number(b.dataset.d))));
             list.appendChild(kr);
         });
-        for (const it of group) list.appendChild(makeShopRow(it));
 
         if (advanced.length) {
             const det = document.createElement('details');
