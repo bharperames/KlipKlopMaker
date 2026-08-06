@@ -4334,6 +4334,33 @@ async function openPrintShop() {
             // hardware and scenery are universal and belong in the catalogue
             // whether this track needs them or not.
             const have = new Set(parts.map(p => p.name));
+            const haveTypes = new Set(parts.filter(p => p.piece).map(p => p.piece.type));
+
+            // Canonical track pieces for the types this design does not contain.
+            // Track geometry IS design-specific — rim height, seam taper, support
+            // boss all come from where a piece sits — which is why these are built
+            // from a throwaway STANDARD layout rather than the canvas. That is
+            // exactly what the Klip Klop Standard is for: pieces built to it mate
+            // with any other export at the same major version, so a design with no
+            // curve can still order one and it will fit.
+            const canon = layoutTrack(['straight', 'curveL', 'straight', 'curveR', 'straight'], {
+                slopeDeg: STANDARD.slopeDeg,
+                curveRadius: STANDARD.curveRadius,
+                innerWidth: STANDARD.innerWidth
+            });
+            const canonSup = planPillarPositions(canon.pieces);
+            const canonical = ['straight', 'curveL', 'curveR']
+                .filter(t => !haveTypes.has(t))
+                .map(t => {
+                    const pc = canon.pieces.find(p => p.type === t);
+                    if (!pc) return null;
+                    const support = canonSup.find(x => x.pieceIndex === pc.index);
+                    return {
+                        name: `standard_${t}`, kind: 'track', count: 0,
+                        build: () => buildPieceExportGeometry(pc, { support })
+                    };
+                }).filter(Boolean);
+
             const catalogue = [
                 { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry() },
                 { name: 'gate_paddle_print', kind: 'gate', build: () => buildGateGeometry() },
@@ -4347,7 +4374,7 @@ async function openPrintShop() {
             ].filter(c => !have.has(c.name)).map(c => ({ ...c, count: 0 }));
 
             shop.items = [];
-            for (const part of [...parts, ...catalogue]) {
+            for (const part of [...parts, ...canonical, ...catalogue]) {
                 await new Promise(r => setTimeout(r));
                 const mesh = recenter(part.build());
                 const rep = analyzeMesh(mesh.positions, mesh.indices);
