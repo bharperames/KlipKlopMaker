@@ -710,10 +710,24 @@ function gateSeatOps(mainPiece, branchPiece, spec) {
     const side = pin.hingeSide;
     const deck = pin.deckY;
 
-    // boss: local thickening under the wall, from the rim up to the deck
-    const boss = toBufferGeometry(extrudePolygonY(
-        circlePlan(GATE.bossR).map(([px, pz]) => [pin.x + px, pin.z + pz]),
-        mainPiece.rimY, deck + 0.2));
+    // Boss: local thickening under the wall around the pin bore, and NO
+    // further. It used to run from the rim, so a socket needing ~15 mm of
+    // material grew a column the full depth of the skirt down to the bed —
+    // visible as a post beside the gate and pure waste. bossR's own comment
+    // already said "below the deck"; the extrude did not agree.
+    //
+    // The bore reaches 15 mm under the deck, so the barrel covers that plus a
+    // little, then a cone closes it off. The cone is as tall as it is wide,
+    // i.e. 45 deg from vertical, well inside what prints unsupported — a flat
+    // disc there would be a ceiling hanging off the wall.
+    const bossDrop = 17;
+    const nB = Math.max(16, segmentsForCircle(GATE.bossR));
+    // sweepSolid wants (u,v) = (x,-z), same convention bossBoreSolids uses
+    const ring = (r) => circlePlan(r, nB).map(([px, pz]) => [pin.x + px, -(pin.z + pz)]);
+    const at = (y) => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] });
+    const boss = toBufferGeometry(sweepSolid(
+        [ring(0.4), ring(GATE.bossR), ring(GATE.bossR)],
+        [deck - bossDrop - GATE.bossR, deck - bossDrop, deck + 0.2].map(at)));
 
     // slot: the rail, removed over the blade's length
     const slot = toBufferGeometry(extrudePolygonY(planToWorld([

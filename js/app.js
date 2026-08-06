@@ -4167,9 +4167,20 @@ async function shopThumbnails(items) {
         it.geo.computeBoundingBox();
         const box = it.geo.boundingBox;
         const ctr = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3()).length();
-        cam.position.set(ctr.x + size * 0.62, ctr.y + size * 0.46, ctr.z + size * 0.62);
+        // Fit the bounding SPHERE against both the vertical fov and the
+        // horizontal one the aspect implies. Scaling off the diagonal alone
+        // ignored that the thumbnail is wider than it is tall, so the 129 mm
+        // riser came out with its ends cropped and every riser looked the same
+        // height — which is the one thing the icon has to tell you.
+        const r = box.getSize(new THREE.Vector3()).length() / 2;
+        const half = cam.fov * Math.PI / 360;
+        const dist = 1.12 * Math.max(r / Math.sin(half),
+                                     r / Math.sin(Math.atan(cam.aspect * Math.tan(half))));
+        cam.position.set(ctr.x + dist * 0.55, ctr.y + dist * 0.45, ctr.z + dist * 0.70);
         cam.lookAt(ctr);
+        cam.near = Math.max(0.1, dist - r * 2);
+        cam.far = dist + r * 4;
+        cam.updateProjectionMatrix();
         R.render(sc, cam);
         it.thumb = R.domElement.toDataURL('image/png');
         sc.remove(mesh);
