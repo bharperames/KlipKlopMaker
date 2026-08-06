@@ -538,6 +538,59 @@ export function planPosAt(piece, s) {
     return { x: piece.center[0] + rx, z: piece.center[1] + rz, h: piece.entry.h + a };
 }
 
+/**
+ * The rigid transform that takes a piece into its OWN frame: entry at the
+ * origin, entry heading along +X, rim at Y=0.
+ *
+ * Pieces carry world coordinates because the scene needs them — a piece has to
+ * know where it sits in the tower to be drawn there. The export builders were
+ * written against the same objects and inherited that, so a curve high in a
+ * spiral ran its CSG at x≈400, y≈135 and then recentred the finished mesh.
+ *
+ * Doing the booleans out there costs float precision, and the cost is visible:
+ * the SAME curve exported from rimY 30, 60 and 135 came out with 14072, 13986
+ * and 14094 triangles and volumes a millimetre cubed apart. That makes an
+ * exported part depend on its address in the tower, which is wrong on its own
+ * terms — two identical pieces should be one file — and it made a slicer
+ * warning appear on some copies and not others.
+ */
+export function pieceFrame(piece) {
+    return { x: piece.entry.x, z: piece.entry.z, h: piece.entry.h, y: piece.rimY };
+}
+
+const inPlane = (x, z, f) => {
+    const c = Math.cos(f.h), s = Math.sin(f.h);
+    return { x: (x - f.x) * c + (z - f.z) * s, z: -(x - f.x) * s + (z - f.z) * c };
+};
+
+/**
+ * A copy of `piece` expressed in `frame`. Rotation about the vertical only, so
+ * it is a PROPER rigid motion — chiral parts (left vs right curves, the bowtie
+ * flare) are never mirrored.
+ *
+ * Pass a frame explicitly when several pieces must land together: the two
+ * halves of a switch are merged into one solid and have to share one frame.
+ */
+export function pieceInFrame(piece, frame = pieceFrame(piece)) {
+    const out = { ...piece };
+    out.entry = { ...inPlane(piece.entry.x, piece.entry.z, frame), h: piece.entry.h - frame.h };
+    out.exit = { ...inPlane(piece.exit.x, piece.exit.z, frame), h: piece.exit.h - frame.h };
+    if (piece.center) {
+        const c = inPlane(piece.center[0], piece.center[1], frame);
+        out.center = [c.x, c.z];
+    }
+    out.entryDeck = piece.entryDeck - frame.y;
+    out.exitDeck = piece.exitDeck - frame.y;
+    out.rimY = piece.rimY - frame.y;
+    return out;
+}
+
+/** The matching move for a support station, whose x/z/h place the boss. */
+export function supportInFrame(support, frame) {
+    if (!support) return support;
+    return { ...support, ...inPlane(support.x, support.z, frame), h: support.h - frame.h };
+}
+
 export function stationsForPiece(piece, maxStep = 8, extra = []) {
     const n = Math.max(2, Math.ceil(piece.planLen / maxStep) + 1);
     const cuts = [];

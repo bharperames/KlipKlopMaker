@@ -20,7 +20,10 @@
 import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
-import { SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt } from './track.js';
+import {
+    SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
+    pieceFrame, pieceInFrame, supportInFrame
+} from './track.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
@@ -570,6 +573,13 @@ function bossOps(piece, spec, support) {
  * end ribs with bowtie pockets, start bumper, pillar-socket boss.
  */
 export function buildPieceExportGeometry(piece, opts = {}) {
+    // Do the booleans at the origin, not at the piece's address in the tower.
+    // The display path needs world coordinates and these builders share its
+    // helpers, so without this a curve high in a spiral ran its CSG out at
+    // x~400, y~135 and paid for it in float precision. See pieceInFrame.
+    const frame = pieceFrame(piece);
+    piece = pieceInFrame(piece, frame);
+    opts = { ...opts, support: supportInFrame(opts.support, frame) };
     const spec = opts.spec ?? SPEC;
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
@@ -638,6 +648,12 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  * joint, two exit joints, a boss, and a vertical gate-pin bore at the fork.
  */
 export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
+    // Both halves are merged into ONE solid, so they must share a frame —
+    // normalise the branch against the main piece's, never its own.
+    const frame = pieceFrame(mainPiece);
+    mainPiece = pieceInFrame(mainPiece, frame);
+    branchPiece = pieceInFrame(branchPiece, frame);
+    opts = { ...opts, support: supportInFrame(opts.support, frame) };
     const spec = opts.spec ?? SPEC;
     const stations = supportStations(opts.support, mainPiece);
     const shell = fineShell(mainPiece, spec, stations, armStation(opts.support));

@@ -3,7 +3,7 @@
  * operations — must be a watertight, consistently wound solid.
  */
 import { jest } from '@jest/globals';
-import { layoutTrack } from '../js/track.js';
+import { layoutTrack, pieceInFrame } from '../js/track.js';
 import {
     initCSG, buildPieceExportGeometry, buildPieceDisplayGeometry,
     buildSwitchExportGeometry, buildSwitchDisplayGeometry,
@@ -38,8 +38,12 @@ const expectWatertight = (g, label) => {
  * either on the bed or attached above bed-supported walls, and nothing may
  * protrude beyond the end faces (the old cantilevered tab did).
  */
-const expectNoFloatingProtrusion = (g, piece, label) => {
+const expectNoFloatingProtrusion = (g, worldPiece, label) => {
     const { positions } = g.positions ? g : { positions: g.attributes.position.array };
+    // Export geometry is built in the piece's OWN frame (entry at the origin,
+    // heading +X, rim at Y=0) so the CSG never runs at tower coordinates, so
+    // compare against the piece in that same frame rather than in the world.
+    const piece = pieceInFrame(worldPiece);
     // all geometry stays within the swept footprint: nothing pokes past the
     // entry/exit faces by more than a hair (ribs/pockets are internal)
     const dirIn = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
@@ -87,6 +91,38 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
     test('end platform', () => {
         const g = buildPieceExportGeometry(pieces.at(-1));
         expectWatertight(g, 'end platform');
+    });
+});
+
+describe('export geometry is independent of where the piece sits in the tower', () => {
+    test('the same curve exports byte-identically from three different heights', () => {
+        // The builders share the display path's helpers, which work in world
+        // coordinates, so a curve high in a spiral used to run its CSG out at
+        // x~400, y~135. Float precision there is worse than at the origin and
+        // the mesh changed with it: 14072 / 13986 / 14094 triangles for ONE
+        // shape, volumes a mm3 apart. Slicers noticed — Bambu Studio flagged a
+        // floating cantilever on some copies of a part and not others.
+        //
+        // An exported part is a function of its shape, not of its address.
+        const { pieces } = layoutTrack(
+            ['straight', 'curveL', 'straight', 'curveL', 'straight', 'straight'],
+            { slopeDeg: 11.2167 });
+        const curves = pieces.filter(p => p.type === 'curveL');
+        expect(curves.length).toBeGreaterThan(1);
+        // genuinely different elevations, or the test proves nothing
+        expect(new Set(curves.map(c => c.rimY.toFixed(3))).size).toBe(curves.length);
+
+        const built = curves.map(c => buildPieceExportGeometry(c));
+        const ref = built[0];
+        for (let i = 1; i < built.length; i++) {
+            expect(`tris ${built[i].indices.length}`).toBe(`tris ${ref.indices.length}`);
+            expect(built[i].positions.length).toBe(ref.positions.length);
+            let worst = 0;
+            for (let k = 0; k < ref.positions.length; k++) {
+                worst = Math.max(worst, Math.abs(built[i].positions[k] - ref.positions[k]));
+            }
+            expect(`vertex delta ${worst.toExponential(1)}`).toBe('vertex delta 0.0e+0');
+        }
     });
 });
 
@@ -234,7 +270,9 @@ describe('export decimation stays inside its error bound', () => {
         let worst = 0, n = 0;
         for (let s = 8; s <= pc.planLen - 8; s += 1.1) {
             for (const lat of [-18, -9, 0, 9, 18]) {
-                const x = pc.entry.x + s;
+                // export meshes are in the piece's own frame: entry at the
+                // origin, heading +X, so arc length IS x
+                const x = s;
                 const a = surfaceYAt(full, x, lat);
                 const b = surfaceYAt(lean, x, lat);
                 if (!isFinite(a) || !isFinite(b)) continue;
@@ -356,8 +394,12 @@ describe('mating faces line up', () => {
             if (pc.prevIndex == null || pc.role === 'branch') continue;
             const prev = pieces.find(q => q.index === pc.prevIndex);
             if (!prev || prev.role === 'branch') continue;
-            const up = faceHalfWidth(mesh.get(prev.index), { x: prev.exit.x, z: prev.exit.z, h: prev.exit.h }, -1);
-            const down = faceHalfWidth(mesh.get(pc.index), { x: pc.entry.x, z: pc.entry.z, h: pc.entry.h }, +1);
+            // each mesh sits in its OWN frame now, so probe each with its own
+            // face taken in that frame — the half-widths being compared are
+            // intrinsic to the faces, not to where the pieces sit in the tower
+            const prevLocal = pieceInFrame(prev), pcLocal = pieceInFrame(pc);
+            const up = faceHalfWidth(mesh.get(prev.index), { x: prevLocal.exit.x, z: prevLocal.exit.z, h: prevLocal.exit.h }, -1);
+            const down = faceHalfWidth(mesh.get(pc.index), { x: pcLocal.entry.x, z: pcLocal.entry.z, h: pcLocal.entry.h }, +1);
             expect(Math.abs(down - up)).toBeLessThan(0.02);
             checked++;
         }
