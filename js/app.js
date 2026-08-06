@@ -4387,6 +4387,27 @@ function shopSetCount(name, n) {
     shopRepack();
 }
 
+/** One part row: thumbnail, identity, variant, stepper. */
+function makeShopRow(it) {
+    const row = document.createElement('div');
+    row.className = 'shop-row';
+    row.dataset.part = it.name;
+    row.innerHTML =
+        `<img src="${it.thumb}" alt="">` +
+        `<div class="meta"><b title="${it.name}">${it.name}</b>` +
+        `<span>${it.w.toFixed(0)}×${it.d.toFixed(0)}×${it.h.toFixed(0)} mm · ` +
+        `${printedWeightG(it.vol, 'track').toFixed(0)} g each` +
+        (it.variant ? `<br>${it.variant}` : '') + `</span></div>` +
+        `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
+        `<input type="number" min="0" max="999" value="${shop.counts.get(it.name) ?? 0}">` +
+        `<button type="button" data-d="1">+</button></div>`;
+    row.querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
+        shopSetCount(it.name, (shop.counts.get(it.name) ?? 0) + Number(b.dataset.d))));
+    row.querySelector('input').addEventListener('change', (e) =>
+        shopSetCount(it.name, Number(e.target.value)));
+    return row;
+}
+
 function shopBuildList() {
     const list = $('shop-list');
     list.innerHTML = '';
@@ -4395,9 +4416,17 @@ function shopBuildList() {
     for (const kind of ['track', 'key', 'support', 'scenery', 'figure']) {
         // The gate paddle is not a category of its own — it is the part that
         // makes a switch work, and a group of one told nobody that.
-        const group = kind === 'track'
+        // The plain forms cover any track that separates its curves with
+        // straights. Everything else — the helix roles (_entry/_through/_exit),
+        // outrigger variants, lifts, elevators, switches, and the design's own
+        // pieces with their specific rim heights — is real but rarely wanted,
+        // so it folds away instead of burying the three rows most people need.
+        const PLAIN = ['standard_straight', 'standard_curveL', 'standard_curveR'];
+        const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
             : shop.items.filter(it => it.kind === kind);
+        const group = kind === 'track' ? all.filter(it => PLAIN.includes(it.name)) : all;
+        const advanced = kind === 'track' ? all.filter(it => !PLAIN.includes(it.name)) : [];
         if (!group.length) continue;
         const head = document.createElement('div');
         head.className = 'shop-kind';
@@ -4419,24 +4448,21 @@ function shopBuildList() {
                 shopAddKit(kind, ki, Number(b.dataset.d))));
             list.appendChild(kr);
         });
-        for (const it of group) {
-            const row = document.createElement('div');
-            row.className = 'shop-row';
-            row.dataset.part = it.name;
-            row.innerHTML =
-                `<img src="${it.thumb}" alt="">` +
-                `<div class="meta"><b title="${it.name}">${it.name}</b>` +
-                `<span>${it.w.toFixed(0)}×${it.d.toFixed(0)}×${it.h.toFixed(0)} mm · ` +
-                `${printedWeightG(it.vol, 'track').toFixed(0)} g each` +
-                (it.variant ? `<br>${it.variant}` : '') + `</span></div>` +
-                `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
-                `<input type="number" min="0" max="999" value="${shop.counts.get(it.name) ?? 0}">` +
-                `<button type="button" data-d="1">+</button></div>`;
-            row.querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
-                shopSetCount(it.name, (shop.counts.get(it.name) ?? 0) + Number(b.dataset.d))));
-            row.querySelector('input').addEventListener('change', (e) =>
-                shopSetCount(it.name, Number(e.target.value)));
-            list.appendChild(row);
+        for (const it of group) list.appendChild(makeShopRow(it));
+
+        if (advanced.length) {
+            const det = document.createElement('details');
+            det.className = 'shop-adv';
+            const sum = document.createElement('summary');
+            const chosen = advanced.filter(it => (shop.counts.get(it.name) ?? 0) > 0).length;
+            sum.innerHTML = `Specialty &amp; design-specific — ${advanced.length} parts` +
+                (chosen ? ` <b>(${chosen} selected)</b>` : '');
+            det.appendChild(sum);
+            // stay open while anything inside is selected, or a preset's picks
+            // would vanish the moment the list rebuilt
+            det.open = chosen > 0;
+            for (const it of advanced) det.appendChild(makeShopRow(it));
+            list.appendChild(det);
         }
     }
 }
@@ -4473,8 +4499,10 @@ async function openPrintShop() {
             const seq = SIMPLE_TYPES.flatMap(t => [t, 'straight']);
             const canon = layoutTrack(seq, STD);
             const canonSup = planPillarPositions(canon.pieces);
+            // Always catalogued, whatever the canvas holds: these are the
+            // plain forms, and the standard group has to be the same three
+            // rows on every design or it is not a standard group.
             const canonical = SIMPLE_TYPES
-                .filter(t => !haveTypes.has(t))
                 .map(t => {
                     const pc = canon.pieces.find(p => p.type === t);
                     if (!pc) return null;

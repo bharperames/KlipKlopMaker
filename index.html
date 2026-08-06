@@ -860,6 +860,11 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 .shop-row.shop-kit { background: var(--panel-2); border-radius: 6px; margin: 2px 0 4px; }
 .shop-row.shop-kit .meta b { color: var(--ink); }
 .shop-row.shop-kit input { background: transparent; border: none; color: var(--ink-2); }
+.shop-adv { margin: 4px 0 8px; border: 1px dashed var(--line); border-radius: 6px; }
+.shop-adv > summary { cursor: pointer; padding: 7px 8px; font-size: 11px; color: var(--ink-2);
+    list-style: revert; user-select: none; }
+.shop-adv[open] > summary { border-bottom: 1px dashed var(--line); margin-bottom: 2px; }
+.shop-adv .shop-row:last-child { border-bottom: none; }
 .shop-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2);
     padding: 8px 4px 2px; font-weight: 700; }
 </style>
