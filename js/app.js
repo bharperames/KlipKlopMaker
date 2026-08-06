@@ -4278,6 +4278,27 @@ function shopApplyPreset(id) {
     shopRepack();
 }
 
+/**
+ * Why two pieces of the same type are different solids.
+ *
+ * The parts list dedupes by signature, so a curve entering from a straight and
+ * one entering mid-helix come out as separate rows that look like duplicates —
+ * same name stem, same footprint to the millimetre. They are not
+ * interchangeable: the seam taper widens the channel 48 -> 51 across a curve,
+ * so fitting a 48-entry piece against a 51-exit neighbour leaves the step edge
+ * the taper exists to remove. Say which is which.
+ */
+function shopVariantLabel(part) {
+    const pc = part.piece;
+    if (!pc) return '';
+    const bits = [];
+    const ew = pc.entryWidth ?? pc.innerWidth, xw = pc.exitWidth ?? pc.innerWidth;
+    bits.push(ew === xw ? `channel ${ew}` : `channel ${ew}→${xw}`);
+    const s = part.support;
+    bits.push(s && s.mode !== 'none' ? `${s.mode} pier @${s.s.toFixed(0)}` : 'no pier');
+    return bits.join(' · ');
+}
+
 function shopSetCount(name, n) {
     shop.counts.set(name, Math.max(0, Math.min(999, Math.round(n) || 0)));
     const row = document.querySelector(`.shop-row[data-part="${CSS.escape(name)}"] input`);
@@ -4305,7 +4326,8 @@ function shopBuildList() {
                 `<img src="${it.thumb}" alt="">` +
                 `<div class="meta"><b title="${it.name}">${it.name}</b>` +
                 `<span>${it.w.toFixed(0)}×${it.d.toFixed(0)}×${it.h.toFixed(0)} mm · ` +
-                `${printedWeightG(it.vol, 'track').toFixed(0)} g each</span></div>` +
+                `${printedWeightG(it.vol, 'track').toFixed(0)} g each` +
+                (it.variant ? `<br>${it.variant}` : '') + `</span></div>` +
                 `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
                 `<input type="number" min="0" max="999" value="${shop.counts.get(it.name) ?? 0}">` +
                 `<button type="button" data-d="1">+</button></div>`;
@@ -4398,6 +4420,7 @@ async function openPrintShop() {
                 const fp = bedFootprint(mesh.positions);
                 shop.items.push({
                     name: part.name, kind: part.kind ?? 'track', ...fp,
+                    variant: shopVariantLabel(part),
                     vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
                     designCount: part.count ?? 0, thumb: ''
                 });
