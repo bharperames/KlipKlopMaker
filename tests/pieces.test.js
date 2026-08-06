@@ -3,7 +3,7 @@
  * operations — must be a watertight, consistently wound solid.
  */
 import { jest } from '@jest/globals';
-import { layoutTrack, pieceInFrame } from '../js/track.js';
+import { layoutTrack, pieceInFrame, SPEC } from '../js/track.js';
 import {
     initCSG, buildPieceExportGeometry, buildPieceDisplayGeometry,
     buildSwitchExportGeometry, buildSwitchDisplayGeometry,
@@ -91,6 +91,32 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
     test('end platform', () => {
         const g = buildPieceExportGeometry(pieces.at(-1));
         expectWatertight(g, 'end platform');
+    });
+
+    test('a straight between two curves, flared at both mouths', () => {
+        // Seams match on the WIDER face, so a straight that flanks a turn is a
+        // 48 mm channel with 51 mm mouths — a shape no piece had before the
+        // rule flipped, and the one the CSG is most likely to trip on.
+        const run = layoutTrack(['curveL', 'straight', 'curveL'], { slopeDeg: 11.2167 }).pieces;
+        const pc = run.find(p => p.type === 'straight');
+        expect(pc.entryWidth).toBeGreaterThan(pc.innerWidth);
+        expect(pc.exitWidth).toBeGreaterThan(pc.innerWidth);
+        const g = buildPieceExportGeometry(pc);
+        expectWatertight(g, 'flared straight');
+        expectNoFloatingProtrusion(g, pc, 'flared straight');
+
+        // the flare is really in the mesh: the part is wider across its mouths
+        // than across its middle
+        const { positions } = g.positions ? g : { positions: g.attributes.position.array };
+        const local = pieceInFrame(pc);
+        let mouthHalf = 0, midHalf = 0;
+        for (let i = 0; i < positions.length; i += 3) {
+            const along = positions[i] - local.entry.x;
+            const lateral = Math.abs(positions[i + 2] - local.entry.z);
+            if (along < 1) mouthHalf = Math.max(mouthHalf, lateral);
+            if (Math.abs(along - local.planLen / 2) < 5) midHalf = Math.max(midHalf, lateral);
+        }
+        expect(mouthHalf - midHalf).toBeCloseTo(SPEC.curveWidenMm / 2, 1);
     });
 });
 

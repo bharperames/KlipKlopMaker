@@ -82,7 +82,16 @@ export function decomposeSupport(heightMm) {
 
 export const SPEC = {
     slope: { hardMin: 8, greenMin: 10, greenMax: 12, hardMax: 14, default: 11 },
+    // The BASE channel: the width the figure is printed against (figure width
+    // = base − 4). A turn transits at base + curveWidenMm and therefore sits
+    // OUTSIDE this range on purpose — 51 mm is not a spec violation, it is the
+    // swept width a rigid footprint needs at the standard radius. The range was
+    // always about the straight-line fit; only the label said otherwise.
     innerWidth: { min: 46, max: 50, default: 48 },
+    // Corroborated, not just asserted: clearance.js sweeps the real footprint
+    // and asks for 50.03 mm at the 143.64 mm standard radius, and 50.52 at the
+    // 120 mm minimum — so +3 is the smallest whole millimetre that covers the
+    // whole legal radius range, and it is all but spent at the tight end.
     curveWidenMm: 3,
     minCurveRadius: 120,
     defaultCurveRadius: 150,
@@ -463,14 +472,32 @@ export const SEAM_TAPER_MM = 30;
 
 /**
  * Gives every piece an `entryWidth` and `exitWidth`: the channel width at each
- * mating face, which is the NARROWER of the two pieces meeting there.
+ * mating face, which is the WIDER of the two pieces meeting there.
  *
  * A curve is `curveWidenMm` wider than a straight, and butting them together
  * left a 1.5 mm ledge per side. Downhill of a curve that ledge faces the
  * figure square-on, exactly where it is still riding wide off the turn — it is
  * a hoof-catcher, not a cosmetic step. Matching the faces and blending back to
- * the body width inside the piece removes it, and keeps the full +3 mm through
- * the part of the curve where the figure is actually yawing.
+ * the body width inside the piece removes it.
+ *
+ * WHICH WAY THE MATCH GOES was a guess until `clearance.js` existed to measure
+ * it, and the guess was backwards. Taking the narrower width put the pinch
+ * exactly where the figure needs the room: a footprint is 47.5 mm long and a
+ * curve entry has half of it already round the corner, so the channel has to
+ * carry the curve's width for half a footprint on EITHER side of the turn, not
+ * shed it at the join. Measured over the stock scenes (worst lateral slack,
+ * against the 3 mm clearance floor in PHYSICS.md §4):
+ *
+ *     narrower face wins  →  1.87 mm of play at the tightest station
+ *     wider face wins     →  2.79 mm
+ *     no match at all     →  2.28 mm, and the ledge comes back
+ *     uniform 51 channel  →  3.22 mm, but that is a Standard change
+ *
+ * Taking the wider width also lands the plan's other goal for free. 51 is the
+ * maximum any seam can reach, so every curve face is 51 and a curve is the
+ * same solid wherever it sits: `curveL` and `curveR` are ONE part each instead
+ * of the `_entry`/`_through`/`_exit` trio a helix used to need. The variance
+ * moves to the straights that flank a turn, of which a tower has a handful.
  *
  * Seams are found by coincident endpoints rather than by walking the tree, so
  * a switch — where two pieces share one entry face — resolves correctly: both
@@ -482,12 +509,22 @@ function resolveSeamWidths(pieces) {
         pc.entryWidth = pc.innerWidth;
         pc.exitWidth = pc.innerWidth;
     }
+    // A face is resolved once for everything that meets on it, not pairwise: a
+    // switch puts THREE pieces on one mouth (the feeder and both roles), and
+    // deciding it pairwise would hand the straight role 48 while the feeder and
+    // the curve role took 51 — a step in the middle of what prints as one solid.
+    const faceWidth = new Map();
     for (const pc of pieces) {
         const prev = pc.prevIndex == null ? null : byIndex.get(pc.prevIndex);
         if (!prev) continue;
-        const w = Math.min(prev.innerWidth, pc.innerWidth);
-        pc.entryWidth = Math.min(pc.entryWidth, w);
-        prev.exitWidth = Math.min(prev.exitWidth, w);
+        faceWidth.set(prev.index, Math.max(faceWidth.get(prev.index) ?? prev.innerWidth, pc.innerWidth));
+    }
+    for (const pc of pieces) {
+        const prev = pc.prevIndex == null ? null : byIndex.get(pc.prevIndex);
+        if (!prev) continue;
+        const w = faceWidth.get(prev.index);
+        pc.entryWidth = Math.max(pc.entryWidth, w);
+        prev.exitWidth = Math.max(prev.exitWidth, w);
     }
 }
 
@@ -495,16 +532,25 @@ function resolveSeamWidths(pieces) {
  * Channel width at arc length s. Smoothstep rather than a straight ramp: its
  * slope is zero at both ends, so the wall leaves the mating face exactly
  * parallel to the neighbour's and there is no crease where the taper stops.
+ *
+ * Written as body-width plus a decaying deviation per face, which is what lets
+ * a face be WIDER than the body: a straight that hands off to a curve carries
+ * the curve's width at that face and relaxes back to 48 inside itself. The old
+ * min-of-two-blends form silently clamped any such face back to the body.
+ * For faces narrower than the body and a piece at least two tapers long — every
+ * piece this project builds — the two forms agree exactly.
  */
 export function innerWidthAt(piece, s) {
     const body = piece.innerWidth;
     const e = piece.entryWidth ?? body, x = piece.exitWidth ?? body;
     if (e === body && x === body) return body;
     const blend = (u) => { const t = Math.min(1, Math.max(0, u)); return t * t * (3 - 2 * t); };
-    return Math.min(
-        e + (body - e) * blend(s / SEAM_TAPER_MM),
-        x + (body - x) * blend((piece.planLen - s) / SEAM_TAPER_MM)
-    );
+    const w = body
+        + (e - body) * (1 - blend(s / SEAM_TAPER_MM))
+        + (x - body) * (1 - blend((piece.planLen - s) / SEAM_TAPER_MM));
+    // a short piece could otherwise let two overlapping tapers add up past
+    // either face; the channel never leaves the envelope its own faces set
+    return Math.min(Math.max(w, Math.min(body, e, x)), Math.max(body, e, x));
 }
 
 /**

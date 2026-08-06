@@ -409,15 +409,41 @@ describe('seam widths', () => {
         }
     });
 
-    test('a helix is not pinched at its interior seams', () => {
-        // every seam between two curves stays at the full curve width; only
-        // the two ends of the run step down to meet the straights
+    test('a curve is the same solid wherever it sits', () => {
+        // The point of matching on the WIDER face: 51 is the maximum any seam
+        // can reach, so a curve is 51 end to end whatever it neighbours. That
+        // is what makes curveL/curveR one part each instead of a set of
+        // _entry/_through/_exit variants nobody can tell apart in a bin.
+        // (`clearance.js` is what says 51 is the right number; this test only
+        // says every curve gets it.)
         const { pieces } = layoutTrack(
             ['straight', ...appendSpiralTier([], 'L'), ...appendSpiralTier([], 'L'), 'straight'],
             { slopeDeg: 11.2167 });
-        for (const [a, b] of seams(pieces)) {
-            if (a.radius && b.radius) expect(a.exitWidth).toBeCloseTo(a.innerWidth, 6);
+        const curves = pieces.filter(pc => pc.radius);
+        expect(curves.length).toBe(8);
+        for (const pc of curves) {
+            expect(pc.entryWidth).toBeCloseTo(pc.innerWidth, 6);
+            expect(pc.exitWidth).toBeCloseTo(pc.innerWidth, 6);
         }
+        // and a lone curve between two straights is the same solid again
+        const lone = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 })
+            .pieces.find(pc => pc.radius);
+        expect(lone.innerWidth).toBeCloseTo(curves[0].innerWidth, 6);
+        expect(lone.entryWidth).toBeCloseTo(curves[0].entryWidth, 6);
+        expect(lone.exitWidth).toBeCloseTo(curves[0].exitWidth, 6);
+    });
+
+    test('a straight flanking a turn carries the turn width at that face', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        const [before, curve, after] = [pieces[1], pieces[2], pieces[3]];
+        expect(before.type).toBe('straight');
+        expect(after.type).toBe('straight');
+        expect(before.exitWidth).toBeCloseTo(curve.innerWidth, 6);
+        expect(after.entryWidth).toBeCloseTo(curve.innerWidth, 6);
+        // ...and relaxes back to the base width inside itself
+        expect(innerWidthAt(before, 0)).toBeCloseTo(before.innerWidth, 6);
+        expect(innerWidthAt(before, before.planLen)).toBeCloseTo(curve.innerWidth, 6);
+        expect(innerWidthAt(before, before.planLen / 2)).toBeCloseTo(before.innerWidth, 6);
     });
 
     test('the wall leaves a mating face parallel to its neighbour', () => {

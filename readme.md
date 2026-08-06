@@ -70,8 +70,16 @@ Open the served URL in any modern browser. Everything runs client-side.
 ## Physics rule set (enforced, not suggested)
 
 Slope locked 8–14° (green 10–12°) · zero bank on curves and spirals ·
-curve radius ≥ 120 mm with +3 mm dynamic widening · channel 46–50 mm ·
-2 mm floor fillets · ≥100 mm vertical clearance between overlapping tiers.
+curve radius ≥ 120 mm with +3 mm dynamic widening, carried half a footprint
+into the straights either side · base channel 46–50 mm · 2 mm floor fillets ·
+≥100 mm vertical clearance between overlapping tiers.
+
+The widening is derived, not assumed: `js/clearance.js` sweeps the figure's
+real footprint (47.5 × 44 mm below rail height) along the centreline and asks
+what the channel has to be. It wants 50.03 mm at the standard radius and 50.52
+at the 120 mm minimum — so +3 is the smallest whole millimetre that covers the
+legal range. PHYSICS.md §8 has the derivation and is explicit about which parts
+of it are measured and which are still argument.
 
 - **Persist & share**: designs save/load as portable `.klipklop.json` scene
   files (versioned format, `js/scene_format.js`). Bundled example scenes live

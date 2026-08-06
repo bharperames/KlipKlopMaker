@@ -26,6 +26,7 @@ import {
     planPosAt, deckYAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
+import { checkChannelFit, walkerFootprint } from './clearance.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
@@ -308,6 +309,13 @@ function rebuild() {
         innerWidth: state.innerWidth,
         curveRadius: state.curveRadius
     });
+    // The lateral half of the physics. It lives outside layoutTrack because
+    // clearance.js reads track.js and the cycle would be a real one — so the
+    // app is where the two halves get composed. Only bites in custom-parameter
+    // mode: the Standard clears it everywhere with room to spare.
+    state.layout.issues.push(...checkChannelFit(resolveRidePath(state.layout.pieces), {
+        footprint: walkerFootprint({ channelWidthMm: state.innerWidth, walker: state.walker })
+    }).issues);
     const { pieces, switches, openEnds } = state.layout;
     const issues = issueSet();
 
@@ -3121,24 +3129,25 @@ function assembleParts() {
     }
 
     /**
-     * What a curve's seam taper says about where it sits.
+     * What a piece's seam taper says about where it sits.
      *
-     * A helix makes three kinds of curve out of one shape: the first widens
-     * 48 -> 51 as it leaves the straight, the interior ones hold 51, the last
-     * narrows back. They are not interchangeable and they look identical in a
-     * parts bin, so the NAME has to carry the role rather than leaving it to a
-     * signature nobody can see. A lone curve between two straights is narrow at
-     * both ends and gets no suffix: it is the plain case.
+     * Seams now take the WIDER of the two channels (see `resolveSeamWidths`),
+     * so a curve is always 51 end to end and a helix needs only one curve
+     * shape per direction. What varies instead is the STRAIGHT next to a turn:
+     * it carries the curve's width at that face and relaxes back to 48 inside
+     * itself. Those are not interchangeable and they look identical in a parts
+     * bin, so the NAME has to carry the role. A straight between two straights
+     * is 48 at both faces and gets no suffix: it is the plain case.
      */
     const seamRole = (pc) => {
-        // curves only: a straight never widens, so every straight would take
-        // the same suffix and it would say nothing
-        if (!pc.radius) return '';
+        // curves only ever flare to their own width, so they never take a
+        // suffix — that is the whole point of matching on the wider face
+        if (pc.radius) return '';
         const body = pc.innerWidth;
         const e = pc.entryWidth ?? body, x = pc.exitWidth ?? body;
-        if (e === body && x === body) return '_through';
-        if (e < body && x === body) return '_entry';
-        if (e === body && x < body) return '_exit';
+        if (e > body && x > body) return '_between_curves';
+        if (e > body) return '_out_of_curve';
+        if (x > body) return '_into_curve';
         return '';
     };
 
@@ -4417,15 +4426,15 @@ function shopBuildList() {
         // The gate paddle is not a category of its own — it is the part that
         // makes a switch work, and a group of one told nobody that.
         // The plain forms cover any track that separates its curves with
-        // straights. Everything else — the helix roles (_entry/_through/_exit),
+        // straights. Everything else — the flared straights that flank a turn,
         // outrigger variants, lifts, elevators, switches, and the design's own
         // pieces with their specific rim heights — is real but rarely wanted,
         // so it folds away instead of burying the three rows most people need.
         // Specialty means the piece exists only because of what it sits next
-        // to — a helix role or an outrigger arm. Everything else is regular,
-        // including the design's own straights and lone curves, which were
-        // landing in the accordion purely for not being named standard_*.
-        const isSpecialty = (n) => /_(entry|through|exit|outrigger)\b/.test(n);
+        // to — a curve-flanking flare or an outrigger arm. Everything else is
+        // regular, including the design's own straights and lone curves, which
+        // were landing in the accordion purely for not being named standard_*.
+        const isSpecialty = (n) => /_(into_curve|out_of_curve|between_curves|outrigger)\b/.test(n);
         const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
             : shop.items.filter(it => it.kind === kind);

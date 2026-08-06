@@ -74,9 +74,10 @@ lower. A toy can step *down* a microscopic ledge but stubs its toe on even a
 |---|---|---|
 | Slope | hard 8–14°, green 10–12° | stall / slide-tumble envelope above |
 | Bank (roll) | exactly 0° | 1° of inward lean jams the top-heavy figure against the wall |
-| Curve radius | ≥ 120 mm centerline | rigid figure wedges front-inner/rear-outer hoof otherwise |
-| Curve widening | +3 mm | swept-path widening of a rigid rectangle in a turn |
-| Channel width | 46–50 mm | figure width + 3–4 mm total clearance |
+| Curve radius | ≥ 120 mm centerline | rigid figure wedges front-inner/rear-outer hoof otherwise; §8 confirms +3 mm is all but spent at 120 |
+| Curve widening | +3 mm | swept-path widening of a rigid rectangle in a turn (derived in §8) |
+| Base channel width | 46–50 mm | figure width + 3–4 mm total clearance. A turn transits at base +3 and sits outside this range by design |
+| Seam width match | wider face wins | a curve's width is carried half a footprint into the straights either side, not shed at the join (§8) |
 | Rail height | 14 mm | guides the base, clears the swinging torso |
 | Floor fillets | r = 2 mm | re-centers a wandering hoof without snagging |
 | Floor thickness | 2.0–2.6 mm over an open skirt | acoustic drumhead ("klip-klop" amplifier) |
@@ -152,3 +153,67 @@ Community print-orientation note: the surveyed standalone set recommends
 printing ramps vertically with tree supports to get clean rib lines — this
 project's flat, rim-down orientation achieves clean transverse ridges with
 zero supports instead (the ridges print as stacked perimeter steps).
+
+## 8. The lateral model — does the figure fit sideways?
+
+Everything above §7 is about motion *along* the track. `simulate.js` models
+exactly that and never reads channel width, so for a long time the three
+lateral numbers in §4 — the 46–50 mm channel, the +3 mm curve widening, the
+120 mm minimum radius — had nothing testing them and nothing relating them to
+each other. `js/clearance.js` is the missing half.
+
+**The model.** The figure is a rigid rectangle: its along-travel extent *below
+rail height* (above the rails the channel is open, so the nose and head
+constrain nothing) by its printed width. At full pendulum swing the classic
+figure is **47.5 × 44 mm**. That rectangle is swept along the centreline and
+the model reports the narrowest concentric band containing it — off-tracking
+and yaw at once, no small-angle approximation.
+
+Yaw is where the judgement is. A passive walker does not steer: it translates
+along a straight chord for one stride and is squared back up by the walls at
+hoof strike, so heading error against the local tangent is taken as **half the
+turn the tangent makes in one stride**, `stride/2R`. On the standard radius
+that is ±3.2°. On a straight it is zero, which is what anchors the model: it
+puts the 44 mm figure in the 48 mm channel at exactly the 4 mm of play §4
+claims for it.
+
+**What it says.** Channel width required, including the 3 mm clearance floor:
+
+| Where | Needs | Has |
+|---|---|---|
+| Straight | 47.00 mm | 48 |
+| Curve, R = 143.64 (standard) | 50.03 mm | 51 |
+| Curve, R = 120 (minimum) | 50.52 mm | 51 |
+| Curve, R = 100 (illegal) | 51.08 mm | — |
+
+So **+3 mm is the smallest whole millimetre that covers the whole legal radius
+range**, and the 120 mm minimum is very nearly where it runs out. Two published
+numbers derived independently from the figure's own geometry.
+
+**What it changed.** A seam between a 48 mm piece and a 51 mm one used to be
+resolved to the *narrower* width and blended back inside each piece, to kill a
+1.5 mm-per-side ledge that would face a hoof square-on. Killing the ledge was
+right; taking the narrow side was not. A footprint is 47.5 mm long, so at a
+curve mouth half the figure is already round the corner — the channel has to
+carry the curve's width for half a footprint on *either* side of the turn.
+Worst side-to-side play over the eleven stock scenes:
+
+| Seam rule | Worst play |
+|---|---|
+| Every face at the base width (48 everywhere) | 0.97 mm |
+| Narrower face wins (what this project used to do) | 1.87 mm |
+| No match at all — stepped 48/51, ledge and all | 2.28 mm |
+| **Wider face wins (current)** | **2.79 mm** |
+| Uniform 51 mm channel | 3.22 mm |
+
+Taking the wider face also happens to settle a part-library question: 51 is the
+maximum any seam can reach, so every curve face is 51 and a curve is the same
+solid wherever it sits. `curveL` and `curveR` are one part each instead of the
+`_entry`/`_through`/`_exit` trio a helix used to need; the variance moves onto
+the two or three straights that flank the turn.
+
+**Not yet validated against plastic.** The footprint and the two radius results
+are geometry and follow from the meshes. The yaw law and the 3 mm clearance
+floor are reasoned, not measured. A printed helix tier with a figure run
+through it is what would settle them, and until that happens the ±3.2° should
+be read as an argument, not a fact.
