@@ -685,10 +685,14 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <div style="height:6px"></div>
         <button id="btn-export-3mf" style="width:100%">⬇ Generate &amp; download ZIP (3MF)</button>
         <div style="height:6px"></div>
+        <label for="export-set" style="display:block;margin-top:10px;font-size:12px;opacity:.75">Print set</label>
+        <select id="export-set" style="width:100%"></select>
+        <div id="export-set-hint" class="hint" style="margin-top:4px"></div>
+        <div style="height:6px"></div>
         <button id="btn-export-plates" style="width:100%">⬇ Packed plates (3MF, one file per plate)</button>
         <div class="hint" style="margin-top:4px">
-            Every part laid out over full 256&nbsp;mm plates (X1 / P1S / P2S) — one
-            print job per file instead of one per part.
+            The chosen set laid out over full 256&nbsp;mm plates (X1 / P1S / P2S) —
+            one print job per file instead of one per part.
         </div>
         <div style="height:10px"></div>
         <progress id="export-progress" max="1" value="0" style="display:none"></progress>

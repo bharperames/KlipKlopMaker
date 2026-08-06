@@ -47,6 +47,7 @@ import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
 import { packPlates, describePlates, PLATE } from './plate_pack.js';
+import { EXPORT_SETS, applyExportSet, describeExportSet } from './export_sets.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -2372,21 +2373,12 @@ function getPartWeight(part, sig) {
     }
 }
 
-function transformMeshToLocalFrame(mesh, piece) {
-    if (!piece || !piece.entry) return mesh;
-    const { positions } = mesh;
-    const h = piece.entry.h;
-    const cos = Math.cos(-h);
-    const sin = Math.sin(-h);
-    for (let i = 0; i < positions.length; i += 3) {
-        const tx = positions[i] - piece.entry.x;
-        const tz = positions[i + 2] - piece.entry.z;
-        positions[i] = tx * cos - tz * sin;
-        positions[i + 2] = tx * sin + tz * cos;
-        positions[i + 1] = positions[i + 1] - piece.entryDeck;
-    }
-    return mesh;
-}
+// transformMeshToLocalFrame used to live here: the export builders worked in
+// world coordinates and this pulled the finished mesh back to the origin.
+// buildPieceExportGeometry now does the whole build in the piece's own frame
+// (see pieceInFrame in track.js), so applying it again rotated every piece a
+// second time by -entry.h. Deleted rather than kept as a no-op — a transform
+// that must not be called is worse than no transform at all.
 
 function refreshPrintPartsList() {
     const list = $('print-parts-list');
@@ -3060,7 +3052,19 @@ function toast(msg) {
 
 $('btn-export-stl').addEventListener('click', () => doExport('stl'));
 $('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
-$('btn-export-plates').addEventListener('click', () => doExportPlates());
+(() => {
+    const sel = $('export-set');
+    const hint = $('export-set-hint');
+    for (const set of EXPORT_SETS) {
+        const o = document.createElement('option');
+        o.value = set.id; o.textContent = set.label;
+        sel.appendChild(o);
+    }
+    const showHint = () => { hint.textContent = (EXPORT_SETS.find(s => s.id === sel.value) ?? EXPORT_SETS[0]).hint; };
+    sel.addEventListener('change', showHint);
+    showHint();
+})();
+$('btn-export-plates').addEventListener('click', () => doExportPlates($('export-set').value));
 
 /**
  * The single source of truth for what gets printed: every unique part of the
@@ -3139,12 +3143,10 @@ function assembleParts() {
                 count,
                 sig,
                 note: note.switch,
+                kind: 'track',
                 piece: pair.main,
                 support: support,
-                build: () => {
-                    const mesh = buildSwitchExportGeometry(pair.main, pair.branch, { support });
-                    return transformMeshToLocalFrame(mesh, pair.main);
-                }
+                build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support })
             });
         } else {
             parts.push({
@@ -3152,19 +3154,17 @@ function assembleParts() {
                 count,
                 sig,
                 note: note.piece,
+                kind: 'track',
                 piece: pc,
                 support: support,
-                build: () => {
-                    const mesh = buildPieceExportGeometry(pc, { support });
-                    return transformMeshToLocalFrame(mesh, pc);
-                }
+                build: () => buildPieceExportGeometry(pc, { support })
             });
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, sig: 'gate_paddle_print', note: note.gate, build: () => buildGateGeometry() });
+        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, sig: 'gate_paddle_print', kind: 'gate', note: note.gate, build: () => buildGateGeometry() });
     }
-    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', note: note.key, build: () => buildKeyGeometry() });
+    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', kind: 'key', note: note.key, build: () => buildKeyGeometry() });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -3179,25 +3179,25 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
+        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, note: note.pillar, build: () => buildRiserGeometry(r) });
+            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r) });
         }
     } else {
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
-            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, count: 1, sig: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
+            parts.push({ name: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, count: 1, sig: `pillar_${pc.name}_h${pc.rimY.toFixed(0)}_CUSTOM`, kind: 'support', note: 'Custom parameters: this pillar fits only this print batch.', build: () => toArraysFromBG(buildPillarGeometry(pc.rimY)) });
         }
     }
 
     const kinds = [...new Set(state.scenery.map(s => s.kind))];
     for (const kind of kinds) {
         const count = state.scenery.filter(s => s.kind === kind).length;
-        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, sig: 'scenery_tower_print', note: note.scenery, build: () => buildTowerGeometry(100) });
-        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, sig: 'scenery_patio_print', note: note.scenery, build: () => buildPatioGeometry() });
+        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, sig: 'scenery_tower_print', kind: 'scenery', note: note.scenery, build: () => buildTowerGeometry(100) });
+        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, sig: 'scenery_patio_print', kind: 'scenery', note: note.scenery, build: () => buildPatioGeometry() });
         if (kind === 'palm') {
-            parts.push({ name: 'scenery_palm_island_print', count, sig: 'scenery_palm_island_print', note: note.scenery, build: () => buildPalmIslandGeometries().island });
-            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, sig: 'scenery_palm_tree_print_crown_down', note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
+            parts.push({ name: 'scenery_palm_island_print', count, sig: 'scenery_palm_island_print', kind: 'scenery', note: note.scenery, build: () => buildPalmIslandGeometries().island });
+            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, sig: 'scenery_palm_tree_print_crown_down', kind: 'scenery', note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
         }
     }
 
@@ -4025,7 +4025,7 @@ function bedFootprint(positions) {
  * Every copy of a part references ONE mesh in the 3MF and differs only by its
  * build-item transform, so ten pillars cost one pillar's worth of vertices.
  */
-async function doExportPlates() {
+async function doExportPlates(setId = 'all') {
     const btns = [$('btn-export-stl'), $('btn-export-3mf'), $('btn-export-plates')];
     btns.forEach(b => b.disabled = true);
     const prog = $('export-progress');
@@ -4035,7 +4035,13 @@ async function doExportPlates() {
 
     try {
         await initCSG();
-        const { parts, joints, switchCount } = assembleParts();
+        const all = assembleParts();
+        const { joints, switchCount } = all;
+        // A set only filters and re-counts; the geometry is identical to the
+        // full export, so anything proven on a sample run holds for the batch.
+        const { set, parts } = applyExportSet(setId, all.parts);
+        if (!parts.length) throw new Error(`"${set.label}" selects no parts in this design`);
+        log.innerHTML += `<div class="row"><span><b>${set.label}</b></span><span>${parts.length} distinct</span></div>`;
 
         // build each DISTINCT part once, whatever its quantity
         const built = new Map();
@@ -4080,14 +4086,14 @@ async function doExportPlates() {
             files[`oversized_${o.name}.3mf`] = wrap3MF(generate3MFXML(b.mesh.positions, b.mesh.indices));
         }
 
-        const manifest = describePlates(plates, oversized);
+        const manifest = `${describeExportSet(setId, all.parts)}\n\n${describePlates(plates, oversized)}`;
         files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount, manifest));
         const zipped = fflate.zipSync(files);
         const blob = new Blob([zipped], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
-            `_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${plates.length}plates.zip`;
+            `_${set.id}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${plates.length}plates.zip`;
         a.click();
 
         const total = plates.reduce((s, p) => s + p.items.length, 0);
@@ -4096,7 +4102,7 @@ async function doExportPlates() {
         log.innerHTML += `<div class="row"><span><b>${plates.length} plate${plates.length === 1 ? '' : 's'}</b>` +
             `, ${total} parts</span><span>${fill}% average fill</span></div>` +
             oversized.map(o => `<div class="row"><span>${o.name}</span><span class="bad">too big for the plate (${o.reason})</span></div>`).join('');
-        toast(`⬇ ${plates.length} plate file${plates.length === 1 ? '' : 's'}, ${total} parts`);
+        toast(`⬇ ${set.label}: ${plates.length} plate file${plates.length === 1 ? '' : 's'}, ${total} parts`);
     } catch (err) {
         console.error(err);
         toast(`Plate export failed: ${err.message}`);

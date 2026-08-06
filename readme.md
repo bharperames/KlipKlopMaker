@@ -36,10 +36,15 @@ Open the served URL in any modern browser. Everything runs client-side.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
   overhangs** (slicer-verified). Choose one file per *part*, or
-  **packed plates** — every part laid out over full 256 mm beds (Bambu X1 /
-  X1C / P1S / P2S) by a MaxRects packer, one file per plate, so a tower is a
-  handful of print jobs instead of one per part. Copies of a part share a
-  single mesh in the file and differ only by their build transform:
+  **packed plates** — a chosen PRINT SET laid out over full 256 mm beds (Bambu
+  X1 / X1C / P1S / P2S) by a MaxRects packer, one file per plate, so a tower is
+  a handful of print jobs instead of one per part. Sets are *Everything*,
+  *Sample run* (one of each distinct part plus spare keys — a fit test before
+  committing to a full batch), *Track only*, *Supports only*, *Connector keys
+  only* and *Scenery only*; a set only filters and re-counts, never changes
+  geometry, so anything proven on a sample holds for the batch. Copies of a
+  part share a single mesh in the file and differ only by their build
+  transform:
   - track pieces with **washboard friction floors**, an **arcade skirt** of
     piers and three-centred arches under the deck, **waterfall seams**
     (downhill floor 0.25 mm lower — a seam can never trip the toy), and hex
@@ -96,6 +101,7 @@ stall/tumble terminal outcomes, with an energy-budget invariant
 | `js/mesh_utils.js` | manifold/orientation verification, welding, volume |
 | `js/export_3mf.js` | 3MF XML + binary STL writers (proper rotation, no mirroring) |
 | `js/plate_pack.js` | pure MaxRects bin packing of part footprints onto build plates |
+| `js/export_sets.js` | pure named print sets (everything / sample run / track / supports / keys / scenery) |
 
 Pure modules have no DOM/Three.js dependencies and are covered by Jest —
 including tests that prove every exported part is a closed, consistently
