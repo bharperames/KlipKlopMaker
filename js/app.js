@@ -4310,6 +4310,42 @@ function shopVariantLabel(part) {
     return bits.join(' · ');
 }
 
+/**
+ * Parts that are really one thing. A walker is a body, a pendulum and its
+ * plugs — you never want two bodies and one pendulum, and stepping three rows
+ * to get one figure is busywork. A pier is the same story: a foot plus the
+ * 15+30+60 ladder stands a piece at any grid height.
+ *
+ * The kit row is a shortcut, not a mode: it moves the same counts the
+ * individual steppers do, and it reads back the number of COMPLETE kits the
+ * current counts cover, so sub-selecting one extra pendulum still works and
+ * the kit row simply shows what that does or does not complete.
+ */
+const SHOP_KITS = {
+    figure: {
+        label: 'complete walker',
+        parts: { figure_body_print_on_side: 1, figure_pendulum_print_on_side: 1, figure_plugs_print: 1 }
+    },
+    support: {
+        label: 'pier — foot + 15/30/60 ladder',
+        parts: { support_foot_print: 1, support_riser_15mm_print: 1,
+                 support_riser_30mm_print: 1, support_riser_60mm_print: 1 }
+    }
+};
+
+const shopKitCount = (kit) => Math.min(...Object.entries(kit.parts)
+    .map(([n, q]) => Math.floor((shop.counts.get(n) ?? 0) / q)));
+
+function shopAddKit(kind, delta) {
+    const kit = SHOP_KITS[kind];
+    if (!kit) return;
+    for (const [n, q] of Object.entries(kit.parts)) {
+        shop.counts.set(n, Math.max(0, Math.min(999, (shop.counts.get(n) ?? 0) + delta * q)));
+    }
+    shopBuildList();
+    shopRepack();
+}
+
 function shopSetCount(name, n) {
     shop.counts.set(name, Math.max(0, Math.min(999, Math.round(n) || 0)));
     const row = document.querySelector(`.shop-row[data-part="${CSS.escape(name)}"] input`);
@@ -4329,6 +4365,23 @@ function shopBuildList() {
         head.className = 'shop-kind';
         head.textContent = LABEL[kind] ?? kind;
         list.appendChild(head);
+
+        const kit = SHOP_KITS[kind];
+        if (kit && Object.keys(kit.parts).every(n => shop.items.some(i => i.name === n))) {
+            const kr = document.createElement('div');
+            kr.className = 'shop-row shop-kit';
+            const have = shopKitCount(kit);
+            kr.innerHTML =
+                `<div class="meta"><b>＋ ${kit.label}</b>` +
+                `<span>${Object.keys(kit.parts).length} parts at once` +
+                `${have ? ` · ${have} complete` : ''}</span></div>` +
+                `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
+                `<input type="number" value="${have}" readonly tabindex="-1">` +
+                `<button type="button" data-d="1">+</button></div>`;
+            kr.querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
+                shopAddKit(kind, Number(b.dataset.d))));
+            list.appendChild(kr);
+        }
         for (const it of group) {
             const row = document.createElement('div');
             row.className = 'shop-row';
