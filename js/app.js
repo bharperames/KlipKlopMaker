@@ -4252,6 +4252,7 @@ function sizeShop() {
     shop.renderer.setSize(w, h);
     shop.camera.aspect = w / h;
     shop.camera.updateProjectionMatrix();
+    if (shop.open && shop.framedFor) shopFrameAll();
 }
 
 /**
@@ -4330,17 +4331,37 @@ function shopRepack() {
     // and watching one plate fill.
     if (plates.length && plates.length !== shop.framedFor) {
         shop.framedFor = plates.length;
-        const span = Math.max(pitch, plates.length * pitch);
-        shop.controls.target.set(0, 0, 0);
-        // high three-quarter: plates read as plates, and tall parts stop
-        // looking like they hang off the bed
-        shop.camera.position.set(span * 0.16, span * 0.78, span * 0.52);
-        shop.controls.update();
+        shopFrameAll();
     }
     if (!plates.length) shop.framedFor = 0;
 }
 
 const MAT_SHOP = new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.5, metalness: 0 });
+
+/**
+ * Fit every plate in view. The previous version scaled the camera distance off
+ * the row length alone, which ignores the viewport's aspect: on a tall narrow
+ * stage the row still ran off both sides. Fit the real bounding box against
+ * BOTH the vertical fov and the horizontal one implied by the aspect, and take
+ * whichever needs more room.
+ */
+function shopFrameAll() {
+    if (!shop.group.children.length) return;
+    const box = new THREE.Box3().setFromObject(shop.group);
+    const size = box.getSize(new THREE.Vector3());
+    const centre = box.getCenter(new THREE.Vector3());
+    const fov = shop.camera.fov * Math.PI / 180;
+    const forHeight = Math.max(size.y, size.z) / (2 * Math.tan(fov / 2));
+    const forWidth = size.x / (2 * Math.tan(fov / 2) * shop.camera.aspect);
+    const dist = 1.22 * Math.max(forHeight, forWidth, 120);
+    const dir = new THREE.Vector3(0.18, 0.86, 0.58).normalize();
+    shop.controls.target.copy(centre);
+    shop.camera.position.copy(centre).addScaledVector(dir, dist);
+    shop.camera.near = Math.max(1, dist / 200);
+    shop.camera.far = dist * 8;
+    shop.camera.updateProjectionMatrix();
+    shop.controls.update();
+}
 
 function shopSetCount(name, n) {
     shop.counts.set(name, Math.max(0, Math.min(999, Math.round(n) || 0)));
@@ -4391,8 +4412,27 @@ async function openPrintShop() {
         try {
             await initCSG();
             const { parts } = assembleParts();
+            // The design's own parts, PLUS everything that exists regardless of
+            // what is on the canvas. A design with no curve still wants to be
+            // able to order risers it is not using, a gate, a patio. Track
+            // pieces stay design-specific — their geometry IS the design — but
+            // hardware and scenery are universal and belong in the catalogue
+            // whether this track needs them or not.
+            const have = new Set(parts.map(p => p.name));
+            const catalogue = [
+                { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry() },
+                { name: 'gate_paddle_print', kind: 'gate', build: () => buildGateGeometry() },
+                { name: 'support_foot_print', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry()) },
+                ...[120, 60, 30, 15].map(r => ({
+                    name: `support_riser_${r}mm_print`, kind: 'support', build: () => buildRiserGeometry(r) })),
+                { name: 'scenery_tower_print', kind: 'scenery', build: () => buildTowerGeometry(100) },
+                { name: 'scenery_patio_print', kind: 'scenery', build: () => buildPatioGeometry() },
+                { name: 'scenery_palm_island_print', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
+                { name: 'scenery_palm_tree_print_crown_down', kind: 'scenery', build: () => rotFlip(buildPalmIslandGeometries().palm) }
+            ].filter(c => !have.has(c.name)).map(c => ({ ...c, count: 0 }));
+
             shop.items = [];
-            for (const part of parts) {
+            for (const part of [...parts, ...catalogue]) {
                 await new Promise(r => setTimeout(r));
                 const mesh = recenter(part.build());
                 const rep = analyzeMesh(mesh.positions, mesh.indices);
@@ -4400,9 +4440,9 @@ async function openPrintShop() {
                 shop.items.push({
                     name: part.name, kind: part.kind ?? 'track', ...fp,
                     vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
-                    designCount: part.count ?? 1, thumb: ''
+                    designCount: part.count ?? 0, thumb: ''
                 });
-                shop.counts.set(part.name, part.count ?? 1);
+                shop.counts.set(part.name, part.count ?? 0);
             }
             await shopThumbnails(shop.items);
             shopBuildList();
