@@ -3120,9 +3120,33 @@ function assembleParts() {
         }
     }
 
+    /**
+     * What a curve's seam taper says about where it sits.
+     *
+     * A helix makes three kinds of curve out of one shape: the first widens
+     * 48 -> 51 as it leaves the straight, the interior ones hold 51, the last
+     * narrows back. They are not interchangeable and they look identical in a
+     * parts bin, so the NAME has to carry the role rather than leaving it to a
+     * signature nobody can see. A lone curve between two straights is narrow at
+     * both ends and gets no suffix: it is the plain case.
+     */
+    const seamRole = (pc) => {
+        // curves only: a straight never widens, so every straight would take
+        // the same suffix and it would say nothing
+        if (!pc.radius) return '';
+        const body = pc.innerWidth;
+        const e = pc.entryWidth ?? body, x = pc.exitWidth ?? body;
+        if (e === body && x === body) return '_through';
+        if (e < body && x === body) return '_entry';
+        if (e === body && x < body) return '_exit';
+        return '';
+    };
+
     for (const [sig, item] of uniqueParts.entries()) {
         const { pc, support, count } = item;
-        const baseName = pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name;
+        const baseName = (pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name)
+            + seamRole(pc)
+            + (support && support.mode === 'outrigger' ? '_outrigger' : '');
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             parts.push({
