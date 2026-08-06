@@ -681,21 +681,16 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
     <div id="pane-export" style="display:none">
         <h2>Print/Parts</h2>
-        <button id="btn-export-stl" class="primary" style="width:100%">⬇ Generate &amp; download ZIP (STL)</button>
+        <button id="btn-print-shop" class="primary" style="width:100%">🛠 Go to Custom Print Shop</button>
+        <div class="hint" style="margin-top:4px;margin-bottom:12px">
+            Choose how many of each part you want and watch them pack onto full
+            256&nbsp;mm plates (X1 / P1S / P2S). Presets there cover the whole
+            design, a sample run, track only, and so on.
+        </div>
+        <button id="btn-export-stl" style="width:100%">⬇ Generate &amp; download ZIP (STL)</button>
         <div style="height:6px"></div>
         <button id="btn-export-3mf" style="width:100%">⬇ Generate &amp; download ZIP (3MF)</button>
-        <div style="height:6px"></div>
-        <label for="export-set" style="display:block;margin-top:10px;font-size:12px;opacity:.75">Print set</label>
-        <select id="export-set" style="width:100%"></select>
-        <div id="export-set-hint" class="hint" style="margin-top:4px"></div>
-        <div style="height:6px"></div>
-        <button id="btn-export-plates" style="width:100%">⬇ Packed plates (3MF, one file per plate)</button>
-        <div style="height:6px"></div>
-        <button id="btn-print-shop" style="width:100%">🛠 Print shop — pick quantities, preview plates…</button>
-        <div class="hint" style="margin-top:4px">
-            The chosen set laid out over full 256&nbsp;mm plates (X1 / P1S / P2S) —
-            one print job per file instead of one per part.
-        </div>
+        <div class="hint" style="margin-top:4px">One file per part, unpacked.</div>
         <div style="height:10px"></div>
         <progress id="export-progress" max="1" value="0" style="display:none"></progress>
         <div id="export-log"></div>
@@ -868,10 +863,12 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 <div id="shop-overlay" style="display:none">
     <div id="shop-panel">
         <div id="shop-head">
-            <span><b>Print shop</b> — choose quantities, see the plates</span>
+            <span><b>Print shop</b></span>
+            <label for="shop-preset" style="font-size:12px;color:var(--ink-2)">Preset</label>
+            <select id="shop-preset" style="font-size:12px;padding:3px 6px"></select>
             <span class="grow"></span>
+            <span id="shop-preset-hint" style="font-size:11px;color:var(--ink-2);max-width:300px"></span>
             <span id="shop-summary"></span>
-            <button id="shop-reset" type="button">Reset to design</button>
             <button id="shop-zero" type="button">Clear all</button>
             <button id="shop-export" class="primary" type="button">⬇ Export plates</button>
             <button id="shop-close" type="button">✕ Close (Esc)</button>

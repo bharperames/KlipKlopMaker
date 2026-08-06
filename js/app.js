@@ -47,7 +47,7 @@ import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
 import { packPlates, describePlates, PLATE } from './plate_pack.js';
-import { EXPORT_SETS, applyExportSet, describeExportSet } from './export_sets.js';
+import { EXPORT_SETS, getExportSet, describeExportSet } from './export_sets.js';
 
 // ---------------------------------------------------------------------------
 // State
@@ -3052,19 +3052,6 @@ function toast(msg) {
 
 $('btn-export-stl').addEventListener('click', () => doExport('stl'));
 $('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
-(() => {
-    const sel = $('export-set');
-    const hint = $('export-set-hint');
-    for (const set of EXPORT_SETS) {
-        const o = document.createElement('option');
-        o.value = set.id; o.textContent = set.label;
-        sel.appendChild(o);
-    }
-    const showHint = () => { hint.textContent = (EXPORT_SETS.find(s => s.id === sel.value) ?? EXPORT_SETS[0]).hint; };
-    sel.addEventListener('change', showHint);
-    showHint();
-})();
-$('btn-export-plates').addEventListener('click', () => doExportPlates($('export-set').value));
 
 /**
  * The single source of truth for what gets printed: every unique part of the
@@ -4015,105 +4002,8 @@ function bedFootprint(positions) {
     return { w: mxx - mnx, d: mxz - mnz, h: mxy - mny };
 }
 
-/**
- * Export as FULL PLATES rather than one file per part.
- *
- * A tower needs a dozen-odd distinct parts in varying quantities, and a 51 mm
- * wide ramp alone on a 256 mm plate wastes both the bed and a print job. Each
- * file here is one plate, ready to slice as it is.
- *
- * Every copy of a part references ONE mesh in the 3MF and differs only by its
- * build-item transform, so ten pillars cost one pillar's worth of vertices.
- */
-async function doExportPlates(setId = 'all') {
-    const btns = [$('btn-export-stl'), $('btn-export-3mf'), $('btn-export-plates')];
-    btns.forEach(b => b.disabled = true);
-    const prog = $('export-progress');
-    const log = $('export-log');
-    prog.style.display = ''; prog.value = 0;
-    log.innerHTML = '';
-
-    try {
-        await initCSG();
-        const all = assembleParts();
-        const { joints, switchCount } = all;
-        // A set only filters and re-counts; the geometry is identical to the
-        // full export, so anything proven on a sample run holds for the batch.
-        const { set, parts } = applyExportSet(setId, all.parts);
-        if (!parts.length) throw new Error(`"${set.label}" selects no parts in this design`);
-        log.innerHTML += `<div class="row"><span><b>${set.label}</b></span><span>${parts.length} distinct</span></div>`;
-
-        // build each DISTINCT part once, whatever its quantity
-        const built = new Map();
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            await new Promise(res => setTimeout(res));
-            const mesh = recenter(part.build());
-            const report = analyzeMesh(mesh.positions, mesh.indices);
-            const ok = report.isManifold && report.isConsistent && report.windsOutward;
-            const count = part.count ?? 1;
-            const fp = bedFootprint(mesh.positions);
-            built.set(part.name, { mesh, count, ...fp });
-            log.innerHTML += `<div class="row"><span>${count > 1 ? `${count}× ` : ''}${part.name}` +
-                ` <span style="opacity:.6">${fp.w.toFixed(0)}×${fp.d.toFixed(0)}×${fp.h.toFixed(0)} mm</span></span>` +
-                `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span></span></div>`;
-            prog.value = (i + 1) / parts.length;
-        }
-
-        const { plates, oversized } = packPlates(
-            [...built].map(([name, b]) => ({ name, w: b.w, d: b.d, h: b.h, count: b.count })));
-        if (!plates.length && !oversized.length) throw new Error('nothing to pack');
-
-        const files = {};
-        for (const plate of plates) {
-            const items = plate.items.map(it => {
-                const b = built.get(it.name);
-                return {
-                    name: `${it.name}_${it.copy}`,
-                    meshKey: it.name,            // one <object>, many <item>s
-                    positions: b.mesh.positions,
-                    indices: b.mesh.indices,
-                    at: [it.x, it.y, 0],
-                    rot: it.rot
-                };
-            });
-            files[`plate_${String(plate.index).padStart(2, '0')}_${plate.items.length}parts.3mf`] =
-                wrap3MF(generateMultiObject3MFXML(items));
-        }
-        // anything the plate cannot hold still has to ship, on its own
-        for (const o of oversized) {
-            const b = built.get(o.name);
-            files[`oversized_${o.name}.3mf`] = wrap3MF(generate3MFXML(b.mesh.positions, b.mesh.indices));
-        }
-
-        const manifest = `${describeExportSet(setId, all.parts)}\n\n${describePlates(plates, oversized)}`;
-        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount, manifest));
-        const zipped = fflate.zipSync(files);
-        const blob = new Blob([zipped], { type: 'application/zip' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
-            `_${set.id}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${plates.length}plates.zip`;
-        a.click();
-
-        const total = plates.reduce((s, p) => s + p.items.length, 0);
-        const fill = plates.length
-            ? Math.round(plates.reduce((s, p) => s + p.utilisation, 0) / plates.length * 100) : 0;
-        log.innerHTML += `<div class="row"><span><b>${plates.length} plate${plates.length === 1 ? '' : 's'}</b>` +
-            `, ${total} parts</span><span>${fill}% average fill</span></div>` +
-            oversized.map(o => `<div class="row"><span>${o.name}</span><span class="bad">too big for the plate (${o.reason})</span></div>`).join('');
-        toast(`⬇ ${set.label}: ${plates.length} plate file${plates.length === 1 ? '' : 's'}, ${total} parts`);
-    } catch (err) {
-        console.error(err);
-        toast(`Plate export failed: ${err.message}`);
-    } finally {
-        btns.forEach(b => b.disabled = false);
-        prog.style.display = 'none';
-    }
-}
-
 async function doExport(format) {
-    const btns = [$('btn-export-stl'), $('btn-export-3mf'), $('btn-export-plates')];
+    const btns = [$('btn-export-stl'), $('btn-export-3mf')];
     btns.forEach(b => b.disabled = true);
     const prog = $('export-progress');
     const log = $('export-log');
@@ -4299,9 +4189,15 @@ function shopRepack() {
     while (shop.group.children.length) shop.group.remove(shop.group.children[0]);
     const byName = new Map(shop.items.map(it => [it.name, it]));
     const pitch = PLATE.width + 40;
+    // Grid, not a row. Eight plates in a line recede to nothing and the far end
+    // is unreadable however the camera is placed; a roughly square grid keeps
+    // every plate at a similar size on screen.
+    const cols = Math.max(1, Math.ceil(Math.sqrt(plates.length)));
+    const rows = Math.ceil(plates.length / cols);
     plates.forEach((p, i) => {
         const bed = shopBedGroup();
-        bed.position.x = (i - (plates.length - 1) / 2) * pitch;
+        bed.position.x = ((i % cols) - (cols - 1) / 2) * pitch;
+        bed.position.z = (Math.floor(i / cols) - (rows - 1) / 2) * pitch;
         for (const it of p.items) {
             const src = byName.get(it.name);
             const m = new THREE.Mesh(src.geo, MAT_SHOP);
@@ -4361,6 +4257,25 @@ function shopFrameAll() {
     shop.camera.far = dist * 8;
     shop.camera.updateProjectionMatrix();
     shop.controls.update();
+}
+
+/**
+ * Fill the quantities from a named set. Presets speak for the DESIGN — a
+ * catalogue part the track does not use has no design quantity to scale, so it
+ * stays at zero and you add it by hand. That keeps "Sample run" meaning one of
+ * each part this track needs, rather than one of everything that exists.
+ */
+function shopApplyPreset(id) {
+    const set = getExportSet(id);
+    const design = shop.items.filter(it => it.designCount > 0)
+        .map(it => ({ name: it.name, kind: it.kind, count: it.designCount }));
+    const picked = new Map((set.pick(design) ?? []).map(p => [p.name, p.count]));
+    for (const it of shop.items) shop.counts.set(it.name, picked.get(it.name) ?? 0);
+    const hint = $('shop-preset-hint');
+    if (hint) hint.textContent = set.hint;
+    shopBuildList();
+    shop.framedFor = 0;
+    shopRepack();
 }
 
 function shopSetCount(name, n) {
@@ -4446,6 +4361,7 @@ async function openPrintShop() {
             }
             await shopThumbnails(shop.items);
             shopBuildList();
+            $('shop-preset-hint').textContent = getExportSet($('shop-preset').value).hint;
             shop.built = true;
         } catch (err) {
             console.error(err);
@@ -4503,13 +4419,19 @@ window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verificat
 $('btn-print-shop').addEventListener('click', () => openPrintShop());
 $('shop-close').addEventListener('click', () => closePrintShop());
 $('shop-export').addEventListener('click', () => shopExport());
-$('shop-reset').addEventListener('click', () => {
-    for (const it of shop.items) shop.counts.set(it.name, it.designCount);
-    shopBuildList();
-    shopRepack();
-});
+(() => {
+    const sel = $('shop-preset');
+    for (const set of EXPORT_SETS) {
+        const o = document.createElement('option');
+        o.value = set.id; o.textContent = set.label;
+        sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => shopApplyPreset(sel.value));
+})();
 $('shop-zero').addEventListener('click', () => {
     for (const it of shop.items) shop.counts.set(it.name, 0);
+    $('shop-preset').selectedIndex = -1;
+    $('shop-preset-hint').textContent = '';
     shopBuildList();
     shopRepack();
 });
