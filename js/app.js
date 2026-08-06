@@ -4163,6 +4163,320 @@ async function doExport(format) {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Print shop: pick quantities of any part, watch the plates fill up
+//
+// The packed export takes the design's own quantities, which is right for
+// "build this tower" and useless for everything else — a spare key, four more
+// ramps, a ladder of risers. This is the same packer with the counts under your
+// control, and it shows you the actual plates before you commit a spool.
+//
+// Everything on screen is REAL export geometry: the thumbnails and the plate
+// layout render the same watertight mesh the 3MF gets, so what you see laid out
+// is what the slicer receives.
+// ---------------------------------------------------------------------------
+
+const shop = {
+    open: false, renderer: null, scene: null, camera: null, controls: null,
+    raf: 0, items: [], counts: new Map(), plates: [], group: null, built: false, framedFor: 0
+};
+
+/** Bed outline + grid for one plate, centred on the origin of its own group. */
+function shopBedGroup() {
+    const g = new THREE.Group();
+    const { width: W, depth: D, margin } = PLATE;
+    const plate = new THREE.Mesh(
+        new THREE.PlaneGeometry(W, D),
+        new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.95, metalness: 0 })
+    );
+    plate.rotation.x = -Math.PI / 2;
+    plate.receiveShadow = true;
+    g.add(plate);
+    const grid = new THREE.GridHelper(W, W / 16, 0x4a545e, 0x39424a);
+    grid.position.y = 0.05;
+    g.add(grid);
+    // the usable rectangle — parts may not cross it
+    const u = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(-(W / 2 - margin), 0.1, -(D / 2 - margin)),
+            new THREE.Vector3((W / 2 - margin), 0.1, -(D / 2 - margin)),
+            new THREE.Vector3((W / 2 - margin), 0.1, (D / 2 - margin)),
+            new THREE.Vector3(-(W / 2 - margin), 0.1, (D / 2 - margin))
+        ]),
+        new THREE.LineBasicMaterial({ color: 0x6f7b86 })
+    );
+    g.add(u);
+    return g;
+}
+
+function initShop() {
+    if (shop.renderer) return;
+    const holder = $('shop-stage');
+    shop.renderer = new THREE.WebGLRenderer({ antialias: true });
+    shop.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    shop.renderer.shadowMap.enabled = true;
+    shop.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    holder.appendChild(shop.renderer.domElement);
+    shop.scene = new THREE.Scene();
+    shop.scene.background = new THREE.Color(0x161b21);
+    shop.camera = new THREE.PerspectiveCamera(45, 1, 1, 8000);
+    shop.controls = new OrbitControls(shop.camera, shop.renderer.domElement);
+    shop.controls.enableDamping = true;
+    shop.scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x2c3238, 1.05));
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
+    key.position.set(220, 420, 180);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    const c = key.shadow.camera;
+    c.left = -600; c.right = 600; c.top = 600; c.bottom = -600; c.near = 1; c.far = 2000;
+    c.updateProjectionMatrix();
+    shop.scene.add(key);
+    shop.group = new THREE.Group();
+    shop.scene.add(shop.group);
+    const tick = () => {
+        shop.raf = requestAnimationFrame(tick);
+        if (!shop.open) return;
+        shop.controls.update();
+        shop.renderer.render(shop.scene, shop.camera);
+    };
+    tick();
+    new ResizeObserver(() => sizeShop()).observe(holder);
+}
+
+function sizeShop() {
+    const holder = $('shop-stage');
+    if (!holder || !shop.renderer) return;
+    const w = holder.clientWidth, h = holder.clientHeight;
+    if (!w || !h) return;
+    shop.renderer.setSize(w, h);
+    shop.camera.aspect = w / h;
+    shop.camera.updateProjectionMatrix();
+}
+
+/**
+ * One small offscreen render per distinct part, cached as a data URL.
+ * A live WebGL canvas per row would mean a dozen contexts; browsers cap those
+ * and start evicting, and the list scrolls past blank boxes.
+ */
+async function shopThumbnails(items) {
+    const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    R.setPixelRatio(2);
+    R.setSize(108, 84);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xffffff, 0x445066, 1.2));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.3);
+    dl.position.set(1, 2, 1.4);
+    sc.add(dl);
+    const cam = new THREE.PerspectiveCamera(38, 108 / 84, 0.5, 5000);
+    const mat = new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.55, metalness: 0 });
+    for (const it of items) {
+        const mesh = new THREE.Mesh(it.geo, mat);
+        sc.add(mesh);
+        it.geo.computeBoundingBox();
+        const box = it.geo.boundingBox;
+        const ctr = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        cam.position.set(ctr.x + size * 0.62, ctr.y + size * 0.46, ctr.z + size * 0.62);
+        cam.lookAt(ctr);
+        R.render(sc, cam);
+        it.thumb = R.domElement.toDataURL('image/png');
+        sc.remove(mesh);
+        await new Promise(r => setTimeout(r));
+    }
+    R.dispose();
+}
+
+/** Rebuild the plate scene from the current counts. */
+function shopRepack() {
+    const items = shop.items
+        .map(it => ({ ...it, count: shop.counts.get(it.name) ?? 0 }))
+        .filter(it => it.count > 0);
+    const { plates, oversized } = packPlates(items.map(({ name, w, d, h, count }) => ({ name, w, d, h, count })));
+    shop.plates = plates;
+
+    while (shop.group.children.length) shop.group.remove(shop.group.children[0]);
+    const byName = new Map(shop.items.map(it => [it.name, it]));
+    const pitch = PLATE.width + 40;
+    plates.forEach((p, i) => {
+        const bed = shopBedGroup();
+        bed.position.x = (i - (plates.length - 1) / 2) * pitch;
+        for (const it of p.items) {
+            const src = byName.get(it.name);
+            const m = new THREE.Mesh(src.geo, MAT_SHOP);
+            m.castShadow = true;
+            // packer gives plate-centred X/Y in the printer's frame; the mesh is
+            // app Y-up, so printer Y is -app Z
+            m.position.set(it.x, 0, -it.y);
+            m.rotation.y = -it.rot * Math.PI / 180;
+            bed.add(m);
+        }
+        shop.group.add(bed);
+    });
+
+    const total = items.reduce((s, it) => s + it.count, 0);
+    const grams = items.reduce((s, it) => s + printedWeightG(byName.get(it.name).vol, 'track') * it.count, 0);
+    const fill = plates.length
+        ? Math.round(plates.reduce((s, p) => s + p.utilisation, 0) / plates.length * 100) : 0;
+    $('shop-summary').textContent = plates.length
+        ? `${plates.length} plate${plates.length === 1 ? '' : 's'} · ${total} parts · ~${grams.toFixed(0)} g · ${fill}% avg fill` +
+          (oversized.length ? ` · ${oversized.length} too big for the bed` : '')
+        : 'nothing selected';
+    $('shop-empty').style.display = plates.length ? 'none' : '';
+    $('shop-export').disabled = !plates.length;
+
+    // Reframe only when the NUMBER of plates changes. Doing it on every count
+    // change yanks the view out from under someone who is nudging a quantity
+    // and watching one plate fill.
+    if (plates.length && plates.length !== shop.framedFor) {
+        shop.framedFor = plates.length;
+        const span = Math.max(pitch, plates.length * pitch);
+        shop.controls.target.set(0, 0, 0);
+        // high three-quarter: plates read as plates, and tall parts stop
+        // looking like they hang off the bed
+        shop.camera.position.set(span * 0.16, span * 0.78, span * 0.52);
+        shop.controls.update();
+    }
+    if (!plates.length) shop.framedFor = 0;
+}
+
+const MAT_SHOP = new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.5, metalness: 0 });
+
+function shopSetCount(name, n) {
+    shop.counts.set(name, Math.max(0, Math.min(999, Math.round(n) || 0)));
+    const row = document.querySelector(`.shop-row[data-part="${CSS.escape(name)}"] input`);
+    if (row) row.value = shop.counts.get(name);
+    shopRepack();
+}
+
+function shopBuildList() {
+    const list = $('shop-list');
+    list.innerHTML = '';
+    const LABEL = { track: 'Track', gate: 'Gates', key: 'Connector keys', support: 'Supports & piers', scenery: 'Scenery' };
+    for (const kind of ['track', 'gate', 'key', 'support', 'scenery']) {
+        const group = shop.items.filter(it => it.kind === kind);
+        if (!group.length) continue;
+        const head = document.createElement('div');
+        head.className = 'shop-kind';
+        head.textContent = LABEL[kind] ?? kind;
+        list.appendChild(head);
+        for (const it of group) {
+            const row = document.createElement('div');
+            row.className = 'shop-row';
+            row.dataset.part = it.name;
+            row.innerHTML =
+                `<img src="${it.thumb}" alt="">` +
+                `<div class="meta"><b title="${it.name}">${it.name}</b>` +
+                `<span>${it.w.toFixed(0)}×${it.d.toFixed(0)}×${it.h.toFixed(0)} mm · ` +
+                `${printedWeightG(it.vol, 'track').toFixed(0)} g each</span></div>` +
+                `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
+                `<input type="number" min="0" max="999" value="${shop.counts.get(it.name) ?? 0}">` +
+                `<button type="button" data-d="1">+</button></div>`;
+            row.querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
+                shopSetCount(it.name, (shop.counts.get(it.name) ?? 0) + Number(b.dataset.d))));
+            row.querySelector('input').addEventListener('change', (e) =>
+                shopSetCount(it.name, Number(e.target.value)));
+            list.appendChild(row);
+        }
+    }
+}
+
+async function openPrintShop() {
+    $('shop-overlay').style.display = '';
+    shop.open = true;
+    initShop();
+    sizeShop();
+    if (!shop.built) {
+        $('shop-summary').textContent = 'building part geometry…';
+        try {
+            await initCSG();
+            const { parts } = assembleParts();
+            shop.items = [];
+            for (const part of parts) {
+                await new Promise(r => setTimeout(r));
+                const mesh = recenter(part.build());
+                const rep = analyzeMesh(mesh.positions, mesh.indices);
+                const fp = bedFootprint(mesh.positions);
+                shop.items.push({
+                    name: part.name, kind: part.kind ?? 'track', ...fp,
+                    vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
+                    designCount: part.count ?? 1, thumb: ''
+                });
+                shop.counts.set(part.name, part.count ?? 1);
+            }
+            await shopThumbnails(shop.items);
+            shopBuildList();
+            shop.built = true;
+        } catch (err) {
+            console.error(err);
+            $('shop-summary').textContent = `could not build parts: ${err.message}`;
+            return;
+        }
+    }
+    shopRepack();
+}
+
+function closePrintShop() {
+    shop.open = false;
+    $('shop-overlay').style.display = 'none';
+}
+
+/** Export exactly what the preview shows. */
+async function shopExport() {
+    const btn = $('shop-export');
+    btn.disabled = true;
+    try {
+        const byName = new Map(shop.items.map(it => [it.name, it]));
+        const files = {};
+        for (const p of shop.plates) {
+            const objs = p.items.map(it => {
+                const src = byName.get(it.name);
+                return {
+                    name: `${it.name}_${it.copy}`, meshKey: it.name,
+                    positions: src.mesh.positions, indices: src.mesh.indices,
+                    at: [it.x, it.y, 0], rot: it.rot
+                };
+            });
+            const grams = p.items.reduce((s, it) => s + printedWeightG(byName.get(it.name).vol, 'track'), 0);
+            files[`plate_${String(p.index).padStart(2, '0')}_${p.items.length}parts_${Math.round(grams)}g.3mf`] =
+                wrap3MF(generateMultiObject3MFXML(objs));
+        }
+        const manifest = describePlates(shop.plates, []);
+        files['README.txt'] = fflate.strToU8(exportReadme(0, 0,
+            `Set: custom (Print shop) — quantities chosen by hand.\n\n${manifest}`));
+        const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
+            `_custom_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${shop.plates.length}plates.zip`;
+        a.click();
+        toast(`⬇ ${shop.plates.length} custom plate${shop.plates.length === 1 ? '' : 's'}`);
+    } catch (err) {
+        console.error(err);
+        toast(`Plate export failed: ${err.message}`);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verification
+$('btn-print-shop').addEventListener('click', () => openPrintShop());
+$('shop-close').addEventListener('click', () => closePrintShop());
+$('shop-export').addEventListener('click', () => shopExport());
+$('shop-reset').addEventListener('click', () => {
+    for (const it of shop.items) shop.counts.set(it.name, it.designCount);
+    shopBuildList();
+    shopRepack();
+});
+$('shop-zero').addEventListener('click', () => {
+    for (const it of shop.items) shop.counts.set(it.name, 0);
+    shopBuildList();
+    shopRepack();
+});
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && shop.open) closePrintShop();
+});
+
 function toArraysFromBG(g) {
     const positions = new Float32Array(g.attributes.position.array);
     const indices = g.index

@@ -44,7 +44,10 @@ Open the served URL in any modern browser. Everything runs client-side.
   only* and *Scenery only*; a set only filters and re-counts, never changes
   geometry, so anything proven on a sample holds for the batch. Copies of a
   part share a single mesh in the file and differ only by their build
-  transform:
+  transform. For anything the presets do not cover there is the **Print shop**:
+  a quantity stepper per part with a rendered thumbnail of its real export
+  geometry, and a live 3D view of the plates filling up as you change the
+  numbers — as many plates as the order needs, side by side:
   - track pieces with **washboard friction floors**, an **arcade skirt** of
     piers and three-centred arches under the deck, **waterfall seams**
     (downhill floor 0.25 mm lower — a seam can never trip the toy), and hex

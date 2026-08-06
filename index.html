@@ -690,6 +690,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <div id="export-set-hint" class="hint" style="margin-top:4px"></div>
         <div style="height:6px"></div>
         <button id="btn-export-plates" style="width:100%">⬇ Packed plates (3MF, one file per plate)</button>
+        <div style="height:6px"></div>
+        <button id="btn-print-shop" style="width:100%">🛠 Print shop — pick quantities, preview plates…</button>
         <div class="hint" style="margin-top:4px">
             The chosen set laid out over full 256&nbsp;mm plates (X1 / P1S / P2S) —
             one print job per file instead of one per part.
@@ -836,6 +838,50 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     <span id="ft-issues" class="footspread"></span>
 </footer>
 
+
+<style>
+#shop-overlay { position: fixed; inset: 0; background: rgba(12,16,22,.72); z-index: 60; }
+#shop-panel { position: absolute; inset: 3vh 3vw; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+#shop-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); background: var(--panel-2); }
+#shop-head .grow { flex: 1; }
+#shop-summary { font-size: 12px; color: var(--ink-2); }
+#shop-body { flex: 1; display: flex; min-height: 0; }
+#shop-list { width: 340px; overflow-y: auto; border-right: 1px solid var(--line); padding: 8px; }
+#shop-stage { flex: 1; min-width: 0; position: relative; }
+#shop-stage canvas { display: block; }
+#shop-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--ink-2); font-size: 13px; text-align: center; padding: 20px; }
+.shop-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px dashed var(--line); }
+.shop-row img { width: 54px; height: 42px; object-fit: contain; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 4px; flex: 0 0 auto; }
+.shop-row .meta { flex: 1; min-width: 0; font-size: 11px; line-height: 1.35; }
+.shop-row .meta b { font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-row .meta span { color: var(--ink-2); }
+.shop-step { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; }
+.shop-step button { width: 22px; height: 22px; padding: 0; font-size: 13px; line-height: 1; border-radius: 4px; }
+.shop-step input { width: 42px; text-align: center; font-size: 12px; padding: 3px; }
+.shop-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2);
+    padding: 8px 4px 2px; font-weight: 700; }
+</style>
+<div id="shop-overlay" style="display:none">
+    <div id="shop-panel">
+        <div id="shop-head">
+            <span><b>Print shop</b> — choose quantities, see the plates</span>
+            <span class="grow"></span>
+            <span id="shop-summary"></span>
+            <button id="shop-reset" type="button">Reset to design</button>
+            <button id="shop-zero" type="button">Clear all</button>
+            <button id="shop-export" class="primary" type="button">⬇ Export plates</button>
+            <button id="shop-close" type="button">✕ Close (Esc)</button>
+        </div>
+        <div id="shop-body">
+            <div id="shop-list"></div>
+            <div id="shop-stage"><div id="shop-empty">Set a quantity to lay out a plate.</div></div>
+        </div>
+    </div>
+</div>
 
 <div id="refs-overlay" style="display:none">
     <div id="refs-panel">
