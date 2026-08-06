@@ -35,7 +35,11 @@ Open the served URL in any modern browser. Everything runs client-side.
   and the troubleshooting matrix. See [PHYSICS.md](PHYSICS.md) for derivations.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
-  overhangs** (slicer-verified). Choose one file per *part*, or
+  overhangs** (slicer-verified). Every part comes out **engraved with its own
+  code** — `CURVEL 1.1`, `STR IN 1.1`, `R120 1.1` — cut 0.5 mm into the rail
+  wall or a flat face. The number is `GEOMETRY_VERSION` minus its patch digit,
+  so the mark is a compatibility claim: anything `1.1` mates with anything else
+  `1.1`, and a major bump tells you the bin of old parts no longer fits. Choose one file per *part*, or
   **packed plates** — a chosen PRINT SET laid out over full 256 mm beds (Bambu
   X1 / X1C / P1S / P2S) by a MaxRects packer, one file per plate, so a tower is
   a handful of print jobs instead of one per part. Sets are *Everything*,
@@ -112,6 +116,8 @@ stall/tumble terminal outcomes, with an energy-budget invariant
 | `js/track.js` | pure layout engine: Auto-Z slope lock, waterfall seams, clearance checks |
 | `js/physics.js` | pure rimless-wheel gait model, friction presets, ballast planner |
 | `js/simulate.js` | pure deterministic dynamics (walk/slide/stall/tumble), energy invariant |
+| `js/clearance.js` | pure lateral fit: rigid footprint swept against the channel (PHYSICS.md §8) |
+| `js/engrave.js` | pure stroke font → polygon rings, and the part-code scheme |
 | `js/scene_format.js` | versioned scene persistence (serialize/validate/deserialize) |
 | `js/geometry.js` | pure watertight mesh construction (ear-clip, zero-bank sweeps, profiles) |
 | `js/pieces.js` | Three.js + Manifold-WASM CSG assembly of printable parts |

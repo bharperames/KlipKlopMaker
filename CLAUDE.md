@@ -20,11 +20,16 @@ building, gait physics simulation, and watertight STL/3MF export.
 
 ## Architecture rules
 
-- **Pure modules** (`track.js`, `physics.js`, `geometry.js`, `mesh_utils.js`,
-  `export_3mf.js`) must stay free of DOM and Three.js imports — they are
-  Jest-tested directly. `pieces.js` (Three.js + manifold-3d WASM),
-  `horse_model.js` (Three.js, display-only knight figure) and `app.js` (DOM)
-  are the only impure layers.
+- **Pure modules** (`track.js`, `physics.js`, `geometry.js`, `clearance.js`,
+  `engrave.js`, `mesh_utils.js`, `export_3mf.js`) must stay free of DOM and
+  Three.js imports — they are Jest-tested directly. `pieces.js` (Three.js +
+  manifold-3d WASM), `horse_model.js` (Three.js, display-only knight figure)
+  and `app.js` (DOM) are the only impure layers.
+- **Two halves of the physics.** `simulate.js` is motion ALONG the track;
+  `clearance.js` is fit ACROSS it (rigid footprint swept against
+  `innerWidthAt`, PHYSICS.md §8). Neither knows about the other. `clearance.js`
+  imports `track.js`, so `checkChannelFit` is composed in by `app.js` rather
+  than called from `layoutTrack` — going the other way is a real import cycle.
 - **CSG goes through manifold-3d**, never three-bvh-csg (it leaves
   T-junction open edges). `initCSG()` must be awaited before any
   `build*ExportGeometry` call. Manifold guarantees watertight booleans.
@@ -71,6 +76,18 @@ building, gait physics simulation, and watertight STL/3MF export.
   (the original dovetail tab failed in the slicer as a floating cantilever) —
   joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`
   enforces the footprint rule.
+- **Seams match on the WIDER face** (`resolveSeamWidths`): a curve is 51 mm end
+  to end and is therefore ONE part per direction, and the straights that flank
+  it carry the flare. Measured, not assumed — flipping it back costs about a
+  millimetre of the figure's side-to-side play. See PHYSICS.md §8.
+- **Every exported part is engraved with its code**, derived from
+  `GEOMETRY_VERSION` (MAJOR.MINOR only — the code is a compatibility claim, and
+  PATCH is defined as cosmetic). Track pieces take it along the rail wall,
+  small parts on a flat face. `engrave.js` is a stroke font, deliberately not
+  an outline font: at 4 mm caps an outline font's stems fall under two
+  extrusion widths and the slicer drops them. Engraving is EXPORT ONLY —
+  builders shared with the scene (`buildRiserGeometry`, `buildKeyGeometry`,
+  `buildSupportFootGeometry`) take an opt-in `{ code }` so rebuilds stay cheap.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses).
 

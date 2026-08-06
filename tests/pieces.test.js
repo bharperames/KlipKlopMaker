@@ -3,12 +3,15 @@
  * operations — must be a watertight, consistently wound solid.
  */
 import { jest } from '@jest/globals';
-import { layoutTrack, pieceInFrame, SPEC } from '../js/track.js';
+import { layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt } from '../js/track.js';
+import { partCode, pieceCode } from '../js/engrave.js';
+import * as pieceBuilders from '../js/pieces.js';
 import {
     initCSG, buildPieceExportGeometry, buildPieceDisplayGeometry,
     buildSwitchExportGeometry, buildSwitchDisplayGeometry,
     buildPillarGeometry, buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
-    buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry
+    buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry,
+    engraveOps, engravePoint
 } from '../js/pieces.js';
 import { analyzeMesh, verifyManifold, buildTopologyFromIndices, deduplicateGeometry } from '../js/mesh_utils.js';
 
@@ -117,6 +120,104 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
             if (Math.abs(along - local.planLen / 2) < 5) midHalf = Math.max(midHalf, lateral);
         }
         expect(mouthHalf - midHalf).toBeCloseTo(SPEC.curveWidenMm / 2, 1);
+    });
+});
+
+describe('engraved part codes', () => {
+    const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+
+    const cutVolume = (build) => {
+        const plain = analyzeGeometry(build(''));
+        const marked = analyzeGeometry(build(undefined));
+        expect(marked.isManifold && marked.isConsistent && marked.windsOutward).toBe(true);
+        return plain.volumeMm3 - marked.volumeMm3;
+    };
+
+    test('a straight and a curve both come back watertight with material removed', () => {
+        for (const pc of [pieces[1], pieces[2]]) {
+            const cut = cutVolume(code => buildPieceExportGeometry(pc, code === '' ? { code: '' } : {}));
+            // 0.5 mm deep over the inked area of a ten-character code
+            expect(cut).toBeGreaterThan(10);
+            expect(cut).toBeLessThan(60);
+        }
+    });
+
+    test('the cut stays in the rail wall and never breaches it', () => {
+        // measured on the cutter itself: on the finished part other geometry
+        // (the arcade's own walls) also sits half a millimetre in from the
+        // outside, so the finished mesh cannot tell you where the code is
+        for (const idx of [1, 2]) {
+            const pc = pieceInFrame(pieces[idx]);
+            const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
+            expect(op.op).toBe('subtract');
+            const { positions } = op.geometry;
+            let deepest = 0, lowest = Infinity, highest = -Infinity, ahead = -Infinity;
+            for (let i = 0; i < positions.length; i += 3) {
+                // invert the placement by nearest station — exact enough at
+                // 0.25 mm steps to bound the cut
+                let bestS = 0, bestD = Infinity;
+                for (let s = 0; s <= pc.planLen; s += 0.25) {
+                    const p = planPosAt(pc, s);
+                    const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
+                    if (d < bestD) { bestD = d; bestS = s; }
+                }
+                deepest = Math.max(deepest, (innerWidthAt(pc, bestS) / 2 + SPEC.wall) - bestD);
+                const v = positions[i + 1] - deckYAt(pc, bestS);
+                lowest = Math.min(lowest, v);
+                highest = Math.max(highest, v);
+                ahead = Math.max(ahead, bestS);
+            }
+            expect(deepest).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
+            expect(deepest).toBeLessThan(SPEC.wall);          // never breaks through
+            expect(lowest).toBeGreaterThan(0);                // above the deck
+            expect(highest).toBeLessThan(SPEC.railHeight);    // below the crest
+            expect(ahead).toBeLessThan(pc.planLen);           // inside the part
+        }
+    });
+
+    test('the code reads left to right when you look at the wall', () => {
+        // Looking at a wall from outside along −n, the reader's left-to-right
+        // runs along Y × n. Get this backwards and every part in the library
+        // ships with its code mirrored — cheap to check, expensive to find.
+        for (const idx of [1, 2]) {
+            const pc = pieceInFrame(pieces[idx]);
+            const at = (u, w) => engravePoint(pc, SPEC, SPEC.engrave.marginMm, u, 5, w, 0.15);
+            const surface = at(0, 0), deep = at(0, SPEC.engrave.depth);
+            const n = [surface[0] - deep[0], 0, surface[2] - deep[2]];
+            const len = Math.hypot(n[0], n[2]);
+            const readRight = [n[2] / len, 0, -n[0] / len];    // Y × n
+            const run = at(10, 0);
+            const dot = (run[0] - surface[0]) * readRight[0] + (run[2] - surface[2]) * readRight[2];
+            expect(`${pc.name} reads forward`).toBe(dot > 0 ? `${pc.name} reads forward` : `${pc.name} reads BACKWARDS`);
+        }
+    });
+
+    test('a part too short for its code is left unmarked rather than failing', () => {
+        const pc = pieceInFrame(pieces[1]);
+        expect(engraveOps(pc, 'THIS CODE IS FAR TOO LONG TO FIT ALONG A TILE OF ANY LENGTH', SPEC)).toEqual([]);
+        expect(engraveOps(pc, '', SPEC)).toEqual([]);
+    });
+
+    test('the small parts carry theirs on a flat face', () => {
+        const { buildRiserGeometry, buildSupportFootGeometry, buildKeyGeometry } = pieceBuilders;
+        const cases = [
+            ['riser 120', c => buildRiserGeometry(120, SPEC, c === '' ? {} : { code: partCode('R120', GEOMETRY_VERSION) })],
+            ['riser 15', c => buildRiserGeometry(15, SPEC, c === '' ? {} : { code: partCode('R15', GEOMETRY_VERSION) })],
+            ['foot', c => buildSupportFootGeometry(SPEC, c === '' ? {} : { code: partCode('FOOT', GEOMETRY_VERSION) })],
+            ['key', c => buildKeyGeometry(SPEC, c === '' ? {} : { code: partCode('KEY', GEOMETRY_VERSION) })]
+        ];
+        for (const [label, build] of cases) {
+            const cut = cutVolume(build);
+            expect(`${label} cut`).toBe(cut > 1 && cut < 40 ? `${label} cut` : `${label} cut was ${cut.toFixed(2)} mm3`);
+        }
+    });
+
+    test('the scene never pays for engraving', () => {
+        // display builders take no code and run no extra CSG — rebuilds stay cheap
+        const display = buildPieceDisplayGeometry(pieces[1]);
+        const plain = analyzeGeometry(display);
+        expect(plain.isManifold).toBe(true);
+        expect(pieceBuilders.buildRiserGeometry(30, SPEC)).toBeDefined();
     });
 });
 

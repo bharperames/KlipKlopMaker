@@ -21,9 +21,12 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
-    SPEC, STANDARD, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
+    SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
     pieceFrame, pieceInFrame, supportInFrame
 } from './track.js';
+import {
+    textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm, pieceCode, partCode
+} from './engrave.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
@@ -572,6 +575,145 @@ function bossOps(piece, spec, support) {
  * Full watertight export mesh for a NON-SWITCH piece: washboard floor,
  * end ribs with bowtie pockets, start bumper, pillar-socket boss.
  */
+/**
+ * Where a track piece's code goes, and which way round it reads.
+ *
+ * The band is the outer face of one rail — from the deck up to the crest, so
+ * the code sits above the arcade and is legible with the tower assembled. It is
+ * 1.6 mm of wall, and `SPEC.engrave.depth` is held to a third of that, which
+ * leaves three perimeters at a 0.4 nozzle. Not the end rib (the plan's first
+ * choice): the pocket and the two lightening windows leave only a pair of
+ * ~10 mm panels there, too small for a code at a readable cap height, and the
+ * rib is a mating face — the one surface on the part where 0.5 mm matters.
+ *
+ * Which wall is not a preference. Looking at a wall from outside, along −n, the
+ * reader's left-to-right runs along `Y × n`; on the wall at +`right` that comes
+ * out as −dir and the code would read backwards. So the code goes on the other
+ * one, where it runs with the direction of travel.
+ */
+export function engraveFrame(piece, spec = SPEC) {
+    const h = piece.entry.h;
+    // outward normal of the engraved wall, and the reading direction Y × n
+    const normal = [-Math.sin(h), 0, Math.cos(h)];
+    const read = [Math.cos(h), 0, Math.sin(h)];   // === +dir, by construction
+    return { normal, read };
+}
+
+/**
+ * Local text coords → world. `u` runs along the wall in reading order from the
+ * start of the block, `v` up from the deck, `w` into the wall from `outset`
+ * outside it. Every vertex is placed through its own station, so the code
+ * follows a curve's wall instead of chording across it — at R 143 a 30 mm
+ * label would otherwise stand 0.8 mm proud at its ends and not cut at all.
+ */
+export function engravePoint(piece, spec, sStart, u, v, w, outset = 0) {
+    const s = Math.max(0, Math.min(piece.planLen, sStart + u));
+    const p = planPosAt(piece, s);
+    const right = [Math.sin(p.h), -Math.cos(p.h)];
+    const half = innerWidthAt(piece, s) / 2 + spec.wall;
+    const off = -(half + outset - w);   // negative: the wall opposite `right`
+    return [p.x + right[0] * off, deckYAt(piece, s) + v, p.z + right[1] * off];
+}
+
+/**
+ * Cuts `text` into the rail wall. One subtraction: the stroke rings are unioned
+ * in 2D first, which both resolves every overlap where strokes meet and lets
+ * the counters of A, O, R and 8 come out as real holes. Sixty separate boolean
+ * ops per part would show up in export time next to the arcade.
+ *
+ * Returns [] rather than throwing when the text does not fit — a part too short
+ * to mark is not a reason to fail an export.
+ */
+export function engraveOps(piece, text, spec = SPEC) {
+    const E = spec.engrave;
+    if (!E || !text || !piece || !(piece.planLen > 0)) return [];
+    if (!wasm) throw new Error('initCSG() must be awaited before engraving');
+    const font = { capHeight: E.capHeight, tracking: E.tracking, strokeMm: E.minStroke };
+    const wide = textWidthMm(text, font), tall = textHeightMm(font);
+    const sStart = E.marginMm;
+    if (sStart + wide > piece.planLen - E.marginMm) return [];
+    // marginMm is along the track; vertically the band is the whole rail, and
+    // only the 0.8 mm crest chamfer has to be kept clear
+    if (tall + 2 > spec.railHeight) return [];
+    const vBase = (spec.railHeight - tall) / 2;
+
+    const rings = textRings(text, font);
+    // The map (u, v, w) → world is orientation-REVERSING on this wall: reading
+    // order had to run with travel for the code to be legible, and that is the
+    // handedness that costs.
+    const cut = cutSolid(rings, E.depth, (u, v, w) =>
+        engravePoint(piece, spec, sStart, u, vBase + v, w, ENGRAVE_OUTSET), true);
+    return cut ? [{ op: SUBTRACTION, geometry: cut }] : [];
+}
+
+/** How far outside the surface the cut starts, so the boolean has a clean bite. */
+const ENGRAVE_OUTSET = 0.15;
+
+/**
+ * Rings → a solid to subtract, with every vertex placed by `place`.
+ *
+ * The rings are unioned in 2D FIRST. That is what turns a pile of overlapping
+ * stroke stadiums into letters, and it is also the difference between one
+ * boolean per part and sixty — which would have shown up in export time next to
+ * the arcade. It also gets the counters of A, O, R and 8 for free, as real
+ * holes that `Manifold.extrude` triangulates correctly.
+ *
+ * `flip` swaps two indices per triangle, for placements whose Jacobian is
+ * negative; without it manifold is handed an inside-out solid and the
+ * subtraction quietly does nothing.
+ */
+function cutSolid(rings, depth, place, flip = false) {
+    if (!rings.length) return null;
+    if (!wasm) throw new Error('initCSG() must be awaited before engraving');
+    const section = wasm.CrossSection.union(rings);
+    const solid = wasm.Manifold.extrude(section, depth + ENGRAVE_OUTSET);
+    const mesh = solid.getMesh();
+    const src = mesh.vertProperties, tri = mesh.triVerts;
+    const positions = new Float32Array(src.length);
+    for (let i = 0; i < src.length; i += 3) {
+        const p = place(src[i], src[i + 1], src[i + 2]);
+        positions[i] = p[0]; positions[i + 1] = p[1]; positions[i + 2] = p[2];
+    }
+    const indices = new Uint32Array(tri.length);
+    for (let i = 0; i < tri.length; i += 3) {
+        indices[i] = tri[i];
+        indices[i + 1] = tri[i + (flip ? 2 : 1)];
+        indices[i + 2] = tri[i + (flip ? 1 : 2)];
+    }
+    section.delete();
+    solid.delete();
+    return { positions, indices };
+}
+
+/**
+ * Engraves a block of lines into a FLAT face — the parts with no rail to write
+ * along. `origin` is where the block's bottom-left corner sits, `right` and `up`
+ * span the face, and the cut goes in along right × up.
+ */
+export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {}) {
+    const E = spec.engrave;
+    if (!E || !lines.length) return [];
+    const font = {
+        capHeight: opts.capHeight ?? E.capHeight, tracking: E.tracking,
+        strokeMm: E.minStroke, leading: opts.leading
+    };
+    const depth = opts.depth ?? E.depth;
+    const inward = [
+        -(right[1] * up[2] - right[2] * up[1]),
+        -(right[2] * up[0] - right[0] * up[2]),
+        -(right[0] * up[1] - right[1] * up[0])
+    ];
+    const cut = cutSolid(blockRings(lines, font), depth, (u, v, w) => {
+        const d = w - ENGRAVE_OUTSET;   // w = 0 sits ENGRAVE_OUTSET proud of the face
+        return [
+            origin[0] + right[0] * u + up[0] * v + inward[0] * d,
+            origin[1] + right[1] * u + up[1] * v + inward[1] * d,
+            origin[2] + right[2] * u + up[2] * v + inward[2] * d
+        ];
+    }, true);   // (right, up, right×up) is right-handed, so (u, v, inward) is not
+    return cut ? [{ op: SUBTRACTION, geometry: cut }] : [];
+}
+
 export function buildPieceExportGeometry(piece, opts = {}) {
     // Do the booleans at the origin, not at the piece's address in the tower.
     // The display path needs world coordinates and these builders share its
@@ -640,6 +782,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         ));
     }
     ops.push(...bossOps(piece, spec, opts.support));
+    ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
     return csgChain(shell, ops, opts.simplifyTol);
 }
 
@@ -678,6 +821,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
+    ops.push(...engraveOps(mainPiece, opts.code ?? pieceCode(mainPiece, GEOMETRY_VERSION), spec));
 
     return csgChain(shell, ops);
 }
@@ -825,9 +969,23 @@ export function sectionGeometry(geom, { origin, normal, extent = 800 }) {
 }
 
 /** Printable connector key — one per seam, prints flat in stacks. */
-export function buildKeyGeometry(spec = SPEC) {
+export function buildKeyGeometry(spec = SPEC, opts = {}) {
     const K = spec.key;
     const h = K.height - 2 * spec.jointClearanceMm;
+    if (opts.code) {
+        const plain = buildKeyGeometry(spec);
+        // the key prints flat, so its top face is the last layer laid down —
+        // the crispest surface on the part and the one you are holding when
+        // you want to know what it is
+        const lines = String(opts.code).split(' ');
+        const size = blockSizeMm(lines, { capHeight: 2, tracking: spec.engrave.tracking, strokeMm: spec.engrave.minStroke });
+        const marks = engraveFlatOps(
+            lines,
+            [-size.widthMm / 2, h, size.heightMm / 2],
+            [1, 0, 0], [0, 0, -1], spec, { capHeight: 2 }
+        );
+        return marks.length ? csgChain(toBufferGeometry(plain), marks) : plain;
+    }
     const full = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth }).map(([x, z]) => [x, -z]);
     const inset = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: -0.5 }).map(([x, z]) => [x, -z]);
     // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
@@ -891,8 +1049,8 @@ export function buildPillarGeometry(heightMm, spec = SPEC) {
  * all sharing the hex tenon/socket interlock. Any 15 mm-grid height is
  * reachable from five reusable part designs.
  */
-export function buildSupportFootGeometry(spec = SPEC) {
-    return toBufferGeometry(stackedHex([
+export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
+    const body = toBufferGeometry(stackedHex([
         { y: 0, af: 24.8 },                                  // elephant-foot chamfer
         { y: 0.6, af: 26 },
         { y: 4, af: 26 },
@@ -902,10 +1060,12 @@ export function buildSupportFootGeometry(spec = SPEC) {
         { y: STANDARD.footHeight + spec.socket.depth - 2, af: TENON_AF },
         { y: STANDARD.footHeight + spec.socket.depth - 1, af: TENON_AF - 1.4 }
     ]));
+    const marks = hexFlatEngraveOps(opts.code ?? null, 15, 4, STANDARD.footHeight, spec);
+    return marks.length ? toBufferGeometry(csgChain(body, marks)) : body;
 }
 
 /** Stackable riser: hex tube with a socket below and a tenon above. Needs initCSG. */
-export function buildRiserGeometry(sizeMm, spec = SPEC) {
+export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     const body = toBufferGeometry(stackedHex([
         { y: 0, af: 15 },
         { y: sizeMm, af: 15 },
@@ -913,7 +1073,38 @@ export function buildRiserGeometry(sizeMm, spec = SPEC) {
         { y: sizeMm + spec.socket.depth - 2, af: TENON_AF },
         { y: sizeMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }
     ]));
-    return csgChain(body, [{ op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) }]);
+    return csgChain(body, [
+        { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        ...hexFlatEngraveOps(opts.code ?? null, 15, 0, sizeMm, spec)
+    ]);
+}
+
+/**
+ * Puts a code on one flat of a hex prism. Engraving is OPT-IN on the parts
+ * whose builder serves the scene as well as the exporter — a riser is drawn a
+ * hundred times in a tower and the cut is invisible at scene scale, so the
+ * display path passes no code and pays no CSG for it.
+ *
+ * Two short lines rather than one: a 15 mm across-flats hex gives an 8.7 mm
+ * face, and `R120 1.1` on one line does not fit across it at any cap height
+ * that survives a 0.4 nozzle.
+ */
+function hexFlatEngraveOps(code, acrossFlats, y0, y1, spec = SPEC) {
+    if (!code) return [];
+    const lines = String(code).split(' ');
+    const cap = 2;
+    const size = blockSizeMm(lines, { capHeight: cap, tracking: spec.engrave.tracking, strokeMm: spec.engrave.minStroke });
+    const faceWidth = acrossFlats / Math.sqrt(3);
+    if (size.widthMm > faceWidth - 1 || size.heightMm > (y1 - y0) - 1) return [];
+    // hexPlan puts vertices at 0° and 60°, so a face centre is at 30°
+    const a = Math.PI / 6;
+    const n = [Math.cos(a), 0, Math.sin(a)];
+    const up = [0, 1, 0];
+    const read = [n[2], 0, -n[0]];   // Y × n
+    const cx = n[0] * (acrossFlats / 2), cz = n[2] * (acrossFlats / 2);
+    const vBase = y0 + ((y1 - y0) - size.heightMm) / 2;
+    const origin = [cx - read[0] * (size.widthMm / 2), vBase, cz - read[2] * (size.widthMm / 2)];
+    return engraveFlatOps(lines, origin, read, up, spec, { capHeight: cap });
 }
 
 /**

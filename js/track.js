@@ -125,6 +125,12 @@ export const SPEC = {
         detentProud: 0.35,
         detentTall: 1.5
     },
+    // Engraved part codes. depth 0.5 is under a third of the 1.6 mm wall, so
+    // three perimeters survive under the cut at a 0.4 nozzle. minStroke 0.8 is
+    // two line widths: below that a slicer does not thin the stroke, it drops
+    // it, and the part arrives with holes in its code. The stroke font in
+    // engrave.js makes that a parameter rather than something to check for.
+    engrave: { depth: 0.5, capHeight: 4, tracking: 0.6, minStroke: 0.8, marginMm: 6 },
     liftSpeedMmS: 110
 };
 

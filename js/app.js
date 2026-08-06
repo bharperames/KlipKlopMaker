@@ -27,6 +27,7 @@ import {
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { checkChannelFit, walkerFootprint } from './clearance.js';
+import { partCode } from './engrave.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
 import { serializeScene, deserializeScene } from './scene_format.js';
@@ -3184,7 +3185,7 @@ function assembleParts() {
     if (switchPairs.size) {
         parts.push({ name: 'gate_paddle_print', count: switchPairs.size, sig: 'gate_paddle_print', kind: 'gate', note: note.gate, build: () => buildGateGeometry() });
     }
-    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', kind: 'key', note: note.key, build: () => buildKeyGeometry() });
+    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', kind: 'key', note: note.key, build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -3199,9 +3200,9 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry()) });
+        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r) });
+            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
         }
     } else {
         for (const sup of supList) {
@@ -4540,11 +4541,11 @@ async function openPrintShop() {
             }
 
             const catalogue = [
-                { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry() },
+                { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) },
                 { name: 'gate_paddle_print', kind: 'gate', build: () => buildGateGeometry() },
-                { name: 'support_foot_print', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry()) },
+                { name: 'support_foot_print', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
                 ...[120, 60, 30, 15].map(r => ({
-                    name: `support_riser_${r}mm_print`, kind: 'support', build: () => buildRiserGeometry(r) })),
+                    name: `support_riser_${r}mm_print`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
                 { name: 'scenery_tower_print', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio_print', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island_print', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
