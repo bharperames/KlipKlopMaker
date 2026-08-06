@@ -4345,23 +4345,33 @@ function shopVariantLabel(part) {
  * current counts cover, so sub-selecting one extra pendulum still works and
  * the kit row simply shows what that does or does not complete.
  */
-const SHOP_KITS = {
-    figure: {
+function shopKitsFor(kind) {
+    const has = (n) => shop.items.some(i => i.name === n);
+    const out = [];
+    if (kind === 'figure' && has('figure_body_print_on_side')) out.push({
         label: 'complete walker',
         parts: { figure_body_print_on_side: 1, figure_pendulum_print_on_side: 1, figure_plugs_print: 1 }
-    },
-    support: {
+    });
+    if (kind === 'support' && has('support_foot_print')) out.push({
         label: 'pier — foot + 15/30/60 ladder',
         parts: { support_foot_print: 1, support_riser_15mm_print: 1,
                  support_riser_30mm_print: 1, support_riser_60mm_print: 1 }
+    });
+    // A switch without its gate paddle cannot route anything, and the switch's
+    // own name depends on the design, so this pair is found rather than named.
+    if (kind === 'track' && has('gate_paddle_print')) {
+        for (const sw of shop.items.filter(i => /switch/.test(i.name))) {
+            out.push({ label: `${sw.name} + gate`, parts: { [sw.name]: 1, gate_paddle_print: 1 } });
+        }
     }
-};
+    return out.filter(k => Object.keys(k.parts).every(has));
+}
 
 const shopKitCount = (kit) => Math.min(...Object.entries(kit.parts)
     .map(([n, q]) => Math.floor((shop.counts.get(n) ?? 0) / q)));
 
-function shopAddKit(kind, delta) {
-    const kit = SHOP_KITS[kind];
+function shopAddKit(kind, index, delta) {
+    const kit = shopKitsFor(kind)[index];
     if (!kit) return;
     for (const [n, q] of Object.entries(kit.parts)) {
         shop.counts.set(n, Math.max(0, Math.min(999, (shop.counts.get(n) ?? 0) + delta * q)));
@@ -4380,18 +4390,21 @@ function shopSetCount(name, n) {
 function shopBuildList() {
     const list = $('shop-list');
     list.innerHTML = '';
-    const LABEL = { track: 'Track', gate: 'Gates', key: 'Connector keys',
+    const LABEL = { track: 'Track & switches', key: 'Connector keys',
                     support: 'Supports & piers', scenery: 'Scenery', figure: 'Walker figure' };
-    for (const kind of ['track', 'gate', 'key', 'support', 'scenery', 'figure']) {
-        const group = shop.items.filter(it => it.kind === kind);
+    for (const kind of ['track', 'key', 'support', 'scenery', 'figure']) {
+        // The gate paddle is not a category of its own — it is the part that
+        // makes a switch work, and a group of one told nobody that.
+        const group = kind === 'track'
+            ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
+            : shop.items.filter(it => it.kind === kind);
         if (!group.length) continue;
         const head = document.createElement('div');
         head.className = 'shop-kind';
         head.textContent = LABEL[kind] ?? kind;
         list.appendChild(head);
 
-        const kit = SHOP_KITS[kind];
-        if (kit && Object.keys(kit.parts).every(n => shop.items.some(i => i.name === n))) {
+        shopKitsFor(kind).forEach((kit, ki) => {
             const kr = document.createElement('div');
             kr.className = 'shop-row shop-kit';
             const have = shopKitCount(kit);
@@ -4403,9 +4416,9 @@ function shopBuildList() {
                 `<input type="number" value="${have}" readonly tabindex="-1">` +
                 `<button type="button" data-d="1">+</button></div>`;
             kr.querySelectorAll('button').forEach(b => b.addEventListener('click', () =>
-                shopAddKit(kind, Number(b.dataset.d))));
+                shopAddKit(kind, ki, Number(b.dataset.d))));
             list.appendChild(kr);
-        }
+        });
         for (const it of group) {
             const row = document.createElement('div');
             row.className = 'shop-row';
