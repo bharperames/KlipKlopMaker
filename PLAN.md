@@ -149,10 +149,18 @@ a version claim; the scenery does, and a flat face exists on each — it just wa
 not done. `engraveFlatOps` takes an origin and two spanning vectors, so adding
 one is a few lines per family.
 
-**Play on straights.** A straight now gives the figure ~9.7 mm of side-to-side
-play, where the old rule gave 4. The reference toy's own ramp uses a tight
-39.5 mm groove — a different philosophy — and more play means more wander and
-more wall contact, which costs a little gait energy. Narrowing the channel
-toward the figure would recover it, but 48 mm is locked by the Klip Klop
-Standard and changing it forks every printed part. Worth revisiting only if a
-print shows the figure wandering badly on a straight.
+**Play on straights, and whether 48 is still the right number.** A straight now
+gives the figure ~9.7 mm of side-to-side play, where the old rule gave 4. The
+reference toy's own ramp uses a tight 39.5 mm groove; ours is a walled channel
+with 14 mm rails and re-centring floor fillets, which is a different philosophy,
+but 9.7 mm is a lot of room to wander and every wall contact costs gait energy.
+
+Worth knowing if this is ever revisited: **channel width is the one Klip Klop
+Standard value that is not geometrically derived.** Slope, tile drop, curve
+radius and the riser stack all fall out of the 15 mm grid; 48 was picked as
+"centre of the 46–50 mm spec" and nothing else depends on it. The floor is now
+measured — a real 38 mm toy swept through R 120 needs 44.60 mm, plus the
+0.32 mm a print loses, so ~45 mm. Dropping to 45 or 46 would halve the wander
+and cost only compatibility with parts already printed at 48; it would not
+disturb the grid, the slope, or the supports. Cross-system interoperability is
+explicitly NOT a goal of this project, so nothing outside it is at stake.

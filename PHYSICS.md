@@ -146,8 +146,10 @@ Running the community set's measured 12.0° through this project's rimless-wheel
 model predicts a healthy gait (8.9 steps/s, 143 mm/s, slide margin
 tan 12° = 0.213 « 0.85·μs) — i.e., **our physics engine predicts that the
 known-working design works**, the strongest external check available without
-printing. Interlocks are not cross-compatible (round pegs vs hex sockets), but
-figures interoperate across all systems.
+printing. That is all this section is for: it validates the MODEL, not any
+claim of cross-compatibility. Interlocks are not cross-compatible (round pegs
+vs hex sockets) and are not meant to be — this track does not aim to
+interoperate with anyone else's.
 
 Community print-orientation note: the surveyed standalone set recommends
 printing ramps vertically with tree supports to get clean rib lines — this
@@ -200,16 +202,18 @@ a differently-measured toy does not break the design.
 **What that deleted.** The widening existed only to carry the project's own
 printed figure, which was 44 mm because it was defined as `channel − 4` — a
 number with no physical referent that then justified the channel that defined
-it. Two things followed from removing it:
+it. Removing it means **one width everywhere, and therefore one shape per piece
+type**: with nothing to blend at a seam there are no `_into_curve` /
+`_out_of_curve` / `_between_curves` straights and no `_entry` / `_through` /
+`_exit` curves. Across the whole scene library the track collapses to **8
+distinct shapes** — start, end, straight, curveL, curveR, lift, elevator,
+switch — down from 16.
 
-- Our figure now fits other people's track. At 44 mm it could not have run in
-  the 39.5 mm groove of the community set in §7, so this document's claim that
-  "figures interoperate across all systems" was false for ours.
-- **One width everywhere means one shape per piece type.** With nothing to
-  blend at a seam there are no `_into_curve` / `_out_of_curve` /
-  `_between_curves` straights and no `_entry` / `_through` / `_exit` curves.
-  Across the whole scene library the track collapses to **8 distinct shapes** —
-  start, end, straight, curveL, curveR, lift, elevator, switch — down from 16.
+Note what is NOT a reason here. Running on other people's ramps is not a goal
+of this project, so nothing about the community set in §7 constrains the
+design. What does constrain it is the other direction: **a real Klip Klop toy
+has to run on THIS track**, and that is what puts the floor under the channel
+at 44.60 mm.
 
 Worst side-to-side play over the eleven stock scenes, as printed:
 
