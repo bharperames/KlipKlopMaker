@@ -5,33 +5,33 @@
  *
  * WHY A PIXEL FONT. The obvious route is opentype.js plus an OFL face,
  * flattening each glyph's contours. It is wrong for this job, for a reason that
- * has nothing to do with taste: these codes are cut 4 mm tall into a 1.6 mm
- * wall on a 0.4 mm nozzle, and an outline font at 4 mm cap height has stems
- * well under two extrusion widths. A slicer does not render a thin stem
- * faintly — it drops it, and the part comes off the bed with holes in its code.
+ * has nothing to do with taste: these codes are a few millimetres tall cut with
+ * a 0.4 mm nozzle, and an outline font at that size has stems thinner than one
+ * extrusion. A slicer does not render a thin stem faintly — it drops it, and
+ * the part comes off the bed with holes in its code.
  *
- * A 3 × 5 pixel matrix makes the constraint structural rather than advisory.
- * One pixel IS the minimum feature: `pixelMm = capHeight / 5`, and nothing on
- * the part is ever smaller than that, in any direction, by construction. There
- * is no thin stem to lose because there are no stems — only squares. They are
- * axis-aligned too, so the slicer cuts them as clean perimeter steps instead of
+ * A pixel matrix makes the constraint structural rather than advisory. One
+ * pixel IS the minimum feature: `pixelMm = capHeight / GLYPH_ROWS`, and nothing
+ * on the part is ever smaller than that, in any direction, by construction.
+ * There is no thin stem to lose because there are no stems — only squares, and
+ * axis-aligned ones, which a slicer cuts as clean perimeter steps rather than
  * stair-stepping a diagonal.
  *
- * That it also looks like something off a 1982 cabinet is a happy coincidence,
- * and the reason it stayed.
- *
- * The trade is honest: 3 columns cannot really tell H, M, N and W apart. Every
- * code here disambiguates them by context (SWITC**H**, **M**ID, I**N**, P**W**R)
- * and that is how small fonts have always worked.
+ * WHY 5 × 7 AND NOT 3 × 5. A 3 × 5 matrix satisfies all of the above and reads
+ * as crude — at any size the letterforms are visibly coarse, and three columns
+ * genuinely cannot tell H, M, N and W apart. 5 × 7 is the smallest grid with
+ * room for a real bowl, a real diagonal and a slashed zero. It costs pixel
+ * size: seven rows in a 3.5 mm cap is a 0.5 mm pixel, so the marks are smaller
+ * as well as finer, which is what you want on a toy.
  *
  * Geometry: `textRings` emits one rectangle per horizontal RUN of lit pixels,
  * not one per pixel — a third of the rings for the same shape. They abut, and
- * the 2D union downstream fuses them into blocky letterforms.
+ * the 2D union downstream fuses them into letterforms.
  */
 
-/** The matrix. Rows are top-first; a glyph is 3 wide and 5 tall. */
-export const GLYPH_COLS = 3;
-export const GLYPH_ROWS = 5;
+/** The matrix. Rows are top-first; a glyph is 5 wide and 7 tall. */
+export const GLYPH_COLS = 5;
+export const GLYPH_ROWS = 7;
 /** Glyph cell including its trailing gap, in pixels. */
 export const ADVANCE_PX = GLYPH_COLS + 1;
 
@@ -41,53 +41,51 @@ export const ADVANCE_PX = GLYPH_COLS + 1;
  * it halves the table.
  */
 export const GLYPHS = {
-    ' ': ['...', '...', '...', '...', '...'],
-    'A': ['.#.', '#.#', '###', '#.#', '#.#'],
-    'B': ['##.', '#.#', '##.', '#.#', '##.'],
-    'C': ['.##', '#..', '#..', '#..', '.##'],
-    'D': ['##.', '#.#', '#.#', '#.#', '##.'],
-    'E': ['###', '#..', '##.', '#..', '###'],
-    'F': ['###', '#..', '##.', '#..', '#..'],
-    'G': ['.##', '#..', '#.#', '#.#', '.##'],
-    'H': ['#.#', '#.#', '###', '#.#', '#.#'],
-    'I': ['###', '.#.', '.#.', '.#.', '###'],
-    'J': ['..#', '..#', '..#', '#.#', '.#.'],
-    'K': ['#.#', '#.#', '##.', '#.#', '#.#'],
-    'L': ['#..', '#..', '#..', '#..', '###'],
-    'M': ['#.#', '###', '###', '#.#', '#.#'],
-    'N': ['##.', '#.#', '#.#', '#.#', '#.#'],
-    'O': ['###', '#.#', '#.#', '#.#', '###'],
-    'P': ['##.', '#.#', '##.', '#..', '#..'],
-    'Q': ['.#.', '#.#', '#.#', '###', '.##'],
-    'R': ['##.', '#.#', '##.', '#.#', '#.#'],
-    'S': ['.##', '#..', '.#.', '..#', '##.'],
-    'T': ['###', '.#.', '.#.', '.#.', '.#.'],
-    'U': ['#.#', '#.#', '#.#', '#.#', '###'],
-    'V': ['#.#', '#.#', '#.#', '#.#', '.#.'],
-    'W': ['#.#', '#.#', '###', '###', '#.#'],
-    'X': ['#.#', '#.#', '.#.', '#.#', '#.#'],
-    'Y': ['#.#', '#.#', '.#.', '.#.', '.#.'],
-    'Z': ['###', '..#', '.#.', '#..', '###'],
-    // '0' is the round one and 'O' the square one — they only ever meet in a
-    // parts bin, never inside a word, so this is the cheap way to tell them
-    // apart in three columns
-    '0': ['.#.', '#.#', '#.#', '#.#', '.#.'],
-    '1': ['.#.', '##.', '.#.', '.#.', '###'],
-    '2': ['##.', '..#', '.#.', '#..', '###'],
-    '3': ['##.', '..#', '.#.', '..#', '##.'],
-    '4': ['#.#', '#.#', '###', '..#', '..#'],
-    '5': ['###', '#..', '##.', '..#', '##.'],
-    '6': ['.##', '#..', '###', '#.#', '###'],
-    '7': ['###', '..#', '.#.', '.#.', '.#.'],
-    '8': ['###', '#.#', '###', '#.#', '###'],
-    '9': ['###', '#.#', '###', '..#', '##.'],
-    '.': ['...', '...', '...', '...', '.#.'],
-    '-': ['...', '...', '###', '...', '...'],
-    '/': ['..#', '..#', '.#.', '#..', '#..']
+    ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+    'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'B': ['####.', '#...#', '#...#', '####.', '#...#', '#...#', '####.'],
+    'C': ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+    'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+    'E': ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
+    'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+    'G': ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
+    'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    'I': ['.###.', '..#..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    'J': ['....#', '....#', '....#', '....#', '#...#', '#...#', '.###.'],
+    'K': ['#...#', '#..#.', '#.#..', '##...', '#.#..', '#..#.', '#...#'],
+    'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+    'M': ['#...#', '##.##', '#.#.#', '#...#', '#...#', '#...#', '#...#'],
+    'N': ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
+    'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+    'Q': ['.###.', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.##.#'],
+    'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+    'S': ['.###.', '#...#', '#....', '.###.', '....#', '#...#', '.###.'],
+    'T': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
+    'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+    'V': ['#...#', '#...#', '#...#', '#...#', '#...#', '.#.#.', '..#..'],
+    'W': ['#...#', '#...#', '#...#', '#...#', '#.#.#', '##.##', '#...#'],
+    'X': ['#...#', '#...#', '.#.#.', '..#..', '.#.#.', '#...#', '#...#'],
+    'Y': ['#...#', '#...#', '.#.#.', '..#..', '..#..', '..#..', '..#..'],
+    'Z': ['#####', '....#', '...#.', '..#..', '.#...', '#....', '#####'],
+    // the slashed nought, so a bin of R30s never reads as R3O
+    '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+    '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+    '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+    '3': ['#####', '...#.', '..#..', '...#.', '....#', '#...#', '.###.'],
+    '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+    '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+    '6': ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+    '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+    '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+    '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+    '.': ['.....', '.....', '.....', '.....', '.....', '.##..', '.##..'],
+    '-': ['.....', '.....', '.....', '#####', '.....', '.....', '.....'],
+    '/': ['....#', '....#', '...#.', '..#..', '.#...', '#....', '#....']
 };
 
 export const ENGRAVE_DEFAULTS = {
-    capHeight: 4,       // → 0.8 mm pixels, exactly two extrusion widths
+    capHeight: 3.5,     // → 0.5 mm pixels
     leadingPx: 1,       // blank rows between stacked lines
     /** Rectangles abut on the pixel grid; a hair of overlap keeps the 2D
      *  union off coincident edges, and 0.8 µm is not a feature. */

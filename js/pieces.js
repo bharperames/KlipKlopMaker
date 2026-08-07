@@ -579,52 +579,65 @@ function bossOps(piece, spec, support) {
 /**
  * Where a track piece's code goes, and which way round it reads.
  *
- * The band is the CHANNEL face of one rail — from the deck up to the crest.
- * Inside rather than outside: the outer wall is the show surface of an
- * assembled tower, and a code stamped across it reads as a factory marking on a
- * toy. The channel face is what you see when you pick a piece up and look into
- * it, which is exactly when you want to know what it is. It costs nothing —
- * the pocket only ever makes the channel LOCALLY WIDER, so it cannot bind a
- * figure, and it sits 5 mm up, clear of the 2 mm floor fillet the hooves
- * actually run against. It is 1.6 mm of wall, and `SPEC.engrave.depth` is held
- * to under a third of that, so three perimeters survive at a 0.4 nozzle and
- * nothing reaches the outside face.
+ * The face is the DRUMHEAD UNDERSIDE — the ceiling of the skirt cavity, seen
+ * only by turning the piece over and looking up through an arch. Nothing about
+ * the assembled tower shows it, and nothing about the part depends on it: it is
+ * not a mating face, not a bed contact, not the walking surface. It is the one
+ * genuinely out-of-the-way plane on a track piece with room for a code.
  *
- * Not the end rib (the plan's first choice): the bowtie pocket and the two
- * lightening windows leave only a pair of ~10 mm panels there, too small for a
- * code at a readable cap height, and the rib is a mating face — the one
- * surface on the part where half a millimetre matters.
+ * Everything else was tried and does not work. The end rib (the plan's first
+ * choice) has a bowtie pocket down the middle and two lightening windows either
+ * side, leaving a pair of ~10 mm panels — and it is a mating face. The rails
+ * are the show surface outside and the running channel inside. The lintel is
+ * `ARCH.band` = 3.6 mm tall, under a cap height. The rim is one wall thick.
  *
- * Which of the two rails is not a preference. Looking at a face from its free
- * side, along −n, the reader's left-to-right runs along `Y × n`. For the
- * channel face of the rail on the `right` side that comes out as +dir, so the
- * code runs with travel. Use the other rail and the whole library ships
- * mirrored.
+ * Two placement rules, both forced by what is already under there:
+ *
+ *  - OFF-CENTRE, `UNDERDECK_LATERAL` out toward one skirt wall. The socket boss
+ *    is Ø19 on the centreline and rises to meet this same ceiling; text over it
+ *    would not be a pocket at all, it would be a sealed void inside the part.
+ *  - clear of both end ribs, which fill the cavity for `SPEC.key.ribThk` at
+ *    each end and reach 0.5 mm INTO the floor.
+ *
+ * Reading: turn the piece over toward you — roll it about its travel axis —
+ * and the code is upright and runs with the direction of travel.
  */
 export function engraveFrame(piece, spec = SPEC) {
     const h = piece.entry.h;
-    // free-side normal of the engraved face — it points INTO the channel —
-    // and the reading direction Y × n
-    const normal = [-Math.sin(h), 0, Math.cos(h)];
-    const read = [Math.cos(h), 0, Math.sin(h)];   // === +dir, by construction
-    return { normal, read };
+    // free-side normal of the engraved face (it points DOWN, out of the skirt)
+    // and the reading direction
+    return {
+        normal: [0, -1, 0],
+        read: [Math.cos(h), 0, Math.sin(h)],          // +dir
+        up: [Math.sin(h), 0, -Math.cos(h)].map(c => -c)  // −right
+    };
 }
 
 /**
- * Local text coords → world. `u` runs along the wall in reading order from the
- * start of the block, `v` up from the deck, `w` into the wall starting `outset`
- * proud of the channel face. Every vertex is placed through its own station, so
- * the code follows a curve's wall instead of chording across it — at R 143 a
- * 30 mm label would otherwise stand 0.8 mm off at its ends and not cut at all.
+ * How far off the centreline the block sits. The boss is `SPEC.socket.bossR`
+ * = 9.5 and the cavity reaches `innerWidth / 2`, so this is the middle of what
+ * is left, and a 4 mm cap height clears both.
+ */
+export const UNDERDECK_LATERAL = 17;
+
+/**
+ * Local text coords → world. `u` runs along the track in reading order from the
+ * start of the block, `v` across it (text-up, toward the centreline), `w` up
+ * into the floor starting `outset` below the ceiling. Every vertex is placed
+ * through its own station, so the code follows the deck's fall and a curve's
+ * arc instead of chording across them — at R 143 a 30 mm label would otherwise
+ * stand 0.8 mm off at its ends and not cut at all.
  */
 export function engravePoint(piece, spec, sStart, u, v, w, outset = 0) {
     const s = Math.max(0, Math.min(piece.planLen, sStart + u));
     const p = planPosAt(piece, s);
     const right = [Math.sin(p.h), -Math.cos(p.h)];
-    // channel face of the `right` rail; material lies further out, so the cut
-    // runs outward from the channel and never reaches the show surface
-    const off = innerWidthAt(piece, s) / 2 - outset + w;
-    return [p.x + right[0] * off, deckYAt(piece, s) + v, p.z + right[1] * off];
+    const off = UNDERDECK_LATERAL - v;                 // text-up runs inboard
+    return [
+        p.x + right[0] * off,
+        deckYAt(piece, s) - spec.floorThk - outset + w,
+        p.z + right[1] * off
+    ];
 }
 
 /**
@@ -645,17 +658,16 @@ export function engraveOps(piece, text, spec = SPEC) {
     const wide = textWidthMm(text, font), tall = textHeightMm(font);
     const sStart = E.marginMm;
     if (sStart + wide > piece.planLen - E.marginMm) return [];
-    // marginMm is along the track; vertically the band is the whole rail, less
-    // the 2 mm floor fillet below and the crest chamfer above
-    if (tall + 4 > spec.railHeight) return [];
-    const vBase = (spec.railHeight - tall) / 2;
+    // the band runs from the boss's edge out to the skirt wall
+    if (UNDERDECK_LATERAL - tall < spec.socket.bossR + 1) return [];
+    if (UNDERDECK_LATERAL + 1 > piece.innerWidth / 2) return [];
 
     const rings = textRings(text, font);
-    // The map (u, v, w) → world is orientation-REVERSING on this wall: reading
-    // order had to run with travel for the code to be legible, and that is the
+    // The map (u, v, w) → world is orientation-REVERSING here: reading order
+    // had to run with travel for the code to be legible, and that is the
     // handedness that costs.
     const cut = cutSolid(rings, E.depth, (u, v, w) =>
-        engravePoint(piece, spec, sStart, u, vBase + v, w, ENGRAVE_OUTSET), true);
+        engravePoint(piece, spec, sStart, u, v, w, ENGRAVE_OUTSET), true);
     return cut ? [{ op: SUBTRACTION, geometry: cut }] : [];
 }
 
@@ -1105,15 +1117,15 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
 }
 
 /**
- * Puts a code on the flats of a hex prism, ONE LINE PER FLAT, turned on its
- * side so it runs up the part.
+ * Puts a whole code on ONE flat of a hex prism, as two stacked lines turned on
+ * their side so the block runs up the part.
  *
- * The arithmetic forces this. An across-flats-15 hex has an 8.66 mm face; a
- * pixel cannot go below `minFeature`, so five rows of glyph are 4 mm and two
- * stacked lines are 8.8 — wider than the face. One line fits with room to
- * spare, and the length it needs (12 mm for four characters) is available up
- * the part rather than across it. So `R120` goes on one flat and `1.1` on the
- * next; a hex has six and you turn it 60° to read the version.
+ * Turned, because that is the only way the whole code lands on one face. An
+ * across-flats-15 hex gives an 8.66 mm face: two lines of the 5 × 7 matrix are
+ * 7.5 mm across it and fit, while `R120` upright would need 11.5 mm and does
+ * not. Along the part there is 13 mm on even the shortest riser, which is room
+ * to spare. So you read it by turning the part, not by turning it over and
+ * hunting the next flat.
  *
  * Engraving is OPT-IN here, unlike on track pieces: this builder serves the
  * scene as well as the exporter, a tower draws a hundred risers, and the cut is
@@ -1121,27 +1133,22 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
  */
 function hexFlatEngraveOps(code, acrossFlats, y0, y1, spec = SPEC) {
     if (!code) return [];
-    const cap = spec.engrave.capHeight;
-    const faceWidth = acrossFlats / Math.sqrt(3);
-    const ops = [];
+    const font = { capHeight: spec.engrave.capHeight };
     const lines = String(code).split(' ');
-    for (let i = 0; i < lines.length; i++) {
-        const along = textWidthMm(lines[i], { capHeight: cap });
-        const across = textHeightMm({ capHeight: cap });
-        if (along > (y1 - y0) - 2 || across > faceWidth - 1.5) return [];
-        // hexPlan puts vertices at 0° and 60°, so face centres sit at 30° + 60k
-        const a = Math.PI / 6 + i * Math.PI / 3;
-        const n = [Math.cos(a), 0, Math.sin(a)];
-        // turned on its side: reading runs +Y, and the face's own "up" is the
-        // horizontal tangent t with Y × t = n
-        const read = [0, 1, 0];
-        const up = [-n[2], 0, n[0]];
-        const c = [n[0] * (acrossFlats / 2), (y0 + y1) / 2, n[2] * (acrossFlats / 2)];
-        ops.push(...engraveFlatOps([lines[i]],
-            [c[0] - up[0] * (across / 2), c[1] - along / 2, c[2] - up[2] * (across / 2)],
-            read, up, spec, { capHeight: cap }));
-    }
-    return ops;
+    const size = blockSizeMm(lines, font);
+    const faceWidth = acrossFlats / Math.sqrt(3);
+    if (size.widthMm > (y1 - y0) - 2 || size.heightMm > faceWidth - 1) return [];
+    // hexPlan puts vertices at 0° and 60°, so a face centre sits at 30°
+    const a = Math.PI / 6;
+    const n = [Math.cos(a), 0, Math.sin(a)];
+    // turned on its side: reading runs +Y, and the block's own "up" is the
+    // horizontal tangent t with Y × t = n
+    const read = [0, 1, 0];
+    const up = [-n[2], 0, n[0]];
+    const c = [n[0] * (acrossFlats / 2), (y0 + y1) / 2, n[2] * (acrossFlats / 2)];
+    return engraveFlatOps(lines,
+        [c[0] - up[0] * (size.heightMm / 2), c[1] - size.widthMm / 2, c[2] - up[2] * (size.heightMm / 2)],
+        read, up, spec);
 }
 
 /**

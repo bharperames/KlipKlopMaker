@@ -131,11 +131,18 @@ export const SPEC = {
     // it. engrave.js is a 3x5 PIXEL font, so one pixel is the smallest thing on
     // the part in any direction and capHeight 4 puts it at exactly 0.8 — the
     // rule is structural rather than something to remember to check.
+    // Engraved part codes, cut into hidden faces (drumhead underside on track
+    // pieces; see engraveOps). capHeight 3.5 over the 5x7 matrix in engrave.js
+    // gives a 0.5 mm pixel — and one pixel is the smallest feature on the part
+    // in any direction, so `minFeature` is enforced by the grid rather than
+    // remembered. 0.5 mm is a groove a 0.4 nozzle cuts cleanly; the old 0.8
+    // was the rule for a raised stem, which is a different problem.
+    //
     // marginMm is 14 and not 6 because the start platform's bumper fills the
     // channel from 2 to 10 mm in: at 6 the first glyph landed INSIDE it and
     // came out as a sealed void — invisible, and a second shell in a part that
     // must be one solid.
-    engrave: { depth: 0.5, capHeight: 4, minFeature: 0.8, marginMm: 14 },
+    engrave: { depth: 0.5, capHeight: 3.5, minFeature: 0.5, marginMm: 14 },
     liftSpeedMmS: 110
 };
 

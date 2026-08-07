@@ -45,14 +45,13 @@ describe('the pixel font', () => {
     test('one pixel is the smallest feature, and cap height sets it', () => {
         // the whole reason for a pixel font: nothing on the part is ever
         // narrower than a pixel, in any direction, by construction
-        expect(pixelMm({ capHeight: 4 })).toBeCloseTo(0.8, 9);
-        expect(pixelMm({ capHeight: 4 })).toBeGreaterThanOrEqual(SPEC.engrave.minFeature);
+        expect(pixelMm({ capHeight: 3.5 })).toBeCloseTo(0.5, 9);
         expect(pixelMm(SPEC.engrave)).toBeGreaterThanOrEqual(SPEC.engrave.minFeature);
     });
 
     test('cells are laid out left to right with a one-pixel gap', () => {
-        const cells = textCells('II');
-        const cols = [...new Set(cells.map(c => c.col))].sort((a, b) => a - b);
+        // 'M' is the glyph that fills its cell edge to edge
+        const cols = [...new Set(textCells('MM').map(c => c.col))].sort((a, b) => a - b);
         expect(Math.min(...cols)).toBe(0);
         expect(Math.max(...cols)).toBe(ADVANCE_PX + GLYPH_COLS - 1);
         expect(cols).not.toContain(GLYPH_COLS);      // the gap column is never lit
@@ -76,14 +75,15 @@ describe('rings', () => {
         }
     });
 
-    test('runs are merged, so a solid row is one ring and not three', () => {
-        // 'I' is ###/.#./.#./.#./### — five runs, not eleven pixels
+    test('runs are merged, so a solid row is one ring and not five', () => {
+        // 'I' is a serif top, a stem and a serif foot: one run per row, so
+        // seven rings for the eleven lit pixels
         expect(textRings('I').length).toBe(GLYPH_ROWS);
-        expect(textCells('I').length).toBe(3 + 1 + 1 + 1 + 3);
+        expect(textCells('I').length).toBe(3 + 1 + 1 + 1 + 1 + 1 + 3);
     });
 
     test('ink fills exactly the box the layout reserved', () => {
-        const opts = { capHeight: 4 };
+        const opts = { capHeight: 3.5 };
         const rings = textRings('R120 1.1', opts);
         const xs = rings.flat().map(p => p[0]), ys = rings.flat().map(p => p[1]);
         const bleed = ENGRAVE_DEFAULTS.bleedMm;
@@ -95,10 +95,10 @@ describe('rings', () => {
 
     test('a block stacks its first line on top, with a blank row between', () => {
         const lines = ['R120', '1.1'];
-        const size = blockSizeMm(lines, { capHeight: 4 });
-        expect(size.widthMm).toBeCloseTo(textWidthMm('R120', { capHeight: 4 }), 6);
-        expect(size.heightMm).toBeCloseTo((2 * GLYPH_ROWS + 1) * pixelMm({ capHeight: 4 }), 6);
-        const ys = blockRings(lines, { capHeight: 4 }).flat().map(p => p[1]);
+        const size = blockSizeMm(lines, { capHeight: 3.5 });
+        expect(size.widthMm).toBeCloseTo(textWidthMm('R120', { capHeight: 3.5 }), 6);
+        expect(size.heightMm).toBeCloseTo((2 * GLYPH_ROWS + 1) * pixelMm({ capHeight: 3.5 }), 6);
+        const ys = blockRings(lines, { capHeight: 3.5 }).flat().map(p => p[1]);
         expect(Math.max(...ys)).toBeCloseTo(size.heightMm + ENGRAVE_DEFAULTS.bleedMm, 6);
     });
 });
@@ -137,27 +137,27 @@ describe('what the code says', () => {
         const longest = `SWITCH MID ${codeVersion(GEOMETRY_VERSION)}`;
         expect(textWidthMm(longest, font) + 2 * SPEC.engrave.marginMm)
             .toBeLessThanOrEqual(SPEC.platformLen);
-        // the band is the rail, less the floor fillet below and the crest above
-        expect(textHeightMm(font) + 4).toBeLessThanOrEqual(SPEC.railHeight);
+        // the band under the deck runs from the boss's edge out to the skirt
+        expect(textHeightMm(font))
+            .toBeLessThanOrEqual(STANDARD.innerWidth / 2 - SPEC.socket.bossR - 2);
 
-        // hex flats take ONE line each, turned on their side: length runs up
-        // the part, height across an across-flats-15 face
+        // a hex flat takes the WHOLE code, both lines, turned on its side:
+        // the block's width runs up the part, its height across the face
         const faceWidth = 15 / Math.sqrt(3);
         for (const r of STANDARD.riserSizes) {
-            for (const line of partCode(`R${r}`, GEOMETRY_VERSION).split(' ')) {
-                expect(textWidthMm(line, font)).toBeLessThanOrEqual(r - 2);
-                expect(textHeightMm(font)).toBeLessThanOrEqual(faceWidth - 1.5);
-            }
+            const block = blockSizeMm(partCode(`R${r}`, GEOMETRY_VERSION).split(' '), font);
+            expect(block.widthMm).toBeLessThanOrEqual(r - 2);
+            expect(block.heightMm).toBeLessThanOrEqual(faceWidth - 1);
         }
-        // the foot's shaft is 11 mm and FOOT needs 12 — which is why its code
-        // is on the base, where an across-flats-24.8 disc has room to spare
-        expect(textWidthMm('FOOT', font)).toBeGreaterThan(STANDARD.footHeight - 4 - 2);
-        const base = blockSizeMm(partCode('FOOT', GEOMETRY_VERSION).split(' '), font);
-        expect(Math.hypot(base.widthMm, base.heightMm) / 2).toBeLessThan(24.8 / 2 - 1);
+        // the foot's shaft is 11 mm and its block needs 11.5 — which is why
+        // its code is on the base, where an across-flats-24.8 disc has room
+        const foot = blockSizeMm(partCode('FOOT', GEOMETRY_VERSION).split(' '), font);
+        expect(foot.widthMm).toBeGreaterThan(STANDARD.footHeight - 4 - 2);
+        expect(Math.hypot(foot.widthMm, foot.heightMm) / 2).toBeLessThan(24.8 / 2 - 1);
     });
 
     test('engrave depth never eats more than a third of the wall', () => {
         expect(SPEC.engrave.depth).toBeLessThanOrEqual(SPEC.wall / 3);
-        expect(SPEC.engrave.minFeature).toBeGreaterThanOrEqual(0.8);  // two line widths
+        expect(SPEC.engrave.minFeature).toBeGreaterThanOrEqual(0.4);  // one nozzle width
     });
 });

@@ -82,18 +82,21 @@ building, gait physics simulation, and watertight STL/3MF export.
   millimetre of the figure's side-to-side play. See PHYSICS.md §8.
 - **Every exported part is engraved with its code**, derived from
   `GEOMETRY_VERSION` (MAJOR.MINOR only — the code is a compatibility claim, and
-  PATCH is defined as cosmetic). `engrave.js` is a 3×5 PIXEL font, deliberately
-  not an outline font: at 4 mm caps an outline font's stems fall under two
-  extrusion widths and the slicer drops them, whereas one pixel *is*
-  `SPEC.engrave.minFeature` by construction. Placement: track pieces on the
-  CHANNEL face of the `right` rail (never the outside — that is the show
-  surface; and the cut only ever widens the channel, so it cannot bind a
-  figure), risers one line per hex flat turned on its side, foot on its base,
-  key on its top. Engraving is EXPORT ONLY — builders shared with the scene
-  (`buildRiserGeometry`, `buildKeyGeometry`, `buildSupportFootGeometry`) take
-  an opt-in `{ code }` so rebuilds stay cheap. A code placed inside solid
-  material becomes a sealed void and a second shell: `tests/pieces.test.js`
-  catches that, and it is why `marginMm` clears the start platform's bumper.
+  PATCH is defined as cosmetic). `engrave.js` is a 5×7 PIXEL font, deliberately
+  not an outline font: at these sizes an outline font's stems fall under one
+  extrusion width and the slicer drops them, whereas one pixel *is*
+  `SPEC.engrave.minFeature` by construction.
+- **Codes go on HIDDEN faces only** — never a show surface, never a mating
+  face, never the walking channel. Track pieces: the drumhead underside, the
+  ceiling of the skirt cavity, offset `UNDERDECK_LATERAL` to clear the Ø19
+  boss (text over the boss is not a pocket, it is a sealed void). Risers: the
+  whole code as two lines on ONE hex flat, turned on its side — upright it
+  would not fit an 8.66 mm face. Foot: its base. Key: its top. Engraving is
+  EXPORT ONLY — builders shared with the scene (`buildRiserGeometry`,
+  `buildKeyGeometry`, `buildSupportFootGeometry`) take an opt-in `{ code }` so
+  rebuilds stay cheap. A code placed inside solid material becomes a sealed
+  void and a second shell: `tests/pieces.test.js` catches that, and it is why
+  `marginMm` clears the start platform's bumper.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses).
 

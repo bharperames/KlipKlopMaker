@@ -67,39 +67,46 @@ Every exported part carries its code, cut 0.5 mm deep: `CURVEL 1.1`,
 `STR IN 1.1`, `PLAT 1.1`, `KEY 1.1`, `R120 1.1`. Derived from
 `GEOMETRY_VERSION`, MAJOR.MINOR only.
 
-**Deviation 1 — a 3 × 5 pixel font, not opentype.js.** The plan's own
-`minStroke: 0.8` note is the reason. At 4 mm cap height an outline font's stems
-are well under two extrusion widths, and a slicer does not render a thin stem
-faintly — it drops it, and the part arrives with holes in its code. A pixel
+**Deviation 1 — a 5 × 7 pixel font, not opentype.js.** The plan's own
+`minStroke` note is the reason. At these sizes an outline font's stems are
+under one extrusion width, and a slicer does not render a thin stem faintly —
+it drops it, and the part arrives with holes in its code. A pixel
 matrix makes the constraint structural rather than advisory: one pixel *is* the
-minimum feature, `capHeight / 5`, and nothing on the part is smaller than that
-in any direction. The squares are axis-aligned too, so they cut as clean
-perimeter steps instead of stair-stepped diagonals. No dependency, no bundled
-font file. That it looks like something off a 1982 cabinet is why it stayed.
+minimum feature, `capHeight / GLYPH_ROWS`, and nothing on the part is smaller
+than that in any direction. The squares are axis-aligned too, so they cut as
+clean perimeter steps instead of stair-stepped diagonals. No dependency, no
+bundled font file.
 
-The trade is honest: three columns cannot really tell H, M, N and W apart.
-Every code disambiguates them by context (SWITC**H**, **M**ID, I**N**, P**W**R),
-which is how small fonts have always worked.
+It was 3 × 5 first and that read as crude at any size — three columns genuinely
+cannot tell H, M, N and W apart. 5 × 7 is the smallest grid with room for a
+real bowl, a real diagonal and a slashed zero, and it costs pixel size: seven
+rows in a 3.5 mm cap is a 0.5 mm pixel, so the marks came out finer AND smaller
+at the same time.
 
-**Deviation 2 — the rail's channel face, not the end rib.** The plan chose the
+**Deviation 2 — the drumhead underside, not the end rib.** The plan chose the
 end rib for being planar even on a curve. Measured, the rib's usable face is not
 51 × 26 mm: the bowtie pocket takes the middle and the two lightening windows
 take most of what is left, leaving a pair of ~10 mm panels — too small for a
 code at a readable cap height. And the rib is a *mating* face, the one surface
 on the part where half a millimetre matters.
 
-The code goes on the rail instead — and on its INSIDE. The outer wall is the
-show surface of an assembled tower; the channel face is what you see when you
-pick a piece up and look into it, which is exactly when you want to know what it
-is. It costs nothing: the pocket only ever makes the channel locally wider, so
-it cannot bind a figure, and it sits 5 mm up, clear of the floor fillet the
-hooves run against. Curves cost an arc-following placement, which the station
+The rule that settled it: codes go on HIDDEN faces only. Not a show surface,
+not a mating face, not the walking channel. On a track piece that leaves
+exactly one plane with room — the ceiling of the skirt cavity, seen by turning
+the piece over and looking up through an arch. It is offset toward one skirt
+wall because the Ø19 socket boss rises to meet that same ceiling on the
+centreline, and text over the boss is not a pocket at all: it is a sealed void
+inside the part. Curves cost an arc-following placement, which the station
 machinery already had.
 
-Which of the two rails is not a preference. Looking at a face from its free
-side, the reader's left-to-right runs along `Y × n`; on the other rail that
-comes out against the direction of travel and the code would ship mirrored on
-every part in the library. There is a test for it.
+Small parts followed the same rule: a riser takes the whole code as two lines
+on ONE hex flat, turned on its side (upright it needs 11.5 mm across an 8.66 mm
+face); the foot takes its base, where a 24.8 mm disc has room to spare.
+
+Orientation is not a preference. Text reads correctly iff `read × up` points at
+the reader — get it backwards and the whole library ships mirrored. There is a
+test, written as that invariant rather than as "runs with travel", so it keeps
+working whichever plane the code lands on.
 
 **One trap worth remembering.** A code placed inside solid material does not
 fail loudly — it becomes a sealed void, invisible and a second shell in a part

@@ -142,7 +142,7 @@ describe('engraved part codes', () => {
         }
     });
 
-    test('the cut goes outward from the channel and never reaches the show face', () => {
+    test('the cut stays on the hidden underside, clear of the boss and the floor', () => {
         // measured on the cutter itself: on the finished part other geometry
         // (the arcade's own walls) also sits half a millimetre inside a face,
         // so the finished mesh cannot tell you where the code is
@@ -151,7 +151,7 @@ describe('engraved part codes', () => {
             const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
             expect(op.op).toBe('subtract');
             const { positions } = op.geometry;
-            let deepest = 0, lowest = Infinity, highest = -Infinity, ahead = -Infinity;
+            let intoFloor = -Infinity, nearest = Infinity, furthest = -Infinity, ahead = -Infinity;
             for (let i = 0; i < positions.length; i += 3) {
                 // invert the placement by nearest station — exact enough at
                 // 0.25 mm steps to bound the cut
@@ -161,23 +161,27 @@ describe('engraved part codes', () => {
                     const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
                     if (d < bestD) { bestD = d; bestS = s; }
                 }
-                deepest = Math.max(deepest, bestD - innerWidthAt(pc, bestS) / 2);
-                const v = positions[i + 1] - deckYAt(pc, bestS);
-                lowest = Math.min(lowest, v);
-                highest = Math.max(highest, v);
+                intoFloor = Math.max(intoFloor,
+                    positions[i + 1] - (deckYAt(pc, bestS) - SPEC.floorThk));
+                nearest = Math.min(nearest, bestD);
+                furthest = Math.max(furthest, bestD);
                 ahead = Math.max(ahead, bestS);
             }
-            expect(deepest).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
-            expect(deepest).toBeLessThan(SPEC.wall);          // outer face untouched
-            expect(lowest).toBeGreaterThan(SPEC.filletR);     // clear of the floor fillet
-            expect(highest).toBeLessThan(SPEC.railHeight);    // below the crest
-            expect(ahead).toBeLessThan(pc.planLen);           // inside the part
+            // never eats more than the stated depth of the 2 mm drumhead, so
+            // the walking surface above it is untouched
+            expect(intoFloor).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
+            expect(intoFloor).toBeLessThan(SPEC.floorThk);
+            // clear of the Ø19 boss inboard and the skirt wall outboard, or the
+            // pocket would be a sealed void inside one of them
+            expect(nearest).toBeGreaterThan(SPEC.socket.bossR);
+            expect(furthest).toBeLessThan(innerWidthAt(pc, 0) / 2);
+            expect(ahead).toBeLessThan(pc.planLen - SPEC.key.ribThk);   // clear of the end rib
         }
     });
 
-    test('engraving the channel can only make it wider, never narrower', () => {
-        // the cut is in the wall the figure runs past; it must not eat into the
-        // clearance model's assumptions in the direction that would bind
+    test('nothing is cut from the walking channel or any show surface', () => {
+        // the code lives under the deck; the figure's channel, the rails and
+        // the outside of the part must not know it is there
         const pc = pieceInFrame(pieces[1]);
         const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
         const { positions } = op.geometry;
@@ -188,26 +192,34 @@ describe('engraved part codes', () => {
                 const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
                 if (d < bestD) { bestD = d; bestS = s; }
             }
-            // nothing is removed from INSIDE the channel envelope beyond the
-            // hair of outset the boolean needs to bite cleanly
-            expect(innerWidthAt(pc, bestS) / 2 - bestD).toBeLessThan(0.2);
+            expect(positions[i + 1]).toBeLessThan(deckYAt(pc, bestS));   // below the deck
+            expect(bestD).toBeLessThan(innerWidthAt(pc, bestS) / 2);     // inboard of the walls
         }
     });
 
-    test('the code reads left to right when you look at the wall', () => {
-        // Looking at a wall from outside along −n, the reader's left-to-right
-        // runs along Y × n. Get this backwards and every part in the library
-        // ships with its code mirrored — cheap to check, expensive to find.
+    test('the code is not mirrored', () => {
+        // Text on a face reads correctly iff its own axes form a right-handed
+        // set with the normal pointing at the reader: read × up = out. Get it
+        // backwards and every part in the library ships mirrored — cheap to
+        // check, expensive to find on a printed bin of parts. The rule holds
+        // whatever plane the code ends up on, which is why it is stated this
+        // way rather than as "runs with travel".
+        const cross = (a, b) => [
+            a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+        const unit = (v) => { const L = Math.hypot(...v); return v.map(c => c / L); };
         for (const idx of [1, 2]) {
             const pc = pieceInFrame(pieces[idx]);
-            const at = (u, w) => engravePoint(pc, SPEC, SPEC.engrave.marginMm, u, 5, w, 0.15);
-            const surface = at(0, 0), deep = at(0, SPEC.engrave.depth);
-            const n = [surface[0] - deep[0], 0, surface[2] - deep[2]];
-            const len = Math.hypot(n[0], n[2]);
-            const readRight = [n[2] / len, 0, -n[0] / len];    // Y × n
-            const run = at(10, 0);
-            const dot = (run[0] - surface[0]) * readRight[0] + (run[2] - surface[2]) * readRight[2];
-            expect(`${pc.name} reads forward`).toBe(dot > 0 ? `${pc.name} reads forward` : `${pc.name} reads BACKWARDS`);
+            const at = (u, v, w) => engravePoint(pc, SPEC, SPEC.engrave.marginMm, u, v, w, 0.15);
+            const o = at(0, 0, 0);
+            const read = unit(at(4, 0, 0).map((c, i) => c - o[i]));
+            const up = unit(at(0, 2, 0).map((c, i) => c - o[i]));
+            // the free-side normal: away from the material the cut goes into
+            const out = unit(at(0, 0, 0).map((c, i) => c - at(0, 0, SPEC.engrave.depth)[i]));
+            // sign, not equality: the text plane follows the deck's fall while
+            // the cut is driven straight up, so the frame is slightly sheared
+            const handed = cross(read, up).reduce((s, c, k) => s + c * out[k], 0);
+            expect(`${pc.name} ${handed > 0.5 ? 'reads correctly' : 'is MIRRORED'}`)
+                .toBe(`${pc.name} reads correctly`);
         }
     });
 
