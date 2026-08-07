@@ -91,7 +91,10 @@ building, gait physics simulation, and watertight STL/3MF export.
   the font's real extent rather than assuming the box.
 - **Codes go on the INSIDE, never a show surface or a mating face.** Track
   pieces: the channel face of the `right` rail — vertical, inside, and the cut
-  only ever widens the channel so it cannot bind a figure. Risers: the whole
+  only ever widens the channel so it cannot bind a figure. SWITCHES take the
+  gate rail and start past the gate slot (`switchEngraveSpot`): neither rail is
+  free end to end there, and a code aimed at the slot cuts thin air. Risers:
+  the whole
   code as two lines on ONE hex flat, turned on its side. Foot: its base. Key:
   its top. Not the end rib (pocket + windows leave ~10 mm panels, and it
   mates), not the drumhead underside (acoustic, and the boss reaches it), not

@@ -599,19 +599,32 @@ function bossOps(piece, spec, support) {
  * arcade cuts arches through it, so the only band that survives end to end is
  * `ARCH.band` minus the floor — 1.6 mm, under half a cap height.
  *
- * Which of the two rails is not a preference. Looking at a face from its free
- * side, along −n, the reader's left-to-right runs along `Y × n`. For the
- * channel face of the rail on the `right` side that comes out as +dir, so the
- * code runs with travel. Use the other rail and the whole library ships
- * mirrored.
+ * Which rail is not a preference either, and on a SWITCH neither rail is free
+ * for its whole length. Two routes are merged into one solid, so each route's
+ * clearance envelope cuts the other's rails open at the mouth to make the frog;
+ * and the gate blade is hinged on the wall OPPOSITE the branch, with 52 mm of
+ * that rail slotted away so the parked blade becomes it. A code aimed at the
+ * gate rail cut into thin air and half of it silently vanished.
+ *
+ * Neither rail is free end to end, so a switch marks the GATE rail and starts
+ * past the slot (`switchEngraveSpot`). The branch rail was tried and is worse:
+ * the branch route runs alongside it for 110 mm of a 150 mm tile.
+ *
+ * Reading order follows: looking at a face from its free side, along −n, the
+ * reader's left-to-right runs along `Y × n`, which is +dir on one rail and
+ * −dir on the other. So the block is laid out backwards along the track on the
+ * far rail, and comes out reading the same way on both.
  */
+export const engraveSide = (piece) => (piece && piece.switchType === 'switchR' ? -1 : 1);
+
 export function engraveFrame(piece, spec = SPEC) {
     const h = piece.entry.h;
+    const side = engraveSide(piece);
     // free-side normal of the engraved face — it points INTO the channel —
     // and the reading direction Y × n
     return {
-        normal: [-Math.sin(h), 0, Math.cos(h)],
-        read: [Math.cos(h), 0, Math.sin(h)],       // === +dir, by construction
+        normal: [-side * Math.sin(h), 0, side * Math.cos(h)],
+        read: [side * Math.cos(h), 0, side * Math.sin(h)],
         up: [0, 1, 0]
     };
 }
@@ -624,13 +637,16 @@ export function engraveFrame(piece, spec = SPEC) {
  * them — at R 143 a 30 mm label would otherwise stand 0.8 mm off at its ends
  * and not cut at all.
  */
-export function engravePoint(piece, spec, sStart, u, v, w, outset = 0) {
-    const s = Math.max(0, Math.min(piece.planLen, sStart + u));
+export function engravePoint(piece, spec, sStart, u, v, w, outset = 0, side = 1, wide = 0) {
+    // on the far rail the reader's left-to-right runs against travel, so the
+    // block is laid out backwards along the track and reads the same either way
+    const along = side > 0 ? sStart + u : sStart + wide - u;
+    const s = Math.max(0, Math.min(piece.planLen, along));
     const p = planPosAt(piece, s);
     const right = [Math.sin(p.h), -Math.cos(p.h)];
-    // channel face of the `right` rail; material lies further out, so the cut
-    // runs outward from the channel and never reaches the show surface
-    const off = innerWidthAt(piece, s) / 2 - outset + w;
+    // channel face; material lies further out, so the cut runs outward from
+    // the channel and never reaches the show surface
+    const off = side * (innerWidthAt(piece, s) / 2 - outset + w);
     return [p.x + right[0] * off, deckYAt(piece, s) + v, p.z + right[1] * off];
 }
 
@@ -643,13 +659,13 @@ export function engravePoint(piece, spec, sStart, u, v, w, outset = 0) {
  * Returns [] rather than throwing when the text does not fit — a part too short
  * to mark is not a reason to fail an export.
  */
-export function engraveOps(piece, text, spec = SPEC) {
+export function engraveOps(piece, text, spec = SPEC, opts = {}) {
     const E = spec.engrave;
     if (!E || !text || !piece || !(piece.planLen > 0)) return [];
     if (!wasm) throw new Error('initCSG() must be awaited before engraving');
     const font = { capHeight: E.capHeight, strokeMm: E.minFeature };
     const wide = textWidthMm(text, font), tall = textHeightMm(font);
-    const sStart = E.marginMm;
+    const sStart = opts.sStart ?? E.marginMm;
     if (sStart + wide > piece.planLen - E.marginMm) return [];
     // the band is the rail, less the floor fillet below and the crest above
     if (tall + spec.filletR + 1 > spec.railHeight) return [];
@@ -659,8 +675,9 @@ export function engraveOps(piece, text, spec = SPEC) {
     // The map (u, v, w) → world is orientation-REVERSING here: reading order
     // had to run with travel for the code to be legible, and that is the
     // handedness that costs.
+    const side = opts.side ?? engraveSide(piece);
     const cut = cutSolid(rings, E.depth, (u, v, w) =>
-        engravePoint(piece, spec, sStart, u, vBase + v, w, ENGRAVE_OUTSET), true);
+        engravePoint(piece, spec, sStart, u, vBase + v, w, ENGRAVE_OUTSET, side, wide), true);
     return cut ? [{ op: SUBTRACTION, geometry: cut }] : [];
 }
 
@@ -805,6 +822,20 @@ export function buildPieceExportGeometry(piece, opts = {}) {
 }
 
 /**
+ * Where a switch's code goes: which rail, and how far along.
+ *
+ * The gate rail — the wall opposite the branch — because the branch rail has
+ * the branch route running alongside it for 110 mm of a 150 mm tile. The catch
+ * is that the gate rail is exactly the one slotted away over the blade's
+ * length, so the code starts after the slot rather than at the usual margin.
+ * Aimed at the slot it cut into thin air and half of it silently vanished.
+ */
+function switchEngraveSpot(mainPiece, branchPiece, spec = SPEC) {
+    const pin = gatePinPosition(mainPiece, branchPiece);
+    return { side: pin.hingeSide, sStart: pin.s + GATE.len + 3 };
+}
+
+/**
  * Switch part: union of the straight-through and diverging shells, one entry
  * joint, two exit joints, a boss, and a vertical gate-pin bore at the fork.
  */
@@ -839,7 +870,8 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
-    ops.push(...engraveOps(mainPiece, opts.code ?? pieceCode(mainPiece, GEOMETRY_VERSION), spec));
+    ops.push(...engraveOps(mainPiece, opts.code ?? pieceCode(mainPiece, GEOMETRY_VERSION), spec,
+        switchEngraveSpot(mainPiece, branchPiece, spec)));
 
     return csgChain(shell, ops);
 }

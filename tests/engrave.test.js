@@ -160,13 +160,15 @@ describe('what the code says', () => {
         expect(codes).toContain(`STR OUT ${codeVersion(GEOMETRY_VERSION)}`);
         // ...while every curve is one part and takes the plain code
         for (const pc of pieces.filter(p => p.radius)) {
-            expect(pieceCode(pc, GEOMETRY_VERSION)).toBe(`CURVEL ${codeVersion(GEOMETRY_VERSION)}`);
+            expect(pieceCode(pc, GEOMETRY_VERSION)).toBe(`LEFT CURVE ${codeVersion(GEOMETRY_VERSION)}`);
         }
     });
 
     test('every code that can occur fits the surface it is cut into', () => {
-        // the longest a track code can get: a flared switch, lift or elevator
-        const longest = `SWITCH MID ${codeVersion(GEOMETRY_VERSION)}`;
+        // the longest a track code can get. A curve spells itself out, so it
+        // is the long one now — and a curve tile is 225 mm, which is why it can
+        // afford to; the check is against the SHORTEST tile all the same.
+        const longest = `RIGHT CURVE ${codeVersion(GEOMETRY_VERSION)}`;
         expect(textWidthMm(longest, FONT) + 2 * SPEC.engrave.marginMm)
             .toBeLessThanOrEqual(SPEC.platformLen);
         // the band is the rail, less the floor fillet below and the crest above

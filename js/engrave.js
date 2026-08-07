@@ -319,7 +319,10 @@ export function codeVersion(geometryVersion) {
 }
 
 const TYPE_CODE = {
-    start: 'PLAT', end: 'PLAT', straight: 'STR', curveL: 'CURVEL', curveR: 'CURVER',
+    start: 'PLAT', end: 'PLAT', straight: 'STR',
+    // spelled out: a bin of chiral parts is exactly where an abbreviation
+    // costs you, and a curve tile is long enough to carry the words
+    curveL: 'LEFT CURVE', curveR: 'RIGHT CURVE',
     lift: 'LIFT', elevator: 'ELEV', powered: 'PWR',
     switchMain: 'SWITCH', switchBranch: 'SWITCH'
 };
