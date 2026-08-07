@@ -36,10 +36,10 @@ Open the served URL in any modern browser. Everything runs client-side.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
   overhangs** (slicer-verified). Every part comes out **engraved with its own
-  code** — `CURVEL 1.1`, `STR IN 1.1`, `R120 1.1` — in a 5×7 pixel font, cut
-  0.5 mm into a face you never see in an assembled tower: the underside of the
-  deck for track pieces, a single hex flat for risers, the base of a foot. The
-  font is a pixel matrix on purpose: one pixel is the minimum printable
+  code** — `CURVEL 1.1`, `STR IN 1.1`, `R120 1.1` — cut 0.5 mm into a face you
+  never see from outside an assembled tower: the inside of a rail for track
+  pieces, a single hex flat for risers, the base of a foot. The lettering is a
+  stroke font, not an outline one — the stroke width IS the minimum printable
   feature, so no part of a glyph can fall below what a 0.4 mm nozzle will
   cut. The number is `GEOMETRY_VERSION` minus its patch digit, so
   the mark is a compatibility claim: anything `1.1` mates with anything else
@@ -121,7 +121,7 @@ stall/tumble terminal outcomes, with an energy-budget invariant
 | `js/physics.js` | pure rimless-wheel gait model, friction presets, ballast planner |
 | `js/simulate.js` | pure deterministic dynamics (walk/slide/stall/tumble), energy invariant |
 | `js/clearance.js` | pure lateral fit: rigid footprint swept against the channel (PHYSICS.md §8) |
-| `js/engrave.js` | pure 5×7 pixel font → polygon rings, and the part-code scheme |
+| `js/engrave.js` | pure stroke font → polygon rings, and the part-code scheme |
 | `js/scene_format.js` | versioned scene persistence (serialize/validate/deserialize) |
 | `js/geometry.js` | pure watertight mesh construction (ear-clip, zero-bank sweeps, profiles) |
 | `js/pieces.js` | Three.js + Manifold-WASM CSG assembly of printable parts |

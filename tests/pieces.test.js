@@ -142,7 +142,7 @@ describe('engraved part codes', () => {
         }
     });
 
-    test('the cut stays on the hidden underside, clear of the boss and the floor', () => {
+    test('the cut stays in the rail wall and never reaches the show face', () => {
         // measured on the cutter itself: on the finished part other geometry
         // (the arcade's own walls) also sits half a millimetre inside a face,
         // so the finished mesh cannot tell you where the code is
@@ -151,7 +151,7 @@ describe('engraved part codes', () => {
             const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
             expect(op.op).toBe('subtract');
             const { positions } = op.geometry;
-            let intoFloor = -Infinity, nearest = Infinity, furthest = -Infinity, ahead = -Infinity;
+            let deepest = -Infinity, lowest = Infinity, highest = -Infinity, ahead = -Infinity;
             for (let i = 0; i < positions.length; i += 3) {
                 // invert the placement by nearest station — exact enough at
                 // 0.25 mm steps to bound the cut
@@ -161,27 +161,24 @@ describe('engraved part codes', () => {
                     const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
                     if (d < bestD) { bestD = d; bestS = s; }
                 }
-                intoFloor = Math.max(intoFloor,
-                    positions[i + 1] - (deckYAt(pc, bestS) - SPEC.floorThk));
-                nearest = Math.min(nearest, bestD);
-                furthest = Math.max(furthest, bestD);
+                deepest = Math.max(deepest, bestD - innerWidthAt(pc, bestS) / 2);
+                const v = positions[i + 1] - deckYAt(pc, bestS);
+                lowest = Math.min(lowest, v);
+                highest = Math.max(highest, v);
                 ahead = Math.max(ahead, bestS);
             }
-            // never eats more than the stated depth of the 2 mm drumhead, so
-            // the walking surface above it is untouched
-            expect(intoFloor).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
-            expect(intoFloor).toBeLessThan(SPEC.floorThk);
-            // clear of the Ø19 boss inboard and the skirt wall outboard, or the
-            // pocket would be a sealed void inside one of them
-            expect(nearest).toBeGreaterThan(SPEC.socket.bossR);
-            expect(furthest).toBeLessThan(innerWidthAt(pc, 0) / 2);
-            expect(ahead).toBeLessThan(pc.planLen - SPEC.key.ribThk);   // clear of the end rib
+            // outward from the channel, never as far as the outside face
+            expect(deepest).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
+            expect(deepest).toBeLessThan(SPEC.wall);
+            expect(lowest).toBeGreaterThanOrEqual(SPEC.filletR);   // above the floor fillet
+            expect(highest).toBeLessThan(SPEC.railHeight);         // below the crest
+            expect(ahead).toBeLessThan(pc.planLen);
         }
     });
 
-    test('nothing is cut from the walking channel or any show surface', () => {
-        // the code lives under the deck; the figure's channel, the rails and
-        // the outside of the part must not know it is there
+    test('engraving the channel can only widen it, never narrow it', () => {
+        // the cut is in the wall the figure runs past, so it must not eat into
+        // the clearance model's assumptions in the direction that would bind
         const pc = pieceInFrame(pieces[1]);
         const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
         const { positions } = op.geometry;
@@ -192,8 +189,9 @@ describe('engraved part codes', () => {
                 const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
                 if (d < bestD) { bestD = d; bestS = s; }
             }
-            expect(positions[i + 1]).toBeLessThan(deckYAt(pc, bestS));   // below the deck
-            expect(bestD).toBeLessThan(innerWidthAt(pc, bestS) / 2);     // inboard of the walls
+            // nothing is removed from INSIDE the channel envelope beyond the
+            // hair of outset the boolean needs to bite cleanly
+            expect(innerWidthAt(pc, bestS) / 2 - bestD).toBeLessThan(0.2);
         }
     });
 

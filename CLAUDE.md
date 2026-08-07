@@ -82,21 +82,25 @@ building, gait physics simulation, and watertight STL/3MF export.
   millimetre of the figure's side-to-side play. See PHYSICS.md §8.
 - **Every exported part is engraved with its code**, derived from
   `GEOMETRY_VERSION` (MAJOR.MINOR only — the code is a compatibility claim, and
-  PATCH is defined as cosmetic). `engrave.js` is a 5×7 PIXEL font, deliberately
+  PATCH is defined as cosmetic). `engrave.js` is a STROKE font, deliberately
   not an outline font: at these sizes an outline font's stems fall under one
-  extrusion width and the slicer drops them, whereas one pixel *is*
-  `SPEC.engrave.minFeature` by construction.
-- **Codes go on HIDDEN faces only** — never a show surface, never a mating
-  face, never the walking channel. Track pieces: the drumhead underside, the
-  ceiling of the skirt cavity, offset `UNDERDECK_LATERAL` to clear the Ø19
-  boss (text over the boss is not a pocket, it is a sealed void). Risers: the
-  whole code as two lines on ONE hex flat, turned on its side — upright it
-  would not fit an 8.66 mm face. Foot: its base. Key: its top. Engraving is
-  EXPORT ONLY — builders shared with the scene (`buildRiserGeometry`,
-  `buildKeyGeometry`, `buildSupportFootGeometry`) take an opt-in `{ code }` so
-  rebuilds stay cheap. A code placed inside solid material becomes a sealed
-  void and a second shell: `tests/pieces.test.js` catches that, and it is why
-  `marginMm` clears the start platform's bumper.
+  extrusion width and the slicer drops them, whereas the stroke width *is*
+  `SPEC.engrave.minFeature`. Round letters are Catmull-Rom splines through
+  sparse skeletons (a pixel-matrix version was tried and read as coarse); they
+  overshoot the nominal box the way real typefaces do, so the metrics measure
+  the font's real extent rather than assuming the box.
+- **Codes go on the INSIDE, never a show surface or a mating face.** Track
+  pieces: the channel face of the `right` rail — vertical, inside, and the cut
+  only ever widens the channel so it cannot bind a figure. Risers: the whole
+  code as two lines on ONE hex flat, turned on its side. Foot: its base. Key:
+  its top. Not the end rib (pocket + windows leave ~10 mm panels, and it
+  mates), not the drumhead underside (acoustic, and the boss reaches it), not
+  the inner skirt wall (the arcade leaves only `ARCH.band` continuous).
+  Engraving is EXPORT ONLY — builders shared with the scene
+  (`buildRiserGeometry`, `buildKeyGeometry`, `buildSupportFootGeometry`) take
+  an opt-in `{ code }` so rebuilds stay cheap. A code placed inside solid
+  material becomes a sealed void and a second shell: `tests/pieces.test.js`
+  catches that, and it is why `marginMm` clears the start platform's bumper.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses).
 

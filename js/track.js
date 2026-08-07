@@ -125,18 +125,12 @@ export const SPEC = {
         detentProud: 0.35,
         detentTall: 1.5
     },
-    // Engraved part codes. depth 0.5 is under a third of the 1.6 mm wall, so
-    // three perimeters survive under the cut at a 0.4 nozzle. minFeature 0.8 is
-    // two line widths: below that a slicer does not shrink a feature, it drops
-    // it. engrave.js is a 3x5 PIXEL font, so one pixel is the smallest thing on
-    // the part in any direction and capHeight 4 puts it at exactly 0.8 — the
-    // rule is structural rather than something to remember to check.
-    // Engraved part codes, cut into hidden faces (drumhead underside on track
-    // pieces; see engraveOps). capHeight 3.5 over the 5x7 matrix in engrave.js
-    // gives a 0.5 mm pixel — and one pixel is the smallest feature on the part
-    // in any direction, so `minFeature` is enforced by the grid rather than
-    // remembered. 0.5 mm is a groove a 0.4 nozzle cuts cleanly; the old 0.8
-    // was the rule for a raised stem, which is a different problem.
+    // Engraved part codes, cut into the CHANNEL face of a rail — inside,
+    // vertical, and not a surface anything depends on (see engraveOps).
+    // minFeature IS the pen width of the stroke font in engrave.js, so no part
+    // of a letter can come out thinner: 0.5 mm is a groove a 0.4 nozzle cuts
+    // cleanly, and depth 0.5 is under a third of the 1.6 mm wall, leaving
+    // three perimeters and never reaching the outside face.
     //
     // marginMm is 14 and not 6 because the start platform's bumper fills the
     // channel from 2 to 10 mm in: at 6 the first glyph landed INSIDE it and

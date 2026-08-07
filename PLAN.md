@@ -67,40 +67,46 @@ Every exported part carries its code, cut 0.5 mm deep: `CURVEL 1.1`,
 `STR IN 1.1`, `PLAT 1.1`, `KEY 1.1`, `R120 1.1`. Derived from
 `GEOMETRY_VERSION`, MAJOR.MINOR only.
 
-**Deviation 1 — a 5 × 7 pixel font, not opentype.js.** The plan's own
+**Deviation 1 — a stroke font, not opentype.js.** The plan's own
 `minStroke` note is the reason. At these sizes an outline font's stems are
 under one extrusion width, and a slicer does not render a thin stem faintly —
 it drops it, and the part arrives with holes in its code. A pixel
-matrix makes the constraint structural rather than advisory: one pixel *is* the
-minimum feature, `capHeight / GLYPH_ROWS`, and nothing on the part is smaller
-than that in any direction. The squares are axis-aligned too, so they cut as
-clean perimeter steps instead of stair-stepped diagonals. No dependency, no
-bundled font file.
+A stroke font makes the constraint structural rather than advisory: a glyph is
+a centreline, the stroke width is the pen, and no part of a letter can come out
+thinner than you ask for. No dependency, no bundled font file.
 
-It was 3 × 5 first and that read as crude at any size — three columns genuinely
-cannot tell H, M, N and W apart. 5 × 7 is the smallest grid with room for a
-real bowl, a real diagonal and a slashed zero, and it costs pixel size: seven
-rows in a 3.5 mm cap is a 0.5 mm pixel, so the marks came out finer AND smaller
-at the same time.
+Two pixel-matrix versions were tried on the way — 3 × 5, then 5 × 7 — and both
+were rejected for reading as coarse. A pixel grid satisfies the minimum-feature
+rule too, but at 3.5 mm cap height a 5 × 7 grid is 0.5 mm per pixel and every
+curve in the alphabet becomes a visible staircase. The stroke font gets the
+same guarantee with round letters: the skeletons are sparse and the round ones
+run through a Catmull-Rom spline before they are inked. They overshoot the
+nominal box slightly, as every typeface's round letters do, so the metrics
+measure the font's real extent rather than assuming the box — clamping the
+overshoot back was worse than the disease, since the flat spot it left is a
+corner in the middle of a curve.
 
-**Deviation 2 — the drumhead underside, not the end rib.** The plan chose the
-end rib for being planar even on a curve. Measured, the rib's usable face is not
+**Deviation 2 — the channel wall, not the end rib.** The plan chose the end rib
+for being planar even on a curve. Measured, the rib's usable face is not
 51 × 26 mm: the bowtie pocket takes the middle and the two lightening windows
 take most of what is left, leaving a pair of ~10 mm panels — too small for a
 code at a readable cap height. And the rib is a *mating* face, the one surface
 on the part where half a millimetre matters.
 
-The rule that settled it: codes go on HIDDEN faces only. Not a show surface,
-not a mating face, not the walking channel. On a track piece that leaves
-exactly one plane with room — the ceiling of the skirt cavity, seen by turning
-the piece over and looking up through an arch. It is offset toward one skirt
-wall because the Ø19 socket boss rises to meet that same ceiling on the
-centreline, and text over the boss is not a pocket at all: it is a sealed void
-inside the part. Curves cost an arc-following placement, which the station
-machinery already had.
+The rule that settled it: on the inside, never a show surface and never a
+mating face. Four candidates were built and measured before one stuck.
 
-Small parts followed the same rule: a riser takes the whole code as two lines
-on ONE hex flat, turned on its side (upright it needs 11.5 mm across an 8.66 mm
+| Face | Why not |
+|---|---|
+| End rib | pocket + windows leave ~10 mm panels; it mates |
+| Outer rail | the show surface of an assembled tower |
+| Drumhead underside | the acoustic membrane, and the Ø19 boss rises to meet it — text over the boss is a sealed void, not a pocket |
+| Inner skirt wall | the arcade cuts arches through it; the only band continuous end to end is `ARCH.band` less the floor, 1.6 mm |
+| **Channel face of a rail** | **vertical, inside, 1.6 mm of wall, and the cut only widens the channel so it cannot bind a figure** |
+
+Curves cost an arc-following placement, which the station machinery already
+had. Small parts follow the same rule: a riser takes the whole code as two
+lines on ONE hex flat, turned on its side (upright it does not fit an 8.66 mm
 face); the foot takes its base, where a 24.8 mm disc has room to spare.
 
 Orientation is not a preference. Text reads correctly iff `read × up` points at
