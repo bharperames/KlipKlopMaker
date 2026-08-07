@@ -67,28 +67,45 @@ Every exported part carries its code, cut 0.5 mm deep: `CURVEL 1.1`,
 `STR IN 1.1`, `PLAT 1.1`, `KEY 1.1`, `R120 1.1`. Derived from
 `GEOMETRY_VERSION`, MAJOR.MINOR only.
 
-**Deviation 1 — a stroke font, not opentype.js.** The plan's own `minStroke: 0.8`
-note is the reason. At 4 mm cap height an outline font's stems are well under
-two extrusion widths, and a slicer does not render a thin stem faintly — it
-drops it, and the part arrives with holes in its code. A stroke font makes the
-constraint structural: the glyph is a centreline and the width is a parameter.
-It also costs no dependency and no bundled font file. The trade is honest —
-this is engineering lettering, not typography.
+**Deviation 1 — a 3 × 5 pixel font, not opentype.js.** The plan's own
+`minStroke: 0.8` note is the reason. At 4 mm cap height an outline font's stems
+are well under two extrusion widths, and a slicer does not render a thin stem
+faintly — it drops it, and the part arrives with holes in its code. A pixel
+matrix makes the constraint structural rather than advisory: one pixel *is* the
+minimum feature, `capHeight / 5`, and nothing on the part is smaller than that
+in any direction. The squares are axis-aligned too, so they cut as clean
+perimeter steps instead of stair-stepped diagonals. No dependency, no bundled
+font file. That it looks like something off a 1982 cabinet is why it stayed.
 
-**Deviation 2 — the rail wall, not the end rib.** The plan chose the end rib for
-being planar even on a curve. Measured, the rib's usable face is not 51 × 26 mm:
-the bowtie pocket takes the middle and the two lightening windows take most of
-what is left, leaving a pair of ~10 mm panels — too small for a code at a
-readable cap height. And the rib is a *mating* face, the one surface on the part
-where half a millimetre matters. The code goes on the outer rail wall instead:
-1.6 mm of material, 10 mm of band, the full length of the piece, and legible
-with the tower assembled. Curves cost an arc-following placement, which the
-station machinery already had.
+The trade is honest: three columns cannot really tell H, M, N and W apart.
+Every code disambiguates them by context (SWITC**H**, **M**ID, I**N**, P**W**R),
+which is how small fonts have always worked.
 
-Which wall is not a preference. Looking at a wall from outside, the reader's
-left-to-right runs along `Y × n`; on one of the two walls that comes out
-against the direction of travel and the code would ship mirrored on every part
-in the library. There is a test for it.
+**Deviation 2 — the rail's channel face, not the end rib.** The plan chose the
+end rib for being planar even on a curve. Measured, the rib's usable face is not
+51 × 26 mm: the bowtie pocket takes the middle and the two lightening windows
+take most of what is left, leaving a pair of ~10 mm panels — too small for a
+code at a readable cap height. And the rib is a *mating* face, the one surface
+on the part where half a millimetre matters.
+
+The code goes on the rail instead — and on its INSIDE. The outer wall is the
+show surface of an assembled tower; the channel face is what you see when you
+pick a piece up and look into it, which is exactly when you want to know what it
+is. It costs nothing: the pocket only ever makes the channel locally wider, so
+it cannot bind a figure, and it sits 5 mm up, clear of the floor fillet the
+hooves run against. Curves cost an arc-following placement, which the station
+machinery already had.
+
+Which of the two rails is not a preference. Looking at a face from its free
+side, the reader's left-to-right runs along `Y × n`; on the other rail that
+comes out against the direction of travel and the code would ship mirrored on
+every part in the library. There is a test for it.
+
+**One trap worth remembering.** A code placed inside solid material does not
+fail loudly — it becomes a sealed void, invisible and a second shell in a part
+that must be one solid. The start platform's bumper fills the channel 2–10 mm
+in and swallowed the first glyph at the original 6 mm margin. The single-shell
+test caught it; `SPEC.engrave.marginMm` is 14 because of it.
 
 ---
 

@@ -142,10 +142,10 @@ describe('engraved part codes', () => {
         }
     });
 
-    test('the cut stays in the rail wall and never breaches it', () => {
+    test('the cut goes outward from the channel and never reaches the show face', () => {
         // measured on the cutter itself: on the finished part other geometry
-        // (the arcade's own walls) also sits half a millimetre in from the
-        // outside, so the finished mesh cannot tell you where the code is
+        // (the arcade's own walls) also sits half a millimetre inside a face,
+        // so the finished mesh cannot tell you where the code is
         for (const idx of [1, 2]) {
             const pc = pieceInFrame(pieces[idx]);
             const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
@@ -161,17 +161,36 @@ describe('engraved part codes', () => {
                     const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
                     if (d < bestD) { bestD = d; bestS = s; }
                 }
-                deepest = Math.max(deepest, (innerWidthAt(pc, bestS) / 2 + SPEC.wall) - bestD);
+                deepest = Math.max(deepest, bestD - innerWidthAt(pc, bestS) / 2);
                 const v = positions[i + 1] - deckYAt(pc, bestS);
                 lowest = Math.min(lowest, v);
                 highest = Math.max(highest, v);
                 ahead = Math.max(ahead, bestS);
             }
             expect(deepest).toBeLessThanOrEqual(SPEC.engrave.depth + 1e-3);
-            expect(deepest).toBeLessThan(SPEC.wall);          // never breaks through
-            expect(lowest).toBeGreaterThan(0);                // above the deck
+            expect(deepest).toBeLessThan(SPEC.wall);          // outer face untouched
+            expect(lowest).toBeGreaterThan(SPEC.filletR);     // clear of the floor fillet
             expect(highest).toBeLessThan(SPEC.railHeight);    // below the crest
             expect(ahead).toBeLessThan(pc.planLen);           // inside the part
+        }
+    });
+
+    test('engraving the channel can only make it wider, never narrower', () => {
+        // the cut is in the wall the figure runs past; it must not eat into the
+        // clearance model's assumptions in the direction that would bind
+        const pc = pieceInFrame(pieces[1]);
+        const [op] = engraveOps(pc, pieceCode(pc, GEOMETRY_VERSION), SPEC);
+        const { positions } = op.geometry;
+        for (let i = 0; i < positions.length; i += 3) {
+            let bestS = 0, bestD = Infinity;
+            for (let s = 0; s <= pc.planLen; s += 0.5) {
+                const p = planPosAt(pc, s);
+                const d = Math.hypot(p.x - positions[i], p.z - positions[i + 2]);
+                if (d < bestD) { bestD = d; bestS = s; }
+            }
+            // nothing is removed from INSIDE the channel envelope beyond the
+            // hair of outset the boolean needs to bite cleanly
+            expect(innerWidthAt(pc, bestS) / 2 - bestD).toBeLessThan(0.2);
         }
     });
 
@@ -477,14 +496,22 @@ describe('every part is ONE solid', () => {
 
     test('no track piece exports as two disconnected shells', async () => {
         const { planPillarPositions } = await import('../js/track.js');
-        const { pieces } = layoutTrack(
+        // Every piece type, because a sealed void counts as a second shell and
+        // the engraving is the thing most likely to make one: the code used to
+        // start 6 mm in, which put its first glyph INSIDE the start platform's
+        // bumper — a pocket with material on all six sides.
+        for (const seq of [
             ['straight', 'curveL', 'curveL', 'curveL', 'straight', 'lift', 'straight'],
-            { slopeDeg: 11.2167 });
-        const supports = planPillarPositions(pieces);
-        for (const pc of pieces) {
-            if (pc.role === 'branch') continue;
-            const g = buildPieceExportGeometry(pc, { support: supports.find(s => s.pieceIndex === pc.index) });
-            expect(`${pc.name}: ${componentCount(g)} shell(s)`).toBe(`${pc.name}: 1 shell(s)`);
+            ['straight', 'elevator', 'straight', 'powered', 'straight'],
+            ['curveL', 'straight', 'curveR', 'straight', 'straight']
+        ]) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const supports = planPillarPositions(pieces);
+            for (const pc of pieces) {
+                if (pc.role === 'branch') continue;
+                const g = buildPieceExportGeometry(pc, { support: supports.find(s => s.pieceIndex === pc.index) });
+                expect(`${pc.name}: ${componentCount(g)} shell(s)`).toBe(`${pc.name}: 1 shell(s)`);
+            }
         }
     });
 });

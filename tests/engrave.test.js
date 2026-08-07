@@ -3,13 +3,13 @@
  * survive CSG and come out watertight is tests/pieces.test.js's job.
  */
 import {
-    GLYPHS, ADVANCE, ENGRAVE_DEFAULTS, isEngravable, textWidthMm, textHeightMm,
-    textStrokes, textRings, stadiumRing, ringArea, blockRings, blockSizeMm,
-    codeVersion, pieceCode, partCode
+    GLYPHS, GLYPH_COLS, GLYPH_ROWS, ADVANCE_PX, ENGRAVE_DEFAULTS, pixelMm,
+    isEngravable, textWidthMm, textHeightMm, textCells, textRings, ringArea,
+    blockRings, blockSizeMm, codeVersion, pieceCode, partCode
 } from '../js/engrave.js';
 import { layoutTrack, SPEC, GEOMETRY_VERSION, STANDARD } from '../js/track.js';
 
-describe('the stroke font', () => {
+describe('the pixel font', () => {
     test('covers everything the codes are written in', () => {
         const alphabet = ['STR', 'CURVEL', 'CURVER', 'LIFT', 'ELEV', 'PWR', 'SWITCH', 'PLAT',
             'GATE', 'KEY', 'FOOT', 'R15', 'R30', 'R60', 'R120', 'IN', 'OUT', 'MID', '0123456789.'];
@@ -17,89 +17,89 @@ describe('the stroke font', () => {
         expect(isEngravable('caret^')).toBe(false);
     });
 
-    test('every glyph stays inside its advance box and its cap height', () => {
-        for (const [ch, lines] of Object.entries(GLYPHS)) {
-            for (const line of lines) {
-                expect(line.length).toBeGreaterThanOrEqual(1);
-                for (const [x, y] of line) {
-                    expect(`${ch} x=${x}`).toBe(`${ch} x=${Math.min(ADVANCE, Math.max(0, x))}`);
-                    expect(`${ch} y=${y}`).toBe(`${ch} y=${Math.min(1, Math.max(0, y))}`);
-                }
+    test('every glyph is exactly the matrix, and no glyph is blank by accident', () => {
+        for (const [ch, rows] of Object.entries(GLYPHS)) {
+            expect(`${ch}: ${rows.length} rows`).toBe(`${ch}: ${GLYPH_ROWS} rows`);
+            for (const row of rows) {
+                expect(row.length).toBe(GLYPH_COLS);
+                expect(/^[#.]+$/.test(row)).toBe(true);
             }
+            if (ch !== ' ') expect(rows.join('')).toContain('#');
+        }
+    });
+
+    test('no two glyphs share a bitmap — H/M/N/W are the ones at risk', () => {
+        const seen = new Map();
+        for (const [ch, rows] of Object.entries(GLYPHS)) {
+            if (ch === ' ') continue;
+            const key = rows.join('/');
+            expect(`${ch} vs ${seen.get(key) ?? '-'}`).toBe(`${ch} vs -`);
+            seen.set(key, ch);
         }
     });
 
     test('an unknown character is an error, not a silent blank', () => {
-        expect(() => textStrokes('a^b')).toThrow(/no glyph/);
+        expect(() => textCells('A^B')).toThrow(/no glyph/);
     });
 
-    test('strokes are laid out left to right on the baseline', () => {
-        const one = textStrokes('I');
-        const two = textStrokes('II');
-        expect(two.length).toBe(2 * one.length);
-        const leftOf = (lines) => Math.min(...lines.flat().map(p => p[0]));
-        expect(leftOf(two.slice(0, one.length))).toBeLessThan(leftOf(two.slice(one.length)));
-        // baseline: the lowest ink sits half a stroke above y = 0
-        const low = Math.min(...one.flat().map(p => p[1]));
-        expect(low).toBeCloseTo(ENGRAVE_DEFAULTS.strokeMm / 2, 6);
+    test('one pixel is the smallest feature, and cap height sets it', () => {
+        // the whole reason for a pixel font: nothing on the part is ever
+        // narrower than a pixel, in any direction, by construction
+        expect(pixelMm({ capHeight: 4 })).toBeCloseTo(0.8, 9);
+        expect(pixelMm({ capHeight: 4 })).toBeGreaterThanOrEqual(SPEC.engrave.minFeature);
+        expect(pixelMm(SPEC.engrave)).toBeGreaterThanOrEqual(SPEC.engrave.minFeature);
+    });
+
+    test('cells are laid out left to right with a one-pixel gap', () => {
+        const cells = textCells('II');
+        const cols = [...new Set(cells.map(c => c.col))].sort((a, b) => a - b);
+        expect(Math.min(...cols)).toBe(0);
+        expect(Math.max(...cols)).toBe(ADVANCE_PX + GLYPH_COLS - 1);
+        expect(cols).not.toContain(GLYPH_COLS);      // the gap column is never lit
     });
 });
 
-describe('stroke outlines', () => {
-    test('a stadium is closed, CCW and the width it was asked for', () => {
-        const ring = stadiumRing([0, 0], [10, 0], 0.8);
-        expect(ring.length).toBeGreaterThan(8);
-        expect(ringArea(ring)).toBeGreaterThan(0);
-        const ys = ring.map(p => p[1]);
-        expect(Math.max(...ys)).toBeCloseTo(0.4, 6);
-        expect(Math.min(...ys)).toBeCloseTo(-0.4, 6);
-        // caps bulge PAST the ends rather than folding back over the stroke —
-        // fold them inward and the polygon self-intersects and the glyph
-        // vanishes in the 2D union
-        const xs = ring.map(p => p[0]);
-        expect(Math.max(...xs)).toBeCloseTo(10.4, 6);
-        expect(Math.min(...xs)).toBeCloseTo(-0.4, 6);
-    });
-
-    test('a zero-length stroke is a disc, so a full stop is round', () => {
-        const ring = stadiumRing([1, 1], [1, 1], 0.8);
-        expect(ringArea(ring)).toBeGreaterThan(0);
-        for (const [x, y] of ring) expect(Math.hypot(x - 1, y - 1)).toBeCloseTo(0.4, 6);
-    });
-
-    test('no stroke is ever thinner than minStroke', () => {
-        // the whole reason for a stroke font: a slicer does not thin a stem
-        // below two extrusion widths, it drops it
+describe('rings', () => {
+    test('one rectangle per horizontal run, closed and CCW', () => {
         for (const ring of textRings('CURVEL 1.1')) {
+            expect(ring.length).toBe(4);
             expect(ringArea(ring)).toBeGreaterThan(0);
-            const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
-            const thin = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-            expect(thin).toBeGreaterThanOrEqual(ENGRAVE_DEFAULTS.strokeMm - 1e-9);
         }
     });
 
-    test('rings cover the size the layout claims', () => {
-        const opts = { capHeight: 4, tracking: 0.6, strokeMm: 0.8 };
-        const rings = textRings('R120 1.1', opts);
-        const xs = rings.flat().map(p => p[0]), ys = rings.flat().map(p => p[1]);
-        // ink never leaves the box the layout reserved (it can fall short of
-        // it: '1' and '.' do not fill their advance, which is what makes them
-        // read as narrow letters rather than as gaps)
-        expect(Math.min(...xs)).toBeGreaterThanOrEqual(-1e-9);
-        expect(Math.max(...xs)).toBeLessThanOrEqual(textWidthMm('R120 1.1', opts) + 1e-9);
-        expect(Math.max(...xs)).toBeGreaterThan(textWidthMm('R120 1.1', opts) - 1);
-        expect(Math.max(...ys)).toBeLessThanOrEqual(textHeightMm(opts) + 1e-9);
+    test('no ring is ever thinner than a pixel', () => {
+        const px = pixelMm();
+        for (const ring of textRings('SWITCH MID 1.1')) {
+            const xs = ring.map(p => p[0]), ys = ring.map(p => p[1]);
+            const thin = Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+            expect(thin).toBeGreaterThanOrEqual(px - 1e-6);
+        }
     });
 
-    test('a block stacks its first line on top', () => {
+    test('runs are merged, so a solid row is one ring and not three', () => {
+        // 'I' is ###/.#./.#./.#./### — five runs, not eleven pixels
+        expect(textRings('I').length).toBe(GLYPH_ROWS);
+        expect(textCells('I').length).toBe(3 + 1 + 1 + 1 + 3);
+    });
+
+    test('ink fills exactly the box the layout reserved', () => {
+        const opts = { capHeight: 4 };
+        const rings = textRings('R120 1.1', opts);
+        const xs = rings.flat().map(p => p[0]), ys = rings.flat().map(p => p[1]);
+        const bleed = ENGRAVE_DEFAULTS.bleedMm;
+        expect(Math.min(...xs)).toBeCloseTo(-bleed, 6);
+        expect(Math.max(...xs)).toBeLessThanOrEqual(textWidthMm('R120 1.1', opts) + bleed + 1e-9);
+        expect(Math.min(...ys)).toBeCloseTo(-bleed, 6);
+        expect(Math.max(...ys)).toBeCloseTo(textHeightMm(opts) + bleed, 6);
+    });
+
+    test('a block stacks its first line on top, with a blank row between', () => {
         const lines = ['R120', '1.1'];
-        const size = blockSizeMm(lines, { capHeight: 2 });
-        const rings = blockRings(lines, { capHeight: 2 });
-        expect(size.widthMm).toBeCloseTo(textWidthMm('R120', { capHeight: 2 }), 6);
-        expect(size.heightMm).toBeGreaterThan(textHeightMm({ capHeight: 2 }));
-        const ys = rings.flat().map(p => p[1]);
-        expect(Math.max(...ys)).toBeCloseTo(size.heightMm, 6);
-        expect(Math.min(...ys)).toBeGreaterThanOrEqual(-1e-9);
+        const size = blockSizeMm(lines, { capHeight: 4 });
+        expect(size.widthMm).toBeCloseTo(textWidthMm('R120', { capHeight: 4 }), 6);
+        expect(size.heightMm).toBeCloseTo((2 * GLYPH_ROWS + 1) * pixelMm({ capHeight: 4 }), 6);
+        const ys = blockRings(lines, { capHeight: 4 }).flat().map(p => p[1]);
+        expect(Math.max(...ys)).toBeCloseTo(size.heightMm + ENGRAVE_DEFAULTS.bleedMm, 6);
     });
 });
 
@@ -108,7 +108,6 @@ describe('what the code says', () => {
         expect(codeVersion('1.1.0')).toBe('1.1');
         expect(codeVersion('1.1.7')).toBe('1.1');
         expect(codeVersion('2.0.0')).toBe('2.0');
-        // ...and a real bump does change every part's marking
         expect(partCode('KEY', '1.1.0')).not.toBe(partCode('KEY', '2.0.0'));
     });
 
@@ -122,9 +121,7 @@ describe('what the code says', () => {
 
     test('two solids that differ never wear the same mark', () => {
         const { pieces } = layoutTrack(['curveL', 'straight', 'curveL', 'straight', 'straight']);
-        const straights = pieces.filter(pc => pc.type === 'straight');
-        const codes = straights.map(pc => pieceCode(pc, GEOMETRY_VERSION));
-        // a straight between two curves, one leaving a curve, one plain
+        const codes = pieces.filter(pc => pc.type === 'straight').map(pc => pieceCode(pc, GEOMETRY_VERSION));
         expect(new Set(codes).size).toBeGreaterThan(1);
         expect(codes).toContain(`STR MID ${codeVersion(GEOMETRY_VERSION)}`);
         expect(codes).toContain(`STR OUT ${codeVersion(GEOMETRY_VERSION)}`);
@@ -134,24 +131,33 @@ describe('what the code says', () => {
         }
     });
 
-    test('a code fits the surface it is cut into', () => {
-        const font = { capHeight: SPEC.engrave.capHeight, tracking: SPEC.engrave.tracking, strokeMm: SPEC.engrave.minStroke };
-        const { pieces } = layoutTrack(['curveL', 'straight', 'curveL']);
-        for (const pc of pieces) {
-            const w = textWidthMm(pieceCode(pc, GEOMETRY_VERSION), font);
-            expect(w + 2 * SPEC.engrave.marginMm).toBeLessThanOrEqual(pc.planLen);
-        }
-        expect(textHeightMm(font) + 2).toBeLessThanOrEqual(SPEC.railHeight);
-        // the two-line form used on hex flats fits an across-flats-15 face
+    test('every code that can occur fits the surface it is cut into', () => {
+        const font = { capHeight: SPEC.engrave.capHeight };
+        // the longest a track code can get: a flared switch or lift
+        const longest = `SWITCH MID ${codeVersion(GEOMETRY_VERSION)}`;
+        expect(textWidthMm(longest, font) + 2 * SPEC.engrave.marginMm)
+            .toBeLessThanOrEqual(SPEC.platformLen);
+        // the band is the rail, less the floor fillet below and the crest above
+        expect(textHeightMm(font) + 4).toBeLessThanOrEqual(SPEC.railHeight);
+
+        // hex flats take ONE line each, turned on their side: length runs up
+        // the part, height across an across-flats-15 face
+        const faceWidth = 15 / Math.sqrt(3);
         for (const r of STANDARD.riserSizes) {
-            const size = blockSizeMm(partCode(`R${r}`, GEOMETRY_VERSION).split(' '), { capHeight: 2, ...font, capHeight: 2 });
-            expect(size.widthMm).toBeLessThan(15 / Math.sqrt(3) - 1);
-            expect(size.heightMm).toBeLessThan(r - 1);
+            for (const line of partCode(`R${r}`, GEOMETRY_VERSION).split(' ')) {
+                expect(textWidthMm(line, font)).toBeLessThanOrEqual(r - 2);
+                expect(textHeightMm(font)).toBeLessThanOrEqual(faceWidth - 1.5);
+            }
         }
+        // the foot's shaft is 11 mm and FOOT needs 12 — which is why its code
+        // is on the base, where an across-flats-24.8 disc has room to spare
+        expect(textWidthMm('FOOT', font)).toBeGreaterThan(STANDARD.footHeight - 4 - 2);
+        const base = blockSizeMm(partCode('FOOT', GEOMETRY_VERSION).split(' '), font);
+        expect(Math.hypot(base.widthMm, base.heightMm) / 2).toBeLessThan(24.8 / 2 - 1);
     });
 
     test('engrave depth never eats more than a third of the wall', () => {
         expect(SPEC.engrave.depth).toBeLessThanOrEqual(SPEC.wall / 3);
-        expect(SPEC.engrave.minStroke).toBeGreaterThanOrEqual(0.8);  // two line widths
+        expect(SPEC.engrave.minFeature).toBeGreaterThanOrEqual(0.8);  // two line widths
     });
 });

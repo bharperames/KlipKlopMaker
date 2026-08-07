@@ -126,11 +126,16 @@ export const SPEC = {
         detentTall: 1.5
     },
     // Engraved part codes. depth 0.5 is under a third of the 1.6 mm wall, so
-    // three perimeters survive under the cut at a 0.4 nozzle. minStroke 0.8 is
-    // two line widths: below that a slicer does not thin the stroke, it drops
-    // it, and the part arrives with holes in its code. The stroke font in
-    // engrave.js makes that a parameter rather than something to check for.
-    engrave: { depth: 0.5, capHeight: 4, tracking: 0.6, minStroke: 0.8, marginMm: 6 },
+    // three perimeters survive under the cut at a 0.4 nozzle. minFeature 0.8 is
+    // two line widths: below that a slicer does not shrink a feature, it drops
+    // it. engrave.js is a 3x5 PIXEL font, so one pixel is the smallest thing on
+    // the part in any direction and capHeight 4 puts it at exactly 0.8 — the
+    // rule is structural rather than something to remember to check.
+    // marginMm is 14 and not 6 because the start platform's bumper fills the
+    // channel from 2 to 10 mm in: at 6 the first glyph landed INSIDE it and
+    // came out as a sealed void — invisible, and a second shell in a part that
+    // must be one solid.
+    engrave: { depth: 0.5, capHeight: 4, minFeature: 0.8, marginMm: 14 },
     liftSpeedMmS: 110
 };
 

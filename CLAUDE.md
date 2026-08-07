@@ -82,12 +82,18 @@ building, gait physics simulation, and watertight STL/3MF export.
   millimetre of the figure's side-to-side play. See PHYSICS.md §8.
 - **Every exported part is engraved with its code**, derived from
   `GEOMETRY_VERSION` (MAJOR.MINOR only — the code is a compatibility claim, and
-  PATCH is defined as cosmetic). Track pieces take it along the rail wall,
-  small parts on a flat face. `engrave.js` is a stroke font, deliberately not
-  an outline font: at 4 mm caps an outline font's stems fall under two
-  extrusion widths and the slicer drops them. Engraving is EXPORT ONLY —
-  builders shared with the scene (`buildRiserGeometry`, `buildKeyGeometry`,
-  `buildSupportFootGeometry`) take an opt-in `{ code }` so rebuilds stay cheap.
+  PATCH is defined as cosmetic). `engrave.js` is a 3×5 PIXEL font, deliberately
+  not an outline font: at 4 mm caps an outline font's stems fall under two
+  extrusion widths and the slicer drops them, whereas one pixel *is*
+  `SPEC.engrave.minFeature` by construction. Placement: track pieces on the
+  CHANNEL face of the `right` rail (never the outside — that is the show
+  surface; and the cut only ever widens the channel, so it cannot bind a
+  figure), risers one line per hex flat turned on its side, foot on its base,
+  key on its top. Engraving is EXPORT ONLY — builders shared with the scene
+  (`buildRiserGeometry`, `buildKeyGeometry`, `buildSupportFootGeometry`) take
+  an opt-in `{ code }` so rebuilds stay cheap. A code placed inside solid
+  material becomes a sealed void and a second shell: `tests/pieces.test.js`
+  catches that, and it is why `marginMm` clears the start platform's bumper.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses).
 

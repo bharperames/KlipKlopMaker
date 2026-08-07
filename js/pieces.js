@@ -25,7 +25,8 @@ import {
     pieceFrame, pieceInFrame, supportInFrame
 } from './track.js';
 import {
-    textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm, pieceCode, partCode
+    textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm, pixelMm,
+    pieceCode, partCode
 } from './engrave.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
@@ -578,22 +579,32 @@ function bossOps(piece, spec, support) {
 /**
  * Where a track piece's code goes, and which way round it reads.
  *
- * The band is the outer face of one rail — from the deck up to the crest, so
- * the code sits above the arcade and is legible with the tower assembled. It is
- * 1.6 mm of wall, and `SPEC.engrave.depth` is held to a third of that, which
- * leaves three perimeters at a 0.4 nozzle. Not the end rib (the plan's first
- * choice): the pocket and the two lightening windows leave only a pair of
- * ~10 mm panels there, too small for a code at a readable cap height, and the
- * rib is a mating face — the one surface on the part where 0.5 mm matters.
+ * The band is the CHANNEL face of one rail — from the deck up to the crest.
+ * Inside rather than outside: the outer wall is the show surface of an
+ * assembled tower, and a code stamped across it reads as a factory marking on a
+ * toy. The channel face is what you see when you pick a piece up and look into
+ * it, which is exactly when you want to know what it is. It costs nothing —
+ * the pocket only ever makes the channel LOCALLY WIDER, so it cannot bind a
+ * figure, and it sits 5 mm up, clear of the 2 mm floor fillet the hooves
+ * actually run against. It is 1.6 mm of wall, and `SPEC.engrave.depth` is held
+ * to under a third of that, so three perimeters survive at a 0.4 nozzle and
+ * nothing reaches the outside face.
  *
- * Which wall is not a preference. Looking at a wall from outside, along −n, the
- * reader's left-to-right runs along `Y × n`; on the wall at +`right` that comes
- * out as −dir and the code would read backwards. So the code goes on the other
- * one, where it runs with the direction of travel.
+ * Not the end rib (the plan's first choice): the bowtie pocket and the two
+ * lightening windows leave only a pair of ~10 mm panels there, too small for a
+ * code at a readable cap height, and the rib is a mating face — the one
+ * surface on the part where half a millimetre matters.
+ *
+ * Which of the two rails is not a preference. Looking at a face from its free
+ * side, along −n, the reader's left-to-right runs along `Y × n`. For the
+ * channel face of the rail on the `right` side that comes out as +dir, so the
+ * code runs with travel. Use the other rail and the whole library ships
+ * mirrored.
  */
 export function engraveFrame(piece, spec = SPEC) {
     const h = piece.entry.h;
-    // outward normal of the engraved wall, and the reading direction Y × n
+    // free-side normal of the engraved face — it points INTO the channel —
+    // and the reading direction Y × n
     const normal = [-Math.sin(h), 0, Math.cos(h)];
     const read = [Math.cos(h), 0, Math.sin(h)];   // === +dir, by construction
     return { normal, read };
@@ -601,17 +612,18 @@ export function engraveFrame(piece, spec = SPEC) {
 
 /**
  * Local text coords → world. `u` runs along the wall in reading order from the
- * start of the block, `v` up from the deck, `w` into the wall from `outset`
- * outside it. Every vertex is placed through its own station, so the code
- * follows a curve's wall instead of chording across it — at R 143 a 30 mm
- * label would otherwise stand 0.8 mm proud at its ends and not cut at all.
+ * start of the block, `v` up from the deck, `w` into the wall starting `outset`
+ * proud of the channel face. Every vertex is placed through its own station, so
+ * the code follows a curve's wall instead of chording across it — at R 143 a
+ * 30 mm label would otherwise stand 0.8 mm off at its ends and not cut at all.
  */
 export function engravePoint(piece, spec, sStart, u, v, w, outset = 0) {
     const s = Math.max(0, Math.min(piece.planLen, sStart + u));
     const p = planPosAt(piece, s);
     const right = [Math.sin(p.h), -Math.cos(p.h)];
-    const half = innerWidthAt(piece, s) / 2 + spec.wall;
-    const off = -(half + outset - w);   // negative: the wall opposite `right`
+    // channel face of the `right` rail; material lies further out, so the cut
+    // runs outward from the channel and never reaches the show surface
+    const off = innerWidthAt(piece, s) / 2 - outset + w;
     return [p.x + right[0] * off, deckYAt(piece, s) + v, p.z + right[1] * off];
 }
 
@@ -628,13 +640,14 @@ export function engraveOps(piece, text, spec = SPEC) {
     const E = spec.engrave;
     if (!E || !text || !piece || !(piece.planLen > 0)) return [];
     if (!wasm) throw new Error('initCSG() must be awaited before engraving');
-    const font = { capHeight: E.capHeight, tracking: E.tracking, strokeMm: E.minStroke };
+    const font = { capHeight: E.capHeight };
+    if (pixelMm(font) < E.minFeature - 1e-9) return [];   // a slicer would drop it
     const wide = textWidthMm(text, font), tall = textHeightMm(font);
     const sStart = E.marginMm;
     if (sStart + wide > piece.planLen - E.marginMm) return [];
-    // marginMm is along the track; vertically the band is the whole rail, and
-    // only the 0.8 mm crest chamfer has to be kept clear
-    if (tall + 2 > spec.railHeight) return [];
+    // marginMm is along the track; vertically the band is the whole rail, less
+    // the 2 mm floor fillet below and the crest chamfer above
+    if (tall + 4 > spec.railHeight) return [];
     const vBase = (spec.railHeight - tall) / 2;
 
     const rings = textRings(text, font);
@@ -693,10 +706,8 @@ function cutSolid(rings, depth, place, flip = false) {
 export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {}) {
     const E = spec.engrave;
     if (!E || !lines.length) return [];
-    const font = {
-        capHeight: opts.capHeight ?? E.capHeight, tracking: E.tracking,
-        strokeMm: E.minStroke, leading: opts.leading
-    };
+    const font = { capHeight: opts.capHeight ?? E.capHeight, leadingPx: opts.leadingPx };
+    if (pixelMm(font) < E.minFeature - 1e-9) return [];
     const depth = opts.depth ?? E.depth;
     const inward = [
         -(right[1] * up[2] - right[2] * up[1]),
@@ -978,11 +989,11 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         // the crispest surface on the part and the one you are holding when
         // you want to know what it is
         const lines = String(opts.code).split(' ');
-        const size = blockSizeMm(lines, { capHeight: 2, tracking: spec.engrave.tracking, strokeMm: spec.engrave.minStroke });
+        const size = blockSizeMm(lines, { capHeight: spec.engrave.capHeight });
         const marks = engraveFlatOps(
             lines,
             [-size.widthMm / 2, h, size.heightMm / 2],
-            [1, 0, 0], [0, 0, -1], spec, { capHeight: 2 }
+            [1, 0, 0], [0, 0, -1], spec
         );
         return marks.length ? csgChain(toBufferGeometry(plain), marks) : plain;
     }
@@ -1060,8 +1071,22 @@ export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
         { y: STANDARD.footHeight + spec.socket.depth - 2, af: TENON_AF },
         { y: STANDARD.footHeight + spec.socket.depth - 1, af: TENON_AF - 1.4 }
     ]));
-    const marks = hexFlatEngraveOps(opts.code ?? null, 15, 4, STANDARD.footHeight, spec);
+    // The foot's shaft is 11 mm of usable flat and FOOT needs 12, so its code
+    // goes on the BASE — the one part in the library with a big flat disc
+    // going spare, and where a part number has always lived on a printed part.
+    // It is the bed-contact face, which costs nothing: the slicer just leaves a
+    // hole in the first few layers.
+    const marks = opts.code
+        ? engraveFlatOps(String(opts.code).split(' '), baseMarkOrigin(opts.code, spec),
+            [1, 0, 0], [0, 0, 1], spec)
+        : [];
     return marks.length ? toBufferGeometry(csgChain(body, marks)) : body;
+}
+
+/** Centres a two-line block on a part's base plane (y = 0), reading from +Y. */
+function baseMarkOrigin(code, spec) {
+    const size = blockSizeMm(String(code).split(' '), { capHeight: spec.engrave.capHeight });
+    return [-size.widthMm / 2, 0, -size.heightMm / 2];
 }
 
 /** Stackable riser: hex tube with a socket below and a tenon above. Needs initCSG. */
@@ -1080,31 +1105,43 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
 }
 
 /**
- * Puts a code on one flat of a hex prism. Engraving is OPT-IN on the parts
- * whose builder serves the scene as well as the exporter — a riser is drawn a
- * hundred times in a tower and the cut is invisible at scene scale, so the
- * display path passes no code and pays no CSG for it.
+ * Puts a code on the flats of a hex prism, ONE LINE PER FLAT, turned on its
+ * side so it runs up the part.
  *
- * Two short lines rather than one: a 15 mm across-flats hex gives an 8.7 mm
- * face, and `R120 1.1` on one line does not fit across it at any cap height
- * that survives a 0.4 nozzle.
+ * The arithmetic forces this. An across-flats-15 hex has an 8.66 mm face; a
+ * pixel cannot go below `minFeature`, so five rows of glyph are 4 mm and two
+ * stacked lines are 8.8 — wider than the face. One line fits with room to
+ * spare, and the length it needs (12 mm for four characters) is available up
+ * the part rather than across it. So `R120` goes on one flat and `1.1` on the
+ * next; a hex has six and you turn it 60° to read the version.
+ *
+ * Engraving is OPT-IN here, unlike on track pieces: this builder serves the
+ * scene as well as the exporter, a tower draws a hundred risers, and the cut is
+ * invisible at scene scale. No code, no CSG.
  */
 function hexFlatEngraveOps(code, acrossFlats, y0, y1, spec = SPEC) {
     if (!code) return [];
-    const lines = String(code).split(' ');
-    const cap = 2;
-    const size = blockSizeMm(lines, { capHeight: cap, tracking: spec.engrave.tracking, strokeMm: spec.engrave.minStroke });
+    const cap = spec.engrave.capHeight;
     const faceWidth = acrossFlats / Math.sqrt(3);
-    if (size.widthMm > faceWidth - 1 || size.heightMm > (y1 - y0) - 1) return [];
-    // hexPlan puts vertices at 0° and 60°, so a face centre is at 30°
-    const a = Math.PI / 6;
-    const n = [Math.cos(a), 0, Math.sin(a)];
-    const up = [0, 1, 0];
-    const read = [n[2], 0, -n[0]];   // Y × n
-    const cx = n[0] * (acrossFlats / 2), cz = n[2] * (acrossFlats / 2);
-    const vBase = y0 + ((y1 - y0) - size.heightMm) / 2;
-    const origin = [cx - read[0] * (size.widthMm / 2), vBase, cz - read[2] * (size.widthMm / 2)];
-    return engraveFlatOps(lines, origin, read, up, spec, { capHeight: cap });
+    const ops = [];
+    const lines = String(code).split(' ');
+    for (let i = 0; i < lines.length; i++) {
+        const along = textWidthMm(lines[i], { capHeight: cap });
+        const across = textHeightMm({ capHeight: cap });
+        if (along > (y1 - y0) - 2 || across > faceWidth - 1.5) return [];
+        // hexPlan puts vertices at 0° and 60°, so face centres sit at 30° + 60k
+        const a = Math.PI / 6 + i * Math.PI / 3;
+        const n = [Math.cos(a), 0, Math.sin(a)];
+        // turned on its side: reading runs +Y, and the face's own "up" is the
+        // horizontal tangent t with Y × t = n
+        const read = [0, 1, 0];
+        const up = [-n[2], 0, n[0]];
+        const c = [n[0] * (acrossFlats / 2), (y0 + y1) / 2, n[2] * (acrossFlats / 2)];
+        ops.push(...engraveFlatOps([lines[i]],
+            [c[0] - up[0] * (across / 2), c[1] - along / 2, c[2] - up[2] * (across / 2)],
+            read, up, spec, { capHeight: cap }));
+    }
+    return ops;
 }
 
 /**
