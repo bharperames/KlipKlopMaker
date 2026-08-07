@@ -103,6 +103,33 @@ export function generateMultiObject3MFXML(parts, exportUnit = 'millimeter') {
 }
 
 /**
+ * Places a plate-packed copy in PRINTER space, given a mesh in app space.
+ *
+ * The 3MF path puts its transform on a build item, which is applied after this
+ * module's X=x, Y=−z, Z=y rotation — so the placement is in printer
+ * coordinates. Anything merging copies into one mesh (the STL plate writer)
+ * has to land in the same place, and the obvious app-space version does not:
+ * it mirrors the whole plate in Y. Shared here so there is one statement of it.
+ *
+ * @param {Float32Array} positions - app-space, recentred
+ * @param {number} rotDeg - the plate packer's rotation, printer-space
+ * @param {number} x - printer-space placement
+ * @param {number} y - printer-space placement
+ */
+export function placeForPlate(positions, rotDeg, x, y) {
+    const th = (rotDeg ?? 0) * Math.PI / 180;
+    const c = Math.cos(th), s = Math.sin(th);
+    const out = new Float32Array(positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+        const px = positions[i], py = positions[i + 1], pz = positions[i + 2];
+        out[i] = c * px + s * pz + x;
+        out[i + 1] = py;
+        out[i + 2] = -s * px + c * pz - y;
+    }
+    return out;
+}
+
+/**
  * Binary STL writer. Applies the same +90° X rotation as the 3MF path
  * (X=x, Y=-z, Z=y) — a proper rotation, NOT an axis swap, so chiral parts
  * (left vs right curves, dovetail flare) are never mirrored and the CCW

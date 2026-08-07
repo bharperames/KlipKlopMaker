@@ -46,7 +46,7 @@ import {
     bowtieKeyPlan, bowtiePocketPlan
 } from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
-import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML } from './export_3mf.js';
+import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML, placeForPlate } from './export_3mf.js';
 import { analyzeMesh } from './mesh_utils.js';
 import { packPlates, describePlates, PLATE } from './plate_pack.js';
 import { EXPORT_SETS, getExportSet, describeExportSet } from './export_sets.js';
@@ -3067,6 +3067,25 @@ function toast(msg) {
 // Export
 // ---------------------------------------------------------------------------
 
+/**
+ * What the two format buttons do. "Packed plates" lays the whole design out on
+ * full beds and writes one file per plate; "Single files" writes one file per
+ * part and leaves the arranging to your slicer. The Print shop is the same
+ * packing with the quantities set by hand — this is the shortcut for "all of
+ * it", which is what most exports are.
+ */
+const exportMode = () => document.querySelector('input[name="export-mode"]:checked')?.value ?? 'plates';
+
+function refreshExportModeHint() {
+    $('export-mode-hint').textContent = exportMode() === 'plates'
+        ? `One file per ${PLATE.width} mm plate, parts laid out and rotated to fit.`
+        : 'One file per part, unpacked.';
+}
+for (const r of document.querySelectorAll('input[name="export-mode"]')) {
+    r.addEventListener('change', refreshExportModeHint);
+}
+refreshExportModeHint();
+
 $('btn-export-stl').addEventListener('click', () => doExport('stl'));
 $('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
 
@@ -4045,6 +4064,72 @@ function bedFootprint(positions) {
     return { w: mxx - mnx, d: mxz - mnz, h: mxy - mny };
 }
 
+/**
+ * Lays every built part out on full beds and writes one file per plate.
+ *
+ * 3MF carries each copy as its own build item referencing a shared mesh, which
+ * is what keeps a 67-riser plate from being 67 copies of the same triangles.
+ * STL has no such concept, so a plate is merged into one solid with each copy's
+ * placement baked in — the slicer sees one object per plate either way, which
+ * is the point of packing.
+ */
+function writePlateFiles(files, built, format) {
+    const byName = new Map(built.map(b => [b.name, b]));
+    const { plates, oversized } = packPlates(built.map(b => {
+        const f = bedFootprint(b.mesh.positions);
+        return { name: b.name, w: f.w, d: f.d, h: f.h, count: b.count };
+    }));
+    for (const plate of plates) {
+        const grams = plate.items.reduce((g, it) => g + printedWeightG(byName.get(it.name).vol, 'track'), 0);
+        const stem = `plate_${String(plate.index).padStart(2, '0')}_${plate.items.length}parts_${Math.round(grams)}g`;
+        if (format === '3mf') {
+            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(plate.items.map(it => {
+                const src = byName.get(it.name);
+                return {
+                    name: `${it.name}_${it.copy}`, meshKey: it.name,
+                    positions: src.mesh.positions, indices: src.mesh.indices,
+                    at: [it.x, it.y, 0], rot: it.rot
+                };
+            })));
+        } else {
+            files[`${stem}.stl`] = new Uint8Array(generateBinarySTL(...mergePlacedMeshes(plate.items, byName)));
+        }
+    }
+    return { plates, oversized };
+}
+
+/**
+ * One mesh from a plate's copies, each rotated about the bed normal and moved
+ * into place.
+ *
+ * The placement has to be done in PRINTER space to agree with the 3MF, which
+ * applies its transform after the exporter's X=x, Y=−z, Z=y rotation. Doing it
+ * in app coordinates instead — the obvious way, and what this did first —
+ * lands every part at −Y: the plate still fits the bed, so it prints, but the
+ * layout is a mirror image of the one the preview drew and the README lists,
+ * and the two formats disagree about the same plate. Working backwards through
+ * the exporter's rotation, printer (X, Y) = R(θ)·(X₀, Y₀) + (x, y) becomes:
+ *
+ *     x' =  c·x₀ + s·z₀ + itemX
+ *     z' = −s·x₀ + c·z₀ − itemY
+ *
+ * `tests/export_sets.test.js` holds both formats to the same bounding box.
+ */
+function mergePlacedMeshes(items, byName) {
+    let nv = 0, ni = 0;
+    for (const it of items) { const m = byName.get(it.name).mesh; nv += m.positions.length; ni += m.indices.length; }
+    const positions = new Float32Array(nv), indices = new Uint32Array(ni);
+    let vo = 0, io = 0;
+    for (const it of items) {
+        const m = byName.get(it.name).mesh;
+        positions.set(placeForPlate(m.positions, it.rot, it.x, it.y), vo);
+        for (let k = 0; k < m.indices.length; k++) indices[io + k] = m.indices[k] + vo / 3;
+        vo += m.positions.length;
+        io += m.indices.length;
+    }
+    return [positions, indices];
+}
+
 async function doExport(format) {
     const btns = [$('btn-export-stl'), $('btn-export-3mf')];
     btns.forEach(b => b.disabled = true);
@@ -4057,6 +4142,7 @@ async function doExport(format) {
         await initCSG();
         const { parts, joints, switchCount } = assembleParts();
         const files = {};
+        const built = [];
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             await new Promise(res => setTimeout(res));
@@ -4066,27 +4152,34 @@ async function doExport(format) {
             const fileName = part.count > 1 ? `${part.name}_${part.count}x` : part.name;
             log.innerHTML += `<div class="row"><span>${fileName}</span>` +
                 `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span></span></div>`;
-            if (format === 'stl') {
-                files[`${fileName}.stl`] = new Uint8Array(generateBinarySTL(mesh.positions, mesh.indices));
-            } else {
-                const xml = generate3MFXML(mesh.positions, mesh.indices);
-                files[`${fileName}.3mf`] = fflate.zipSync({
-                    '[Content_Types].xml': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Override PartName="/3D/3dmodel.model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'), { level: 0 }],
-                    '_rels/.rels': [fflate.strToU8('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'), { level: 0 }],
-                    '3D/3dmodel.model': [fflate.strToU8(xml), { level: 6 }]
-                });
-            }
+            built.push({ name: part.name, count: part.count, mesh, fileName, vol: report.volumeMm3 });
             prog.value = (i + 1) / parts.length;
         }
 
-        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount));
+        if (exportMode() !== 'plates') {
+            for (const b of built) {
+                if (format === 'stl') {
+                    files[`${b.fileName}.stl`] = new Uint8Array(generateBinarySTL(b.mesh.positions, b.mesh.indices));
+                } else {
+                    files[`${b.fileName}.3mf`] = wrap3MF(generate3MFXML(b.mesh.positions, b.mesh.indices));
+                }
+            }
+        }
+
+        const packed = exportMode() === 'plates';
+        const laid = packed ? writePlateFiles(files, built, format) : null;
+        const label = packed ? `${laid.plates.length}plates` : `${parts.length}parts`;
+        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount,
+            packed ? describePlates(laid.plates, laid.oversized) : undefined));
         const zipped = fflate.zipSync(files);
         const blob = new Blob([zipped], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${parts.length}parts_${format}.zip`;
+        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${label}_${format}.zip`;
         a.click();
-        toast(`⬇ Exported ${parts.length} watertight parts (${format.toUpperCase()})`);
+        toast(packed
+            ? `⬇ Exported ${laid.plates.length} plate${laid.plates.length === 1 ? '' : 's'} (${format.toUpperCase()})`
+            : `⬇ Exported ${parts.length} watertight parts (${format.toUpperCase()})`);
     } catch (err) {
         console.error(err);
         toast(`Export failed: ${err.message}`);

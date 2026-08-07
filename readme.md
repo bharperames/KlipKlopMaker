@@ -43,10 +43,11 @@ Open the served URL in any modern browser. Everything runs client-side.
   feature, so no part of a glyph can fall below what a 0.4 mm nozzle will
   cut. The number is `GEOMETRY_VERSION` minus its patch digit, so
   the mark is a compatibility claim: anything `1.1` mates with anything else
-  `1.1`, and a major bump tells you the bin of old parts no longer fits. Choose one file per *part*, or
-  **packed plates** — a chosen PRINT SET laid out over full 256 mm beds (Bambu
-  X1 / X1C / P1S / P2S) by a MaxRects packer, one file per plate, so a tower is
-  a handful of print jobs instead of one per part. Sets are *Everything*,
+  `1.1`, and a major bump tells you the bin of old parts no longer fits. Pick **packed plates** or **single
+  files** above the format buttons. Packed plates lays the whole design out
+  over full 256 mm beds (Bambu X1 / X1C / P1S / P2S) with a MaxRects packer and
+  writes one file per plate, so a tower is a handful of print jobs instead of
+  one per part; both STL and 3MF produce the same layout. Sets are *Everything*,
   *Sample run* (one of each distinct part plus spare keys — a fit test before
   committing to a full batch), *Track only*, *Supports only*, *Connector keys
   only* and *Scenery only*; a set only filters and re-counts, never changes

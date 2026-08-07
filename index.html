@@ -682,15 +682,15 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     <div id="pane-export" style="display:none">
         <h2>Print/Parts</h2>
         <button id="btn-print-shop" class="primary" style="width:100%">🛠 Go to Custom Print Shop</button>
-        <div class="hint" style="margin-top:4px;margin-bottom:12px">
-            Choose how many of each part you want and watch them pack onto full
-            256&nbsp;mm plates (X1 / P1S / P2S). Presets there cover the whole
-            design, a sample run, track only, and so on.
+        <div style="height:12px"></div>
+        <div id="export-mode" role="radiogroup" aria-label="What to export">
+            <label><input type="radio" name="export-mode" value="plates" checked> Packed plates</label>
+            <label><input type="radio" name="export-mode" value="parts"> Single files</label>
         </div>
         <button id="btn-export-stl" style="width:100%">⬇ Generate &amp; download ZIP (STL)</button>
         <div style="height:6px"></div>
         <button id="btn-export-3mf" style="width:100%">⬇ Generate &amp; download ZIP (3MF)</button>
-        <div class="hint" style="margin-top:4px">One file per part, unpacked.</div>
+        <div class="hint" id="export-mode-hint" style="margin-top:4px"></div>
         <div style="height:10px"></div>
         <progress id="export-progress" max="1" value="0" style="display:none"></progress>
         <div id="export-log"></div>
@@ -838,12 +838,23 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 #shop-overlay { position: fixed; inset: 0; background: rgba(12,16,22,.72); z-index: 60; }
 #shop-panel { position: absolute; inset: 3vh 3vw; background: var(--panel); border: 1px solid var(--line);
     border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+#export-mode { display: flex; gap: 6px; margin-bottom: 8px; }
+#export-mode label {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-size: 12px; padding: 6px 4px; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--card);
+}
+#export-mode label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft, rgba(0,0,0,.04)); font-weight: 600; }
+#export-mode input { accent-color: var(--accent); }
+#shop-side { width: 340px; display: flex; flex-direction: column; min-height: 0;
+             border-right: 1px solid var(--line); }
+#shop-intro { padding: 10px 12px 6px; line-height: 1.45; flex: 0 0 auto; }
 #shop-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px;
     border-bottom: 1px solid var(--line); background: var(--panel-2); }
 #shop-head .grow { flex: 1; }
 #shop-summary { font-size: 12px; color: var(--ink-2); }
 #shop-body { flex: 1; display: flex; min-height: 0; }
-#shop-list { width: 340px; overflow-y: auto; border-right: 1px solid var(--line); padding: 8px; }
+#shop-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; }
 #shop-stage { flex: 1; min-width: 0; position: relative; }
 #shop-stage canvas { display: block; }
 #shop-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -882,7 +893,15 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <button id="shop-close" type="button">✕ Close (Esc)</button>
         </div>
         <div id="shop-body">
-            <div id="shop-list"></div>
+            <div id="shop-side">
+                <div class="hint" id="shop-intro">
+                    Choose how many of each part you want and watch them pack onto
+                    full 256&nbsp;mm plates (X1&nbsp;/ P1S&nbsp;/ P2S). The presets
+                    above cover the whole design, a sample run, track only, and so
+                    on — or set the numbers by hand.
+                </div>
+                <div id="shop-list"></div>
+            </div>
             <div id="shop-stage"><div id="shop-empty">Set a quantity to lay out a plate.</div></div>
         </div>
     </div>
