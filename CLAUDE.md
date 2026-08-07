@@ -112,8 +112,19 @@ building, gait physics simulation, and watertight STL/3MF export.
   an opt-in `{ code }` so rebuilds stay cheap. A code placed inside solid
   material becomes a sealed void and a second shell: `tests/pieces.test.js`
   catches that, and it is why `marginMm` clears the start platform's bumper.
+- **The socket never moves.** Every track piece has ONE hex socket, at
+  mid-piece. When the column under it would spear the tier below,
+  `planPillarPositions` returns mode `'jog'` and the offset is carried by a
+  separate part (`buildJogGeometry`) plugged into that same socket — not by
+  moving the boss or growing an outrigger arm on the track, which is what used
+  to make six extra track shapes out of a support problem. The jog is 45 mm
+  (the socket is hex, so it can only point six ways and the worst is 60° off)
+  and exactly one grid unit tall, so it substitutes for a 15 mm riser and
+  `decomposeSupport(stackHeightMm(piece, support))` still lands on the grid.
+  A piece's part signature must NOT key on support mode/station/side — the mesh
+  is identical either way, and keying on it listed one curve as four.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
-  (pillars, towers, palm trunks, patio corners, track bosses).
+  (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 
 ## Browser verification
 

@@ -64,7 +64,9 @@ Open the served URL in any modern browser. Everything runs client-side.
     into pockets recessed in bed-supported end ribs — the print-friendly
     replacement for protruding dovetails)
   - merged **switch parts** with gate-pin bores plus printable **gate paddles**
-  - auto-cut support **pillars**, plus any placed **scenery** parts
+  - support **feet, risers and jogs** — a jog is an offset riser that steps a
+    column sideways past the tier below, so the track never changes shape to
+    suit its own support — plus any placed **scenery** parts
   - the **walker figure** (body + pendulum lying on their sides so hoof cams
     print smooth) and choke-safety **plugs** — Print shop only; the per-part
     ZIPs cover track construction, which is what a design implies

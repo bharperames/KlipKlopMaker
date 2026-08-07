@@ -1,6 +1,7 @@
 import {
     SPEC, layoutTrack, samplePath, stationsForPiece, checkClearances,
-    effectiveRidgePitch, ridgeOffset, appendSpiralTier, degToRad
+    effectiveRidgePitch, ridgeOffset, appendSpiralTier, degToRad,
+    supportBossPos, stackHeightMm, needsPier
 } from '../js/track.js';
 
 describe('layoutTrack', () => {
@@ -243,7 +244,7 @@ describe('planPillarPositions', () => {
         return false;
     };
 
-    test('stacked double spiral gets outrigger supports that clear the tier below', () => {
+    test('a stacked double spiral jogs its columns clear of the tier below', () => {
         const seq = ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'];
         const { pieces } = layoutTrack(seq, { slopeDeg: 11, curveRadius: 150 });
         const sups = planPillarPositions(pieces);
@@ -252,8 +253,33 @@ describe('planPillarPositions', () => {
             expect(sup.mode).not.toBe('none');
             expect(columnHits(pieces, sup)).toBe(false);
         }
-        // the upper tier (directly above the lower) must have gone outboard
-        expect(sups.some(s => s.mode === 'outrigger')).toBe(true);
+        // the upper tier sits directly over the lower, so it has to step aside
+        expect(sups.some(s => s.mode === 'jog')).toBe(true);
+    });
+
+    test('the BOSS never moves, whatever the column does', () => {
+        // this is what keeps a track piece one shape: the offset belongs to the
+        // support, so the socket is always at mid-piece
+        const seq = ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'];
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11, curveRadius: 150 });
+        for (const sup of planPillarPositions(pieces)) {
+            const pc = pieces.find(p => p.index === sup.pieceIndex);
+            expect(sup.s).toBeCloseTo(pc.planLen / 2, 9);
+            const boss = supportBossPos(pc, sup);
+            expect(boss.x).toBeCloseTo(planPosAt(pc, pc.planLen / 2).x, 9);
+        }
+    });
+
+    test('a jog costs the stack exactly one grid unit, so it still decomposes', () => {
+        const seq = ['straight', ...Array(8).fill('curveL'), 'straight'];
+        const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+        for (const sup of planPillarPositions(pieces)) {
+            const pc = pieces.find(p => p.index === sup.pieceIndex);
+            if (!needsPier(pc)) continue;
+            const h = stackHeightMm(pc, sup);
+            expect(pc.rimY - h).toBe(sup.mode === 'jog' ? SPEC.jog.heightMm : 0);
+            expect(`${pc.name} decomposes`).toBe(`${pc.name} ${decomposeSupport(h) ? 'decomposes' : 'OFF-GRID'}`);
+        }
     });
 
     test('a simple elevated straight keeps a plain center pillar', () => {

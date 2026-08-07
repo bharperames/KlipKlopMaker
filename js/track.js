@@ -121,6 +121,26 @@ export const SPEC = {
     platformLen: 150,
     clearanceHeight: 100,
     socket: { hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7 },
+    /**
+     * The JOG: an offset riser that moves a support column sideways when the
+     * column straight under a piece would spear the tier below.
+     *
+     * It replaces the integral outrigger arm, which made the TRACK PIECE a
+     * different solid — six of them across the stock scenes — for a reason that
+     * has nothing to do with the track. Now every piece has one socket at
+     * mid-piece and the offset lives in a part.
+     *
+     * 45 mm because the socket is hex: an adapter can only point in six
+     * directions, so the worst orientation is 60° off the one you want and its
+     * useful reach is 45·sin 60° = 39 mm — a shade more than the 37.5 mm the
+     * integral arm used to give. Measured over the stock scenes: 42 mm places
+     * every support, 40 mm leaves three helix curves unsupportable, and the old
+     * arm's 37.5 leaves thirteen. 45 is the first round number with margin.
+     *
+     * One grid unit tall, so it SUBSTITUTES for a 15 mm riser rather than
+     * adding an off-grid step: `decomposeSupport` still lands on the grid.
+     */
+    jog: { armMm: 45, heightMm: 15 },
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
@@ -697,15 +717,22 @@ export function samplePath(pieces, step = 5) {
 }
 
 /**
- * Collision-aware support planning. A naive pillar under each piece's midpoint
- * spears straight through the tier below on stacked spirals, so every support
- * column is checked against all pieces beneath it:
- *  - 'center': the usual under-boss pillar, tried at several stations
- *  - 'outrigger': boss moved laterally outboard on a printable arm (curves
- *    prefer their outer side) so the pillar drops beside the lower tier
+ * Collision-aware support planning. A pillar under each piece's midpoint spears
+ * straight through the tier below on stacked spirals, so every support column
+ * is checked against all pieces beneath it:
+ *  - 'center': the boss at mid-piece and the column straight down from it
+ *  - 'jog': the column moved sideways by a JOG (SPEC.jog) plugged into that
+ *    same mid socket. The socket is hex, so the jog can point in six
+ *    directions and the planner tries each.
  *  - 'none': no clear column exists — reported so the UI can warn
  *
- * @returns Array<{ pieceIndex, mode, x, z, h, side?, s? }>
+ * The boss NEVER moves: every piece has one socket at mid-piece and is the same
+ * solid as every other piece of its type. That is the whole point — the
+ * previous version nudged the boss along the track and grew an outrigger arm
+ * when that failed, which made six extra track parts out of a problem that
+ * belongs to the support, not the track.
+ *
+ * @returns Array<{ pieceIndex, mode, x, z, h, s, rot? }>
  */
 export function planPillarPositions(pieces, params = {}) {
     const outerHalfOf = (pc) => pc.innerWidth / 2 + SPEC.wall;
@@ -744,47 +771,53 @@ export function planPillarPositions(pieces, params = {}) {
         // skipped, which left them with no support record at all — and bossOps
         // reads a missing record as "build the default centre boss", so they
         // got a boss anyway while the part signature and the dimension labels
-        // both reported them as unsupported. That is what listed two identical
-        // straights as separate parts. Every piece keeps its socket boss (one
-        // less unique part), and decomposeSupport() returns null at zero height
-        // so no foot or risers are emitted for them.
+        // both reported them as unsupported. Every piece keeps its socket boss,
+        // and decomposeSupport() returns null at zero height so no foot or
+        // risers are emitted for them.
         const ignore = new Set(
             pc.switchKey
                 ? pieces.filter(q => q.switchKey === pc.switchKey).map(q => q.index)
                 : [pc.index]
         );
+        const s = pc.planLen / 2;
+        const pos = planPosAt(pc, s);
         let placed = null;
-        for (const f of [0.5, 0.35, 0.65, 0.2, 0.8]) {
-            const pos = planPosAt(pc, f * pc.planLen);
-            if (!columnBlocked(pos.x, pos.z, pc.rimY, ignore)) {
-                placed = { pieceIndex: pc.index, mode: 'center', x: pos.x, z: pos.z, h: pos.h, s: f * pc.planLen };
-                break;
-            }
-        }
-        if (!placed) {
-            // curves hang the arm outboard first; straights try both sides
-            const sides = pc.turn > 0 ? [1, -1] : pc.turn < 0 ? [-1, 1] : [1, -1];
-            outer: for (const side of sides) {
-                for (const f of [0.5, 0.35, 0.65]) {
-                    const pos = planPosAt(pc, f * pc.planLen);
-                    const right = [Math.sin(pos.h), -Math.cos(pos.h)];
-                    const off = armOffsetOf(pc) * side;
-                    const bx = pos.x + right[0] * off;
-                    const bz = pos.z + right[1] * off;
-                    if (!columnBlocked(bx, bz, pc.rimY, ignore)) {
-                        placed = { pieceIndex: pc.index, mode: 'outrigger', x: bx, z: bz, h: pos.h, side, s: f * pc.planLen };
-                        break outer;
-                    }
+        if (!columnBlocked(pos.x, pos.z, pc.rimY, ignore)) {
+            placed = { pieceIndex: pc.index, mode: 'center', x: pos.x, z: pos.z, h: pos.h, s };
+        } else {
+            // six hex orientations of the jog, nearest-to-outboard first so a
+            // curve still tends to throw its column to the outside of the turn
+            const outboard = pc.turn < 0 ? 1 : -1;
+            const order = [1, -1, 2, -2, 3, 0].map(k => k * outboard);
+            for (const k of order) {
+                const a = pos.h + k * Math.PI / 3;
+                const jx = pos.x + Math.cos(a) * SPEC.jog.armMm;
+                const jz = pos.z + Math.sin(a) * SPEC.jog.armMm;
+                if (!columnBlocked(jx, jz, pc.rimY, ignore)) {
+                    placed = { pieceIndex: pc.index, mode: 'jog', x: jx, z: jz, h: pos.h, s, rot: k };
+                    break;
                 }
             }
         }
-        supports.push(placed ?? { pieceIndex: pc.index, mode: 'none', x: 0, z: 0, h: 0 });
+        supports.push(placed ?? { pieceIndex: pc.index, mode: 'none', x: pos.x, z: pos.z, h: pos.h, s });
     }
     return supports;
 }
 
+/** Where a jogged support's boss sits: always mid-piece, never moved. */
+export function supportBossPos(piece, support) {
+    const s = support?.s ?? piece.planLen / 2;
+    const p = planPosAt(piece, s);
+    return { x: p.x, z: p.z, h: p.h, s };
+}
+
+/** Height the riser stack has to make up under a support record. */
+export function stackHeightMm(piece, support) {
+    return piece.rimY - (support?.mode === 'jog' ? SPEC.jog.heightMm : 0);
+}
+
 /** True for records that carry a real socket boss (i.e. not a blocked column). */
-export const supportsPillar = (s) => !!s && (s.mode === 'center' || s.mode === 'outrigger');
+export const supportsPillar = (s) => !!s && (s.mode === 'center' || s.mode === 'jog');
 
 /**
  * True when a piece actually needs a pier printed under its boss. A piece

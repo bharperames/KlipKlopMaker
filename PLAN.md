@@ -136,12 +136,25 @@ the curve mouth — and 3.97 mm through a curve body. If the plastic disagrees,
 the yaw law is what is wrong and it needs the print's data before anything else
 in §8 is trusted. This is the single highest-value thing left.
 
-**The outrigger axis.** Untouched by any of the above. `_outrigger` comes from
-support planning, not from width: measured across four designs, supports are
-almost all `center @75` (straight mid) or `center @113` (curve mid), the
-outliers being two nudged positions and five outriggers out of ~48.
-Standardising the socket to mid-piece on every piece would remove the axis. It
-changes where a pier can land, so it is a separate decision.
+**The outrigger axis — DONE.** It was never a track problem. Measured over the
+stock scenes, 120 of 137 supports already sat at mid-piece; the other 17 moved
+only because the column under them would have speared the tier below, and each
+one cost a track part. The offset now lives in a JOG: an offset riser with a
+hex tenon up into the standard mid socket and a hex socket down for the stack,
+45 mm long and one grid unit tall so it substitutes for a 15 mm riser.
+
+45 mm is forced by the hex: a jog can only point six ways, so the worst
+orientation is 60° off and its useful reach is 45·sin 60° = 39 mm. Measured,
+42 mm places every support in the library, 40 leaves three helix curves
+unsupportable, and the old integral arm's 37.5 leaves thirteen.
+
+Six track variants became one small shared part, every piece of a type now
+exports byte-identically whatever is under it, and a two-tier spiral tower
+needs 11 distinct printed parts in total.
+
+**Not yet printed.** The jog is a 45 mm cantilever on a 9 mm AF hex joint,
+carrying tower weight in bending where the old arm carried it rigidly. That is
+the one thing about it that CAD cannot answer.
 
 **Parts still unmarked.** The gate paddle, scenery (tower, palm, patio) and the
 figure carry no code. The gate and the figure have no compatibility axis worth

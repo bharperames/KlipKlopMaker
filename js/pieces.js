@@ -164,10 +164,6 @@ function planToWorld(pts, face) {
  * a few millimetres off it. `undefined` (no support info at all, e.g. a
  * standalone display build) falls back to the usual mid-piece boss.
  */
-/** Arc length of an OUTRIGGER arm, which needs solid skirt to land on. */
-export const armStation = (support) =>
-    support && support.mode === 'outrigger' ? support.s : null;
-
 export const supportStations = (support, piece) =>
     support === undefined ? [piece.planLen / 2]
         : support && support.mode !== 'none' ? [support.s]
@@ -176,9 +172,8 @@ export const supportStations = (support, piece) =>
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
     const pads = bossStations ?? [piece.planLen / 2];
-    const forced = armStation(support);
-    const stations = stationsForPiece(piece, 6, archStations(piece, spec, pads, forced));
-    const profiles = pieceProfiles(piece, stations, spec, false, pads, forced);
+    const stations = stationsForPiece(piece, 6, archStations(piece, spec, pads));
+    const profiles = pieceProfiles(piece, stations, spec, false, pads);
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
     const ops = [];
 
@@ -461,7 +456,7 @@ function slantedCylinder(bx, bz, heading, r, yBottom, topAt, segs = 28) {
 
 /**
  * Upward bore that hollows a boss above its socket. Returns null when the boss
- * is too short for a bore to be worth it (outrigger bosses are only 11 mm tall).
+ * is too short for a bore to be worth it.
  */
 function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
     const rSock = spec.socket.hexAF / 2;          // inscribed in the hex: no ledge
@@ -508,52 +503,25 @@ function bossOps(piece, spec, support) {
     const ops = [];
     let bx, bz, bossHeading = 0, bossUnderside = null;
 
-    if (!support || support.mode === 'center') {
+    // The boss is always at mid-piece. It used to move along the track, and
+    // grow an outrigger arm when that was not enough, whenever the column below
+    // was blocked — which made the TRACK a different solid for a reason that
+    // belongs to the SUPPORT. The offset now lives in a jog (SPEC.jog), so
+    // every piece of a type is one shape.
+    {
         const s = support?.s ?? piece.planLen / 2;
         const f = s / piece.planLen;
-        if (support) {
-            bx = support.x; bz = support.z;
-        } else {
-            const stations = stationsForPiece(piece, piece.planLen / 2);
-            const m = stations[Math.floor(stations.length / 2)];
-            bx = m.origin[0]; bz = m.origin[2];
-        }
+        const m = planPosAt(piece, s);
+        bx = m.x; bz = m.z;
         const ceilY = (piece.entryDeck - piece.drop * f) - spec.floorThk;
         // floor underside at an offset ds along the track from the boss centre
         const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
-        bossHeading = support?.h ?? planPosAt(piece, s).h;
+        bossHeading = m.h;
         bossUnderside = (ds) => ceilY - grad * ds;
         ops.push({
             op: ADDITION,
             geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
                 piece.rimY, (ds) => bossUnderside(ds) + 0.5)
-        });
-    } else {
-        // outrigger: printable arm at rim level (sits on the bed) carrying the
-        // socket boss outboard, clear of whatever runs beneath this piece
-        bx = support.x; bz = support.z;
-        const right = [Math.sin(support.h), -Math.cos(support.h)];
-        const dirV = [Math.cos(support.h), Math.sin(support.h)];
-        const wAt = innerWidthAt(piece, support.s);
-        const armEnd = wAt / 2 + spec.wall + spec.socket.bossR + 4;
-        const armStart = wAt / 2 - 2;      // overlap 2 mm into the skirt
-        const centerline = [bx - right[0] * armEnd * support.side, bz - right[1] * armEnd * support.side];
-        const armPts = [
-            [armStart * support.side, -11], [armEnd * support.side, -11],
-            [armEnd * support.side, 11], [armStart * support.side, 11]
-        ].map(([lat, lon]) => [
-            centerline[0] + right[0] * lat + dirV[0] * lon,
-            centerline[1] + right[1] * lat + dirV[1] * lon
-        ]);
-        ops.push({
-            op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(armPts, piece.rimY, piece.rimY + 11))
-        });
-        ops.push({
-            op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(
-                circlePlan(spec.socket.bossR).map(([px, pz]) => [bx + px, bz + pz]),
-                piece.rimY, piece.rimY + 11))
         });
     }
     ops.push({
@@ -751,7 +719,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const hasEntryJoint = opts.hasEntryJoint ?? !piece.isImplicitStart;
     const hasExitJoint = opts.hasExitJoint ?? piece.type !== 'end';
     const stations = supportStations(opts.support, piece);
-    const shell = fineShell(piece, spec, stations, armStation(opts.support));
+    const shell = fineShell(piece, spec, stations);
     const ops = [];
     if (piece.type === 'elevator' || piece.isElevator) {
         const Wo = piece.innerWidth / 2 + spec.wall;
@@ -838,7 +806,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     opts = { ...opts, support: supportInFrame(opts.support, frame) };
     const spec = opts.spec ?? SPEC;
     const stations = supportStations(opts.support, mainPiece);
-    const shell = fineShell(mainPiece, spec, stations, armStation(opts.support));
+    const shell = fineShell(mainPiece, spec, stations);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
 
     // open the frog: neither route's rails may cross the other's channel
@@ -1089,6 +1057,45 @@ export function buildPillarGeometry(heightMm, spec = SPEC) {
  * all sharing the hex tenon/socket interlock. Any 15 mm-grid height is
  * reachable from five reusable part designs.
  */
+/**
+ * The JOG: an offset riser. Hex tenon up into a track piece's mid socket, a
+ * flat arm, and a hex socket down for the riser stack — so a support column
+ * can step sideways out of the way of the tier below without the TRACK having
+ * to change shape for it.
+ *
+ * Exactly one grid unit tall, so it substitutes for a 15 mm riser instead of
+ * adding an off-grid step and every stack still decomposes onto the grid.
+ *
+ * Prints flat on its own underside with no overhangs: the arm is a constant
+ * 15 mm-tall slab between two hex bosses, and the socket opens downward to the
+ * bed exactly as a riser's does.
+ */
+export function buildJogGeometry(spec = SPEC, opts = {}) {
+    const H = SPEC.jog.heightMm, arm = SPEC.jog.armMm;
+    const hex = (cx) => hexPlan(15).map(([x, z]) => [cx + x, -z]);
+    const waist = 15 / 2 - 1.5;
+    const at = (y) => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] });
+    // one prism per end plus the bar between them; the union is a single slab
+    const ends = [0, arm].map(cx => toBufferGeometry(
+        sweepSolid([hex(cx), hex(cx)], [at(0), at(H)])));
+    const bar = toBufferGeometry(extrudePolygonY(
+        [[0, -waist], [arm, -waist], [arm, waist], [0, waist]], 0, H));
+    // tenon on the socket end, so the jog is the TOP of the stack and the
+    // riser it replaces goes on underneath
+    const tenon = toBufferGeometry(sweepSolid(
+        [hexPlan(TENON_AF).map(([x, z]) => [x, -z]),
+         hexPlan(TENON_AF).map(([x, z]) => [x, -z]),
+         hexPlan(TENON_AF - 1.4).map(([x, z]) => [x, -z])],
+        [at(H), at(H + spec.socket.depth - 2), at(H + spec.socket.depth - 1)]));
+    return csgChain(ends[0], [
+        { op: ADDITION, geometry: bar },
+        { op: ADDITION, geometry: ends[1] },
+        { op: ADDITION, geometry: tenon },
+        { op: SUBTRACTION, geometry: hexSocketSolid(arm, 0, -0.5, spec.socket.depth, spec) },
+        ...hexFlatEngraveOps(opts.code ?? null, 15, 0, H, spec, { capHeight: 1.6 })
+    ]);
+}
+
 export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
     const body = toBufferGeometry(stackedHex([
         { y: 0, af: 24.8 },                                  // elephant-foot chamfer

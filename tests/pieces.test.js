@@ -475,29 +475,25 @@ describe('every part is ONE solid', () => {
         return new Set([...key.values()].map(find)).size;
     };
 
-    test('an outrigger arm lands on solid skirt, not on a window', async () => {
-        // The arm sits 2 mm inboard of the wall and is 11 mm tall. If the
-        // arcade opens a window under it the arm reaches into air and the
-        // piece exports as two objects. A plain layout never plans an
-        // outrigger — it takes a blocked column two tiers up — so the record
-        // is built directly here rather than waiting for one to turn up.
-        const { SPEC, planPosAt } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+    test('a jogged support changes the column, never the piece', async () => {
+        // The offset lives in a separate part now, so a piece exports the same
+        // solid whether its column runs straight down or steps aside. If that
+        // ever stops being true the support axis is back in the track library.
+        const { planPillarPositions } = await import('../js/track.js');
+        const { pieces } = layoutTrack(
+            ['straight', ...Array(8).fill('curveL'), 'straight'], { slopeDeg: 11.2167 });
+        const sups = planPillarPositions(pieces);
+        expect(sups.some(s => s.mode === 'jog')).toBe(true);
         for (const pc of pieces) {
             if (pc.type === 'start' || pc.type === 'end') continue;
-            for (const f of [0.35, 0.5, 0.65]) {
-                const s = f * pc.planLen;
-                const at = planPosAt(pc, s);
-                const side = pc.turn > 0 ? 1 : -1;
-                const off = (pc.innerWidth / 2 + SPEC.wall + SPEC.socket.bossR + 4) * side;
-                const support = {
-                    pieceIndex: pc.index, mode: 'outrigger', side, s, h: at.h,
-                    x: at.x + Math.sin(at.h) * off, z: at.z - Math.cos(at.h) * off
-                };
-                const g = buildPieceExportGeometry(pc, { support });
-                expect(`${pc.name}@${f}: ${componentCount(g)} shell(s)`)
-                    .toBe(`${pc.name}@${f}: 1 shell(s)`);
-            }
+            const sup = sups.find(s => s.pieceIndex === pc.index);
+            const withSupport = buildPieceExportGeometry(pc, { support: sup });
+            const plain = buildPieceExportGeometry(pc, {
+                support: { ...sup, mode: 'center', x: 0, z: 0 } });
+            expect(`${pc.name}: ${componentCount(withSupport)} shell(s)`)
+                .toBe(`${pc.name}: 1 shell(s)`);
+            expect(`${pc.name} tris ${withSupport.indices.length}`)
+                .toBe(`${pc.name} tris ${plain.indices.length}`);
         }
     });
 

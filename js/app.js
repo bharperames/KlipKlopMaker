@@ -23,7 +23,7 @@ import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
-    planPosAt, deckYAt
+    planPosAt, deckYAt, stackHeightMm, supportBossPos
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { checkChannelFit, walkerFootprint } from './clearance.js';
@@ -36,7 +36,7 @@ import { createClosureSolver, chainEnds, describeGap } from './connect.js';
 import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
-    buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry,
+    buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry, buildJogGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
     sectionGeometry, supportStations, GATE
@@ -409,7 +409,14 @@ function rebuild() {
         // and one curve, not two of each — but there is nothing for a pier to
         // span, and buildPillarGeometry(0) drew a stub foot under it anyway.
         if (!needsPier(pc)) continue;
-        trackGroup.add(buildSupportObject(pc.rimY, sup.x, sup.z));
+        trackGroup.add(buildSupportObject(stackHeightMm(pc, sup), sup.x, sup.z));
+        if (sup.mode === 'jog') {
+            const boss = supportBossPos(pc, sup);
+            const jog = makeStackedSupportMesh(supportGeom('jog'), MAT.pillar);
+            jog.position.set(sup.x, stackHeightMm(pc, sup), sup.z);
+            jog.rotation.y = -Math.atan2(boss.z - sup.z, boss.x - sup.x);
+            trackGroup.add(jog);
+        }
     }
 
     // gate blades: hinged on the wall opposite the branch — parked flat along
@@ -470,9 +477,10 @@ function usingStandard() {
 const supportGeomCache = new Map();
 function supportGeom(kind) {
     if (!supportGeomCache.has(kind)) {
-        supportGeomCache.set(kind, kind === 'foot'
-            ? buildSupportFootGeometry()
-            : toBufferGeometry(buildRiserGeometry(Number(kind))));
+        supportGeomCache.set(kind,
+            kind === 'foot' ? buildSupportFootGeometry()
+                : kind === 'jog' ? toBufferGeometry(buildJogGeometry())
+                    : toBufferGeometry(buildRiserGeometry(Number(kind))));
     }
     return supportGeomCache.get(kind);
 }
@@ -3076,6 +3084,7 @@ function assembleParts() {
         key: 'Drops into the pockets of two mating pieces — Hot-Wheels-style seam connector.',
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
         pillar: 'Hex tenon (8.6 AF) plugs into any track/scenery socket (9 AF × 10).',
+        jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
         scenery: 'Shares the same hex tenon/socket interlock standard.',
         figure: 'Print on its side; hoof cams must be smooth arcs.'
     };
@@ -3105,13 +3114,11 @@ function assembleParts() {
             pc.waterfall ? pc.waterfall.toFixed(3) : '0',
             pc.switchType ?? ''
         ];
-        if (support && support.mode !== 'none') {
-            sigParts.push(support.mode);
-            sigParts.push(support.s.toFixed(1));
-            sigParts.push(support.side ?? '0');
-        } else {
-            sigParts.push('no-support');
-        }
+        // The support contributes ONE bit to the shape now: whether the piece
+        // has a socket boss at all. Where the column goes is the jog's problem,
+        // not the track's, so mode/station/side must not split a part number —
+        // they used to, and that alone listed one curve as four.
+        sigParts.push(support && support.mode !== 'none' ? 'boss' : 'no-boss');
         return sigParts.join('|');
     }
 
@@ -3155,7 +3162,7 @@ function assembleParts() {
         const { pc, support, count } = item;
         const baseName = (pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name)
             + seamRole(pc)
-            + (support && support.mode === 'outrigger' ? '_outrigger' : '');
+;
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             parts.push({
@@ -3191,14 +3198,17 @@ function assembleParts() {
     const supList = (state.supports ?? [])
         .filter(s => supportsPillar(s) && needsPier(pieces[s.pieceIndex]));
     if (usingStandard()) {
-        let feet = 0;
+        let feet = 0, jogs = 0;
         const riserCounts = new Map();
         for (const sup of supList) {
-            const dec = decomposeSupport(pieces[sup.pieceIndex].rimY);
+            const pc = pieces[sup.pieceIndex];
+            if (sup.mode === 'jog') jogs++;
+            const dec = decomposeSupport(stackHeightMm(pc, sup));
             if (!dec) continue;
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
+        if (jogs) parts.push({ name: 'support_jog_print', count: jogs, sig: 'support_jog_print', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) });
         if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
             parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
@@ -4425,16 +4435,13 @@ function shopBuildList() {
     for (const kind of ['track', 'key', 'support', 'scenery', 'figure']) {
         // The gate paddle is not a category of its own — it is the part that
         // makes a switch work, and a group of one told nobody that.
-        // The plain forms cover any track. Everything else — outrigger
-        // variants, lifts, elevators, switches, and the design's own pieces
-        // with their specific rim heights — is real but rarely wanted, so it
-        // folds away instead of burying the three rows most people need.
-        // Specialty means the piece exists only because of what it sits next
-        // to: an outrigger arm, or (custom builds only) a curve-flanking
-        // flare. Everything else is regular, including the design's own
-        // straights and lone curves, which were landing in the accordion
-        // purely for not being named standard_*.
-        const isSpecialty = (n) => /_(into_curve|out_of_curve|between_curves|outrigger)\b/.test(n);
+        // The plain forms cover any track. Lifts, elevators, switches and the
+        // design's own pieces with their specific rim heights are real but
+        // rarely wanted, so they fold away instead of burying the rows most
+        // people need. Specialty now means only one thing: a piece that exists
+        // because of what it sits next to, which at the Standard cannot happen
+        // at all — a custom widened build is the only way to get one.
+        const isSpecialty = (n) => /_(into_curve|out_of_curve|between_curves)\b/.test(n);
         const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
             : shop.items.filter(it => it.kind === kind);
@@ -4545,6 +4552,7 @@ async function openPrintShop() {
                 { name: 'support_foot_print', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
                 ...[120, 60, 30, 15].map(r => ({
                     name: `support_riser_${r}mm_print`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
+                { name: 'support_jog_print', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
                 { name: 'scenery_tower_print', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio_print', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island_print', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
