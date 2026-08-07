@@ -613,21 +613,11 @@ function bossOps(piece, spec, support) {
  * Reading order follows: looking at a face from its free side, along −n, the
  * reader's left-to-right runs along `Y × n`, which is +dir on one rail and
  * −dir on the other. So the block is laid out backwards along the track on the
- * far rail, and comes out reading the same way on both.
+ * far rail, and comes out reading the same way on both. `engravePoint` is the
+ * single place that knows this; there is no second copy of the rule to drift.
  */
 export const engraveSide = (piece) => (piece && piece.switchType === 'switchR' ? -1 : 1);
 
-export function engraveFrame(piece, spec = SPEC) {
-    const h = piece.entry.h;
-    const side = engraveSide(piece);
-    // free-side normal of the engraved face — it points INTO the channel —
-    // and the reading direction Y × n
-    return {
-        normal: [-side * Math.sin(h), 0, side * Math.cos(h)],
-        read: [side * Math.cos(h), 0, side * Math.sin(h)],
-        up: [0, 1, 0]
-    };
-}
 
 /**
  * Local text coords → world. `u` runs along the wall in reading order from the

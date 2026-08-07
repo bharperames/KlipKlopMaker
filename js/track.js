@@ -259,6 +259,7 @@ export function layoutTrack(sequence, params = {}) {
     const p = {
         slopeDeg: STANDARD.slopeDeg,
         innerWidth: STANDARD.innerWidth,
+        curveWidenMm: SPEC.curveWidenMm,
         curveRadius: STANDARD.curveRadius,
         tileLen: SPEC.tileLen,
         platformLen: SPEC.platformLen,
@@ -313,7 +314,7 @@ export function layoutTrack(sequence, params = {}) {
             const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
             plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
             drop = plan.planLen * tanSlope; slopeDeg = p.slopeDeg;
-            innerWidth = p.innerWidth + SPEC.curveWidenMm;
+            innerWidth = p.innerWidth + p.curveWidenMm;
         }
         const exitDeck = entryDeck - drop;
         // Rim anchors to the GRID BOUNDARY at the piece's low end (exit
@@ -495,34 +496,28 @@ export const SEAM_TAPER_MM = 30;
  * Gives every piece an `entryWidth` and `exitWidth`: the channel width at each
  * mating face, which is the WIDER of the two pieces meeting there.
  *
- * A curve is `curveWidenMm` wider than a straight, and butting them together
- * left a 1.5 mm ledge per side. Downhill of a curve that ledge faces the
- * figure square-on, exactly where it is still riding wide off the turn — it is
- * a hoof-catcher, not a cosmetic step. Matching the faces and blending back to
- * the body width inside the piece removes it.
+ * AT THE STANDARD THIS IS A NO-OP. `curveWidenMm` is 0, so every piece is the
+ * same width and every face already agrees — which is exactly what makes each
+ * piece type a single shape. It earns its place only when a custom build asks
+ * for a widened turn, and then the direction matters:
  *
- * WHICH WAY THE MATCH GOES was a guess until `clearance.js` existed to measure
- * it, and the guess was backwards. Taking the narrower width put the pinch
- * exactly where the figure needs the room: a footprint is 47.5 mm long and a
- * curve entry has half of it already round the corner, so the channel has to
- * carry the curve's width for half a footprint on EITHER side of the turn, not
- * shed it at the join. Measured over the stock scenes (worst lateral slack,
- * against the 3 mm clearance floor in PHYSICS.md §4):
+ * A widened curve butted against a straight leaves a ledge per side, and
+ * downhill of a curve that ledge faces the figure square-on where it is still
+ * riding wide off the turn — a hoof-catcher, not a cosmetic step. Matching the
+ * faces removes it. Matching them on the WIDER width rather than the narrower
+ * is what keeps the curve one shape: the widened value is the maximum any seam
+ * can reach, so every curve face takes it whatever it neighbours, and the
+ * flare lands on the straights instead. Measured, when the widening was still
+ * 3 mm: taking the narrower width left 1.87 mm of side-to-side play at the
+ * tightest station of a helix against 2.79 for the wider one, because a
+ * footprint is 47.5 mm long and half of it is already round the corner at a
+ * curve mouth.
  *
- *     narrower face wins  →  1.87 mm of play at the tightest station
- *     wider face wins     →  2.79 mm
- *     no match at all     →  2.28 mm, and the ledge comes back
- *     uniform 51 channel  →  3.22 mm, but that is a Standard change
- *
- * Taking the wider width also lands the plan's other goal for free. 51 is the
- * maximum any seam can reach, so every curve face is 51 and a curve is the
- * same solid wherever it sits: `curveL` and `curveR` are ONE part each instead
- * of the `_entry`/`_through`/`_exit` trio a helix used to need. The variance
- * moves to the straights that flank a turn, of which a tower has a handful.
- *
- * Seams are found by coincident endpoints rather than by walking the tree, so
- * a switch — where two pieces share one entry face — resolves correctly: both
- * roles take the width of whatever feeds them.
+ * Faces are resolved once for everything that meets on them, not pairwise: a
+ * switch puts THREE pieces on one mouth (the feeder and both roles), and
+ * deciding it pairwise would hand the straight role one width while the feeder
+ * and the curve role took another — a step in the middle of what prints as one
+ * solid.
  */
 function resolveSeamWidths(pieces) {
     const byIndex = new Map(pieces.map(pc => [pc.index, pc]));
@@ -530,10 +525,6 @@ function resolveSeamWidths(pieces) {
         pc.entryWidth = pc.innerWidth;
         pc.exitWidth = pc.innerWidth;
     }
-    // A face is resolved once for everything that meets on it, not pairwise: a
-    // switch puts THREE pieces on one mouth (the feeder and both roles), and
-    // deciding it pairwise would hand the straight role 48 while the feeder and
-    // the curve role took 51 — a step in the middle of what prints as one solid.
     const faceWidth = new Map();
     for (const pc of pieces) {
         const prev = pc.prevIndex == null ? null : byIndex.get(pc.prevIndex);
@@ -809,7 +800,8 @@ export const needsPier = (piece) => !!piece && piece.rimY > 1;
  */
 export function checkClearances(pieces, params) {
     const issues = [];
-    const outerW = (params.innerWidth ?? SPEC.innerWidth.default) + 2 * SPEC.wall + SPEC.curveWidenMm;
+    const outerW = (params.innerWidth ?? SPEC.innerWidth.default) + 2 * SPEC.wall
+        + (params.curveWidenMm ?? SPEC.curveWidenMm);
     const near = (a, b) => Math.hypot(a.x - b.x, a.z - b.z) < 2;
     const related = (a, b) =>
         near(a.exit, b.entry) || near(b.exit, a.entry) || near(a.entry, b.entry) || near(a.exit, b.exit);

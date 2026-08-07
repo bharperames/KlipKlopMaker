@@ -5,11 +5,12 @@
  *
  * WHY THIS EXISTS. `simulate.js` models motion *along* the track — speed,
  * slope, friction, walk/slide regimes, stall, tumble — and never reads channel
- * width. Nothing in this project could tell a 48 mm channel from a 51 mm one,
- * so the +3 mm curve widening and the seam taper rested on judgement and on a
- * test ("a helix is not pinched at its interior seams") that encoded that
- * judgement rather than measuring anything. This module is the missing half:
- * a rigid-body sweep that says how wide the channel HAS to be at a given place.
+ * width. Nothing in this project could tell a wide channel from a narrow one,
+ * so the curve widening and the seam taper rested on judgement and on a test
+ * ("a helix is not pinched at its interior seams") that encoded that judgement
+ * rather than measuring anything. This module is the missing half: a rigid-body
+ * sweep that says how wide the channel HAS to be at a given place. It is also
+ * what showed the widening was unnecessary — see PHYSICS.md §8.
  *
  * WHAT IS MEASURED AND WHAT IS JUDGED — read this before trusting an output.
  *

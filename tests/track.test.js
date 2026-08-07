@@ -47,10 +47,13 @@ describe('layoutTrack', () => {
         expect(curve.planLen).toBeCloseTo((Math.PI / 2) * 150, 6);
     });
 
-    test('curves get dynamic widening; straights do not', () => {
-        const { pieces } = layoutTrack(['straight', 'curveR'], { innerWidth: 48 });
-        expect(pieces[1].innerWidth).toBe(48);
-        expect(pieces[2].innerWidth).toBe(48 + SPEC.curveWidenMm);
+    test('nothing is widened at the Standard; a custom build can still ask', () => {
+        const std = layoutTrack(['straight', 'curveR'], { innerWidth: 48 });
+        expect(std.pieces[1].innerWidth).toBe(48);
+        expect(std.pieces[2].innerWidth).toBe(48);      // a curve needs nothing extra
+        const custom = layoutTrack(['straight', 'curveR'], { innerWidth: 48, curveWidenMm: 3 });
+        expect(custom.pieces[1].innerWidth).toBe(48);
+        expect(custom.pieces[2].innerWidth).toBe(51);   // ...unless asked
     });
 
     test('slope outside the hard window raises an error issue', () => {
@@ -372,21 +375,40 @@ describe('the Klip Klop Standard', () => {
 import { innerWidthAt } from '../js/track.js';
 
 describe('seam widths', () => {
-    // A curve is +3 mm wider than a straight. Butted together that left a
-    // 1.5 mm ledge per side, and downhill of a curve the ledge faces the
-    // figure square-on where it is still riding wide off the turn.
+    // At the Standard every piece is one width, so all of this is a no-op and
+    // that is the point: nothing to blend means one shape per piece type. The
+    // machinery only fires for a custom build that asks for a widened turn, so
+    // that is where it has to be exercised — testing it at the Standard would
+    // pass on `48 === 48` and prove nothing.
     const seams = (pieces) => pieces
         .map(pc => [pc.prevIndex == null ? null : pieces.find(q => q.index === pc.prevIndex), pc])
         .filter(([a]) => a);
+    const WIDE = { slopeDeg: 11.2167, curveWidenMm: 3 };
 
-    test('both faces of every seam are the same width', () => {
+    test('at the Standard the channel is one width from end to end', () => {
+        for (const seq of [
+            ['straight', 'curveL', 'straight'],
+            ['straight', ...appendSpiralTier([], 'L'), 'straight'],
+            [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['curveL'] }]
+        ]) {
+            for (const pc of layoutTrack(seq, { slopeDeg: 11.2167 }).pieces) {
+                expect(`${pc.name} ${pc.entryWidth}/${pc.innerWidth}/${pc.exitWidth}`)
+                    .toBe(`${pc.name} 48/48/48`);
+                for (const s of [0, 15, pc.planLen / 2, pc.planLen]) {
+                    expect(innerWidthAt(pc, s)).toBeCloseTo(48, 9);
+                }
+            }
+        }
+    });
+
+    test('a widened build still has no lateral ledge at any seam', () => {
         for (const seq of [
             ['straight', 'curveL', 'straight'],
             ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'],
             ['curveR', 'straight', 'curveL'],
             [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['curveL'] }]
         ]) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const { pieces } = layoutTrack(seq, WIDE);
             for (const [a, b] of seams(pieces)) {
                 expect(a.exitWidth).toBeCloseTo(b.entryWidth, 6);
                 expect(innerWidthAt(a, a.planLen)).toBeCloseTo(innerWidthAt(b, 0), 6);
@@ -394,10 +416,11 @@ describe('seam widths', () => {
         }
     });
 
-    test('a curve keeps its full widening through the body', () => {
-        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+    test('a widened curve keeps its full width through the body', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], WIDE);
         for (const pc of pieces) {
             if (!pc.radius) continue;
+            expect(pc.innerWidth).toBe(51);
             expect(innerWidthAt(pc, pc.planLen / 2)).toBeCloseTo(pc.innerWidth, 6);
             // and the taper is monotone out from each face — no waist
             let prev = innerWidthAt(pc, 0);
@@ -409,38 +432,30 @@ describe('seam widths', () => {
         }
     });
 
-    test('a curve is the same solid wherever it sits', () => {
-        // The point of matching on the WIDER face: 51 is the maximum any seam
-        // can reach, so a curve is 51 end to end whatever it neighbours. That
-        // is what makes curveL/curveR one part each instead of a set of
-        // _entry/_through/_exit variants nobody can tell apart in a bin.
-        // (`clearance.js` is what says 51 is the right number; this test only
-        // says every curve gets it.)
+    test('matching on the WIDER face keeps a widened curve one solid', () => {
+        // the widened value is the maximum any seam can reach, so every curve
+        // face takes it whatever it neighbours — which is what stops a helix
+        // needing _entry/_through/_exit variants nobody can tell apart
         const { pieces } = layoutTrack(
             ['straight', ...appendSpiralTier([], 'L'), ...appendSpiralTier([], 'L'), 'straight'],
-            { slopeDeg: 11.2167 });
+            WIDE);
         const curves = pieces.filter(pc => pc.radius);
         expect(curves.length).toBe(8);
         for (const pc of curves) {
-            expect(pc.entryWidth).toBeCloseTo(pc.innerWidth, 6);
-            expect(pc.exitWidth).toBeCloseTo(pc.innerWidth, 6);
+            expect(`${pc.name} ${pc.entryWidth}/${pc.innerWidth}/${pc.exitWidth}`)
+                .toBe(`${pc.name} 51/51/51`);
         }
-        // and a lone curve between two straights is the same solid again
-        const lone = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 })
-            .pieces.find(pc => pc.radius);
-        expect(lone.innerWidth).toBeCloseTo(curves[0].innerWidth, 6);
-        expect(lone.entryWidth).toBeCloseTo(curves[0].entryWidth, 6);
-        expect(lone.exitWidth).toBeCloseTo(curves[0].exitWidth, 6);
+        // ...and a lone curve between two straights is the same solid again
+        const lone = layoutTrack(['straight', 'curveL', 'straight'], WIDE).pieces.find(pc => pc.radius);
+        expect(lone.entryWidth).toBe(51);
+        expect(lone.exitWidth).toBe(51);
     });
 
-    test('a straight flanking a turn carries the turn width at that face', () => {
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+    test('so the flare lands on the straight, and relaxes inside it', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], WIDE);
         const [before, curve, after] = [pieces[1], pieces[2], pieces[3]];
-        expect(before.type).toBe('straight');
-        expect(after.type).toBe('straight');
         expect(before.exitWidth).toBeCloseTo(curve.innerWidth, 6);
         expect(after.entryWidth).toBeCloseTo(curve.innerWidth, 6);
-        // ...and relaxes back to the base width inside itself
         expect(innerWidthAt(before, 0)).toBeCloseTo(before.innerWidth, 6);
         expect(innerWidthAt(before, before.planLen)).toBeCloseTo(curve.innerWidth, 6);
         expect(innerWidthAt(before, before.planLen / 2)).toBeCloseTo(before.innerWidth, 6);
@@ -449,12 +464,13 @@ describe('seam widths', () => {
     test('the wall leaves a mating face parallel to its neighbour', () => {
         // smoothstep, so the taper has zero slope at the seam: a finite
         // difference across the face must not show a kink
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], WIDE);
         const curve = pieces.find(pc => pc.radius);
-        for (const s of [0, curve.planLen]) {
+        const straight = pieces[1];
+        for (const [pc, s] of [[straight, straight.planLen], [curve, 0], [curve, curve.planLen]]) {
             const d = 0.5;
-            const inner = s === 0 ? d : curve.planLen - d;
-            const slope = Math.abs(innerWidthAt(curve, inner) - innerWidthAt(curve, s)) / d;
+            const inner = s === 0 ? d : pc.planLen - d;
+            const slope = Math.abs(innerWidthAt(pc, inner) - innerWidthAt(pc, s)) / d;
             expect(slope).toBeLessThan(0.01);
         }
     });

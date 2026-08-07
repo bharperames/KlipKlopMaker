@@ -81,8 +81,10 @@ building, gait physics simulation, and watertight STL/3MF export.
   turns need nothing added. This is what makes each piece type a single shape
   (8 across the whole scene library, down from 16): with no width difference at
   a seam there is nothing to taper and no `_into_curve` / `_entry` variants.
-  `resolveSeamWidths` and `SEAM_TAPER_MM` stay — correct, tested, and a no-op
-  at the Standard — because a custom build can still ask for a widened turn.
+  `resolveSeamWidths` and `SEAM_TAPER_MM` stay — correct and a no-op at the
+  Standard — because `layoutTrack({ curveWidenMm })` can still ask for a
+  widened turn. That path is where they are tested: asserting them at the
+  Standard would pass on `48 === 48` and prove nothing.
   **`FIGURE.widthMm` is measured off the toy, never derived from the channel**;
   it used to be `channel − 4`, and that circularity is what kept the widening
   alive. See PHYSICS.md §8.
