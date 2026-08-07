@@ -82,17 +82,26 @@ export function decomposeSupport(heightMm) {
 
 export const SPEC = {
     slope: { hardMin: 8, greenMin: 10, greenMax: 12, hardMax: 14, default: 11 },
-    // The BASE channel: the width the figure is printed against (figure width
-    // = base − 4). A turn transits at base + curveWidenMm and therefore sits
-    // OUTSIDE this range on purpose — 51 mm is not a spec violation, it is the
-    // swept width a rigid footprint needs at the standard radius. The range was
-    // always about the straight-line fit; only the label said otherwise.
+    // The channel, everywhere. One width: straights, curves, switches, the lot.
     innerWidth: { min: 46, max: 50, default: 48 },
-    // Corroborated, not just asserted: clearance.js sweeps the real footprint
-    // and asks for 50.03 mm at the 143.64 mm standard radius, and 50.52 at the
-    // 120 mm minimum — so +3 is the smallest whole millimetre that covers the
-    // whole legal radius range, and it is all but spent at the tight end.
-    curveWidenMm: 3,
+    // ZERO, and this is the measurement that got it there.
+    //
+    // A real Klip Klop figure is 38 mm across (measured off the toy). Swept
+    // through the tightest legal curve — R 120 — a 38 mm footprint needs
+    // 44.60 mm of channel including its clearance, and 48 covers that with
+    // 3.40 mm to spare. It covers every legal radius for any figure up to
+    // 41 mm. So a turn needs nothing added to it, and the widening that used
+    // to be here was never about the toy: it was propping up OUR printed
+    // figure, which was 44 mm because it was derived as `channel − 4` rather
+    // than from anything physical.
+    //
+    // Setting this to 0 is what deletes the whole `_into_curve` /
+    // `_out_of_curve` / `_between_curves` family: with one width there are no
+    // seam mismatches to taper, so `resolveSeamWidths` becomes a no-op and
+    // every curve and every straight is one shape. The taper machinery below
+    // is kept and still tested, because a custom-parameter build can still ask
+    // for a widened turn — it just is not what the Standard does.
+    curveWidenMm: 0,
     minCurveRadius: 120,
     defaultCurveRadius: 150,
     railHeight: 14,

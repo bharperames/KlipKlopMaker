@@ -1642,9 +1642,9 @@ function refreshPhysicsPanel() {
         </div>
         <div style="margin-top:8px;color:var(--ink-2)">${r.detail}</div>`;
 
-    const vol = figureVolumeEstimate(state.innerWidth - 4, state.figureStyle);
+    const vol = figureVolumeEstimate(FIGURE.widthMm, state.figureStyle);
     const bp = ballastPlan(vol, 15, state.walker.massG);
-    const W = state.innerWidth - 4;
+    const W = FIGURE.widthMm;
     const capacityG = (Math.PI * 16 * W * 0.6 * 0.0078) + (Math.PI * 12.25 * FIGURE.pendulumW * 0.6 * 0.0078);
     const overCap = bp.ballastG > capacityG;
     $('ballast-card').innerHTML = `
@@ -2595,7 +2595,7 @@ function buildHorse() {
     const pivot = new THREE.Group();
     group.add(pivot);
     const op = state.figureOpacity ?? 1;
-    const W2 = (state.innerWidth - 4) / 2;
+    const W2 = FIGURE.widthMm / 2;
     let pend;
     if (state.figureStyle === 'knight') {
         // sculpted Galahad + Mike (see horse_model.js); the rear leg skirt
@@ -3132,13 +3132,12 @@ function assembleParts() {
     /**
      * What a piece's seam taper says about where it sits.
      *
-     * Seams now take the WIDER of the two channels (see `resolveSeamWidths`),
-     * so a curve is always 51 end to end and a helix needs only one curve
-     * shape per direction. What varies instead is the STRAIGHT next to a turn:
-     * it carries the curve's width at that face and relaxes back to 48 inside
-     * itself. Those are not interchangeable and they look identical in a parts
-     * bin, so the NAME has to carry the role. A straight between two straights
-     * is 48 at both faces and gets no suffix: it is the plain case.
+     * At the Standard this never fires: `SPEC.curveWidenMm` is 0, so every
+     * piece is one width face to face and a straight beside a curve is the
+     * same part as any other straight. It stays for custom-parameter builds,
+     * which can still ask for a widened turn — there the straight next to it
+     * carries that width at the shared face and really is a different solid,
+     * and a parts bin cannot tell without the name saying so.
      */
     const seamRole = (pc) => {
         // curves only ever flare to their own width, so they never take a
@@ -4426,15 +4425,15 @@ function shopBuildList() {
     for (const kind of ['track', 'key', 'support', 'scenery', 'figure']) {
         // The gate paddle is not a category of its own — it is the part that
         // makes a switch work, and a group of one told nobody that.
-        // The plain forms cover any track that separates its curves with
-        // straights. Everything else — the flared straights that flank a turn,
-        // outrigger variants, lifts, elevators, switches, and the design's own
-        // pieces with their specific rim heights — is real but rarely wanted,
-        // so it folds away instead of burying the three rows most people need.
+        // The plain forms cover any track. Everything else — outrigger
+        // variants, lifts, elevators, switches, and the design's own pieces
+        // with their specific rim heights — is real but rarely wanted, so it
+        // folds away instead of burying the three rows most people need.
         // Specialty means the piece exists only because of what it sits next
-        // to — a curve-flanking flare or an outrigger arm. Everything else is
-        // regular, including the design's own straights and lone curves, which
-        // were landing in the accordion purely for not being named standard_*.
+        // to: an outrigger arm, or (custom builds only) a curve-flanking
+        // flare. Everything else is regular, including the design's own
+        // straights and lone curves, which were landing in the accordion
+        // purely for not being named standard_*.
         const isSpecialty = (n) => /_(into_curve|out_of_curve|between_curves|outrigger)\b/.test(n);
         const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
@@ -4677,7 +4676,7 @@ function exportReadme(joints, switchCount, plateManifest = null) {
             ? `Insert the ${switchCount} gate paddle(s) into the switch bores; flick to route
    the figure. The paddle must swing freely.`
             : null,
-        `Cut a 3 mm steel/brass rod to ${(state.innerWidth - 4 + 3).toFixed(0)} mm for the figure's axle.
+        `Cut a 3 mm steel/brass rod to ${(FIGURE.widthMm + 3).toFixed(0)} mm for the figure's axle.
    The pendulum must swing DEAD FREE — dry graphite, never oil.`,
         `Drop steel BBs into the ballast bores (see the app's Ballast plan),
    biased rear and low.`,

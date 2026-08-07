@@ -9,55 +9,61 @@ What is still open is at the bottom.
 
 ---
 
-## 1. One curve part per direction — DONE, by the other route
+## 1. One curve part per direction — DONE, and it was the wrong question
 
 **The plan's question.** Collapsing `_entry`/`_through`/`_exit` into one curve
 means pinning every mating face to the base 48 mm, which necks the channel at
 each curve-to-curve seam. Nobody had measured whether that matters.
 
 **Phase 1 built as specified.** `js/clearance.js`: rigid footprint (the figure's
-extent *below rail height*, 47.5 × 44 mm at full pendulum swing) swept along the
-centreline, yaw taken as half the turn the tangent makes in one stride. It
-reproduces the straight channel at exactly its stated 4 mm of play, wants
-50.03 mm at the standard radius and 50.52 at the 120 mm minimum — so the +3 mm
-widening and the 120 mm floor both fall out of the figure's own geometry.
-PHYSICS.md §8 is the write-up, and it is explicit that the yaw law and the 3 mm
-clearance floor are still argument, not measurement.
+extent *below rail height*, at full pendulum swing) swept along the centreline,
+yaw taken as half the turn the tangent makes in one stride.
 
-**Phase 2 answered — and neither branch was right.** The plan set up a binary:
-collapse the taper, or keep the variants for a measured reason. The measurement
-found a third thing. Worst side-to-side play over the eleven stock scenes:
+**Phase 2 first answer — flip the taper.** The measurement said the taper was
+pointing the wrong way: a footprint is 47.5 mm long, so at a curve mouth half
+the figure is already round the corner and the channel has to carry the curve's
+width for half a footprint on *either* side of the turn. `resolveSeamWidths`
+took the max instead of the min, which made every curve one shape and moved the
+variance onto the straights that flank a turn.
 
-| Seam rule | Worst play |
-|---|---|
-| Every face at base width (the collapse) | 0.97 mm |
-| Narrower face wins (what the project did) | 1.87 mm |
-| No match at all — stepped, ledge and all | 2.28 mm |
-| **Wider face wins (now)** | **2.79 mm** |
-| Uniform 51 mm channel | 3.22 mm |
+**That was wrong, and the count showed it once counted properly.** The first
+tally was per-scene and summed, which double-counts a straight appearing in
+eight scenes and hides all cross-scene reuse — the entire point of a parts bin.
+Counted as DISTINCT shapes across the whole library the change made things
+worse, not neutral: 14 → 16. It bought 0.9 mm of clearance and cost two part
+numbers.
 
-The taper was pointing the wrong way. A footprint is 47.5 mm long, so at a curve
-mouth half the figure is already round the corner: the channel has to carry the
-curve's width for half a footprint on *either* side of the turn, not shed it at
-the join. `resolveSeamWidths` now takes the max. 51 is the ceiling any seam can
-reach, so every curve face is 51 and a curve is one solid wherever it sits —
-the plan's goal, reached by fixing the rule rather than by collapsing it.
+**The real answer came from the bench.** A real Klip Klop figure measures
+**38 mm**. The project's printed figure was 44, because it was defined as
+`channel − 4` — a number with no physical referent, which then justified the
+channel that defined it. At 38 mm the swept path fits a **uniform 48 mm
+channel at every legal radius**, tightest turn included, with 3.4 mm to spare.
 
-The cost is real and worth naming: the variance moves onto the straights that
-flank a turn (`_into_curve`, `_out_of_curve`, `_between_curves`). Across the
-stock scenes that is curves 29 → 13 distinct width-shapes and straights
-33 → 51 — near enough a wash on count, but it lands on the family a tower has
-two or three of instead of the one it has twelve of, and straights are not
-chiral.
+So `SPEC.curveWidenMm` is 0 and there is nothing to taper anywhere:
 
-**Uniform 51 was the only rule with positive margin everywhere.** It is also the
-only one that deletes the seam-width mechanism entirely. It was not taken,
-because it changes `STANDARD.innerWidth` — a MAJOR geometry bump, a new figure
-width, and a spec range to move. That is a call to make deliberately, not as a
-side effect of a taper fix. The number is on the table if it is ever wanted.
+| Configuration | Distinct shapes | Worst play |
+|---|---|---|
+| 44 mm figure, tapered, narrower face wins | 14 | 1.87 mm |
+| 44 mm figure, tapered, wider face wins | 16 | 2.79 mm |
+| **38 mm figure, uniform 48** | **8** | **5.84 mm** |
 
-**Phase 3 not done.** No print has been run. The model predicts 2.79 mm of play
-at a curve mouth; the plastic has not been asked.
+Eight is one shape per piece type — the floor. Fewer parts *and* more clearance,
+which is what an answer looks like when the thing blocking it was a wrong
+assumption rather than a real trade. A second printed measurement (a 48 mm
+channel comes out at 47.68) is now subtracted in the fit check, so it reports
+what the plastic does rather than what the CAD does.
+
+The taper machinery is kept, correct and tested: a custom-parameter build can
+still ask for a widened turn, and there the wider-face rule and the `_into_curve`
+naming still apply. At the Standard neither can fire.
+
+**Phase 3 not done.** No print. The yaw law and the 3 mm clearance floor are
+still reasoned rather than measured.
+
+**The lesson worth keeping.** Two numbers in this project justified each other
+in a loop — the figure was `channel − 4` and the channel was sized for the
+figure — and no amount of modelling inside that loop could see out of it. It
+took one caliper reading on the actual toy.
 
 ---
 
@@ -143,5 +149,10 @@ a version claim; the scenery does, and a flat face exists on each — it just wa
 not done. `engraveFlatOps` takes an origin and two spanning vectors, so adding
 one is a few lines per family.
 
-**A uniform 51 mm channel.** See above. Deliberately not taken; the measurement
-that would justify it is in PHYSICS.md §8 if it is ever wanted.
+**Play on straights.** A straight now gives the figure ~9.7 mm of side-to-side
+play, where the old rule gave 4. The reference toy's own ramp uses a tight
+39.5 mm groove — a different philosophy — and more play means more wander and
+more wall contact, which costs a little gait energy. Narrowing the channel
+toward the figure would recover it, but 48 mm is locked by the Klip Klop
+Standard and changing it forks every printed part. Worth revisiting only if a
+print shows the figure wandering badly on a straight.

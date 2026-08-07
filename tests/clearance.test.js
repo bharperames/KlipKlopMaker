@@ -1,16 +1,18 @@
 /**
  * The lateral half of the physics. `simulate.js` never reads channel width, so
- * until this module existed the +3 mm curve widening, the 46–50 mm channel
- * range and the 120 mm minimum radius were three published numbers with no
- * test between them. These check that the model reproduces all three from the
- * figure's own geometry, and then use it to assert the thing the old
- * "not pinched at its interior seams" test was standing in for: that the figure
- * actually fits, everywhere, on every scene.
+ * until this module existed the curve widening, the channel range and the
+ * 120 mm minimum radius were published numbers with no test between them —
+ * and the widening turned out to be an artefact of an oversized figure rather
+ * than a requirement of the track. These check the model against the two
+ * physical measurements it now rests on (a 38 mm toy, a channel that prints
+ * 1 mm narrow than drawn) and then assert the thing that matters: that the
+ * figure fits, everywhere, on every scene.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { layoutTrack, resolveRidePath, appendSpiralTier, SPEC, STANDARD, innerWidthAt } from '../js/track.js';
+import { FIGURE } from '../js/geometry.js';
 import { deserializeScene } from '../js/scene_format.js';
 import {
     CLEARANCE, walkerFootprint, strideMm, yawAmplitudeRad, sweptBandMm,
@@ -42,9 +44,11 @@ describe('the footprint is read off the figure, not asserted', () => {
             .toBeGreaterThan(knight.lengthMm);
     });
 
-    test('the width is what the figure is actually printed at', () => {
-        expect(walkerFootprint().widthMm).toBe(STANDARD.innerWidth - 4);
-        expect(walkerFootprint({ channelWidthMm: 46 }).widthMm).toBe(42);
+    test('the width is measured off the toy, not derived from the track', () => {
+        // it used to be `channelWidth − 4`, which meant the figure justified
+        // whatever channel it was given and the channel justified the figure
+        expect(walkerFootprint().widthMm).toBe(FIGURE.widthMm);
+        expect(walkerFootprint({ channelWidthMm: 60 }).widthMm).toBe(FIGURE.widthMm);
         expect(walkerFootprint({ figureWidthMm: 40 }).widthMm).toBe(40);
     });
 
@@ -74,33 +78,40 @@ describe('the model reproduces the published rule set', () => {
 
     test('a straight needs exactly the figure width', () => {
         expect(sweptBandMm(fp, null, 0)).toBeCloseTo(fp.widthMm, 6);
-        // ...so the standard 48 mm channel is the 44 mm figure plus the 4 mm of
-        // play PHYSICS.md §4 claims for it
         const straight = layoutTrack(['straight']).pieces.find(pc => pc.type === 'straight');
         expect(requiredWidthAt(straight, 75)).toBeCloseTo(fp.widthMm + CLEARANCE.lateralMm, 6);
         expect(straight.innerWidth).toBeGreaterThanOrEqual(requiredWidthAt(straight, 75));
     });
 
-    test('+3 mm of curve widening is what a standard curve needs — not 2, not 5', () => {
-        const curve = helix()[2];
-        expect(curve.radius).toBeCloseTo(STANDARD.curveRadius, 3);
-        const need = requiredWidthAt(curve, curve.planLen / 2);
-        // the base channel is not enough...
-        expect(need).toBeGreaterThan(STANDARD.innerWidth);
-        // ...the widened one is, with under a millimetre to spare
-        expect(need).toBeLessThanOrEqual(STANDARD.innerWidth + SPEC.curveWidenMm);
-        expect(STANDARD.innerWidth + SPEC.curveWidenMm - need).toBeLessThan(1);
+    test('one channel width covers every legal radius — no widening needed', () => {
+        // This is the measurement that deleted `curveWidenMm`. A real figure
+        // swept through the TIGHTEST legal turn is the worst case anywhere on
+        // any track, and the standard channel already covers it.
+        const at = (R) => requiredWidthAt({ radius: R, turn: 1, planLen: (Math.PI / 2) * R }, 0);
+        const worst = at(SPEC.minCurveRadius);
+        expect(worst).toBeGreaterThan(at(STANDARD.curveRadius));   // 120 is the worst case
+        expect(worst).toBeLessThanOrEqual(STANDARD.innerWidth);
+        expect(STANDARD.innerWidth - worst).toBeGreaterThan(2);     // and not by a whisker
+        expect(SPEC.curveWidenMm).toBe(0);
     });
 
-    test('the 120 mm minimum radius is where the widening runs out', () => {
-        const at = (R) => {
-            const piece = { radius: R, turn: 1, planLen: (Math.PI / 2) * R };
-            return requiredWidthAt(piece, 0);
-        };
-        const widened = STANDARD.innerWidth + SPEC.curveWidenMm;
-        expect(at(SPEC.minCurveRadius)).toBeLessThanOrEqual(widened);
-        expect(widened - at(SPEC.minCurveRadius)).toBeLessThan(0.6);   // all but spent
-        expect(at(SPEC.minCurveRadius - 20)).toBeGreaterThan(widened);  // over the line
+    test('the widening only existed to carry an oversized figure', () => {
+        // 44 mm was `channelWidth − 4`; at that width a standard curve really
+        // does need more than 48, which is where the +3 mm came from
+        const fat = walkerFootprint({ figureWidthMm: 44 });
+        const curve = { radius: STANDARD.curveRadius, turn: 1, planLen: 225 };
+        expect(requiredWidthAt(curve, 0, { footprint: fat })).toBeGreaterThan(STANDARD.innerWidth);
+        expect(requiredWidthAt(curve, 0)).toBeLessThan(STANDARD.innerWidth);
+    });
+
+    test('there is headroom for a figure wider than the one measured', () => {
+        // the toy is not a spec sheet; leave room for the next one to measure
+        // a millimetre or two differently
+        const curve = { radius: SPEC.minCurveRadius, turn: 1, planLen: 200 };
+        for (const W of [FIGURE.widthMm, FIGURE.widthMm + 1, FIGURE.widthMm + 2]) {
+            const need = requiredWidthAt(curve, 0, { footprint: walkerFootprint({ figureWidthMm: W }) });
+            expect(`${W} mm needs ${need <= STANDARD.innerWidth}`).toBe(`${W} mm needs true`);
+        }
     });
 
     test('a tighter turn always demands more channel', () => {
@@ -114,9 +125,16 @@ describe('the model reproduces the published rule set', () => {
 });
 
 describe('fit against a real track', () => {
-    test('the standard straight run comes out at its stated 4 mm of play', () => {
+    test('a straight run reports the play the plastic actually has', () => {
+        // nominal 48, less the measured 1 mm a printed channel loses, less the
+        // 38 mm figure
         const fit = channelFitProfile(resolveRidePath(layoutTrack(['straight', 'straight']).pieces));
-        expect(fit.worstPlayMm).toBeCloseTo(4, 2);
+        expect(fit.worstPlayMm).toBeCloseTo(
+            STANDARD.innerWidth - CLEARANCE.printNarrowingMm - FIGURE.widthMm, 2);
+        // and the model is honest about the difference between CAD and a part
+        const cad = channelFitProfile(resolveRidePath(layoutTrack(['straight', 'straight']).pieces),
+            { printNarrowingMm: 0 });
+        expect(cad.worstPlayMm - fit.worstPlayMm).toBeCloseTo(CLEARANCE.printNarrowingMm, 6);
     });
 
     test('a helix interior agrees with the piece-local answer', () => {
@@ -128,8 +146,9 @@ describe('fit against a real track', () => {
         const inside = fit.stations.filter(st =>
             st.pieceName === interior.name && st.s > 60 && st.s < interior.planLen - 60);
         expect(inside.length).toBeGreaterThan(5);
-        const local = interior.innerWidth - (requiredWidthAt(interior, 0) - CLEARANCE.lateralMm);
-        for (const st of inside) expect(st.playMm).toBeCloseTo(local, 2);
+        const local = interior.innerWidth - CLEARANCE.printNarrowingMm
+            - (requiredWidthAt(interior, 0) - CLEARANCE.lateralMm);
+        for (const st of inside) expect(st.playMm).toBeCloseTo(local, 1);
     });
 
     test('the figure fits on every scene, with margin over a binding print', () => {
@@ -148,59 +167,56 @@ describe('fit against a real track', () => {
     });
 
     test('a channel too narrow for the figure is reported as an error', () => {
-        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { innerWidth: 44 });
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { innerWidth: 38 });
         const check = checkChannelFit(resolveRidePath(pieces), { stationStepMm: 5 });
         expect(check.issues.map(i => i.code)).toContain('channel-too-narrow');
     });
 });
 
-describe('the seam rule, measured', () => {
-    // This is the test the old "a helix is not pinched at its interior seams"
-    // was a proxy for. It compares the three coherent ways to resolve a seam
-    // instead of asserting one of them, so the rule in resolveSeamWidths has to
-    // keep earning its place.
+describe('one width, everywhere', () => {
+    // The seam-width machinery is still here and still correct, because a
+    // custom-parameter build can ask for a widened turn. At the Standard it is
+    // a no-op, and that is what deletes the `_into_curve` family: with nothing
+    // to blend, a curve and a straight are each ONE shape wherever they sit.
     const seq = ['straight', ...appendSpiralTier([], 'L'), ...appendSpiralTier([], 'L'), 'straight'];
-    const under = (rewrite) => {
-        const { pieces } = layoutTrack(seq, { slopeDeg: STANDARD.slopeDeg });
-        rewrite(pieces);
-        return channelFitProfile(resolveRidePath(pieces), { stationStepMm: 2 }).worstPlayMm;
-    };
 
-    const asBuilt = under(() => {});
-    const narrowerWins = under(ps => {
-        const by = new Map(ps.map(p => [p.index, p]));
-        ps.forEach(p => { p.entryWidth = p.innerWidth; p.exitWidth = p.innerWidth; });
-        for (const p of ps) {
-            const q = p.prevIndex == null ? null : by.get(p.prevIndex);
-            if (!q) continue;
-            const w = Math.min(q.innerWidth, p.innerWidth);
-            p.entryWidth = Math.min(p.entryWidth, w);
-            q.exitWidth = Math.min(q.exitWidth, w);
-        }
-    });
-    const collapsedToBase = under(ps => ps.forEach(p => {
-        p.innerWidth = p.entryWidth = p.exitWidth = STANDARD.innerWidth;
-    }));
-
-    test('collapsing every face to the base width is the worst of the three', () => {
-        // the change PLAN.md set out to make, had nothing measured it: it
-        // leaves under a millimetre of play at the tightest point of a helix
-        expect(collapsedToBase).toBeLessThan(1);
-        expect(collapsedToBase).toBeLessThan(narrowerWins);
-    });
-
-    test('matching on the wider face beats matching on the narrower one', () => {
-        expect(asBuilt).toBeGreaterThan(narrowerWins);
-        expect(asBuilt).toBeGreaterThan(CLEARANCE.warnPlayMm);
-    });
-
-    test('the curve keeps the room; the straight gives it up', () => {
+    test('every piece on a helix is the same channel, face to face', () => {
         const { pieces } = layoutTrack(seq, { slopeDeg: STANDARD.slopeDeg });
         for (const pc of pieces) {
-            const mid = innerWidthAt(pc, pc.planLen / 2);
-            expect(mid).toBeCloseTo(pc.innerWidth, 6);            // body unchanged
-            expect(innerWidthAt(pc, 0)).toBeGreaterThanOrEqual(mid - 1e-9);
-            expect(innerWidthAt(pc, pc.planLen)).toBeGreaterThanOrEqual(mid - 1e-9);
+            expect(`${pc.name} body`).toBe(`${pc.name} ${pc.innerWidth === STANDARD.innerWidth ? 'body' : 'WIDENED'}`);
+            expect(pc.entryWidth).toBe(pc.innerWidth);
+            expect(pc.exitWidth).toBe(pc.innerWidth);
+            for (const s of [0, 10, 30, pc.planLen / 2, pc.planLen - 10, pc.planLen]) {
+                expect(innerWidthAt(pc, s)).toBeCloseTo(STANDARD.innerWidth, 9);
+            }
+        }
+    });
+
+    test('so a helix has exactly two distinct track shapes, not eight', () => {
+        const { pieces } = layoutTrack(seq, { slopeDeg: STANDARD.slopeDeg });
+        const shape = (pc) => [pc.type, pc.innerWidth, pc.entryWidth, pc.exitWidth,
+            pc.planLen.toFixed(1)].join('|');
+        const running = pieces.filter(pc => pc.type === 'straight' || pc.radius);
+        expect(new Set(running.map(shape)).size).toBe(2);
+    });
+
+    test('the wider-face rule still holds if a build asks for widening', () => {
+        const { pieces } = layoutTrack(seq, { slopeDeg: STANDARD.slopeDeg });
+        // simulate a custom build: give the curves 3 mm and re-resolve by hand
+        const by = new Map(pieces.map(p => [p.index, p]));
+        pieces.forEach(p => { if (p.radius) p.innerWidth += 3; p.entryWidth = p.innerWidth; p.exitWidth = p.innerWidth; });
+        for (const p of pieces) {
+            const q = p.prevIndex == null ? null : by.get(p.prevIndex);
+            if (!q) continue;
+            const w = Math.max(q.innerWidth, p.innerWidth);
+            p.entryWidth = Math.max(p.entryWidth, w);
+            q.exitWidth = Math.max(q.exitWidth, w);
+        }
+        for (const [a, b] of pieces.map(pc => [pc.prevIndex == null ? null : by.get(pc.prevIndex), pc]).filter(([a]) => a)) {
+            expect(a.exitWidth).toBeCloseTo(b.entryWidth, 6);      // no lateral ledge
+        }
+        for (const pc of pieces.filter(p => p.radius)) {
+            expect(pc.entryWidth).toBe(pc.innerWidth);             // curves stay one shape
         }
     });
 });

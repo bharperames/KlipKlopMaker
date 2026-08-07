@@ -39,9 +39,9 @@ building, gait physics simulation, and watertight STL/3MF export.
 - **Physics envelope is load-bearing**: slope lock (8–14°, green 10–12°),
   waterfall seams (downhill floor 0.25 mm lower — never "fix" this), zero-bank
   sweeps (station `right` vectors stay horizontal), washboard pitch snapped so
-  seams land in ridge valleys, ≥120 mm curve radius, +3 mm curve widening.
-  These come from passive-walker physics (see PHYSICS.md); don't relax them to
-  make geometry easier.
+  seams land in ridge valleys, ≥120 mm curve radius. These come from
+  passive-walker physics (see PHYSICS.md); don't relax them to make geometry
+  easier.
 - Coordinates are **Y-up mm** internally; exporters rotate to Z-up via a
   *proper rotation* (X=x, Y=−z, Z=y). Never axis-swap — it mirrors chiral
   parts (curves, dovetails).
@@ -76,10 +76,16 @@ building, gait physics simulation, and watertight STL/3MF export.
   (the original dovetail tab failed in the slicer as a floating cantilever) —
   joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`
   enforces the footprint rule.
-- **Seams match on the WIDER face** (`resolveSeamWidths`): a curve is 51 mm end
-  to end and is therefore ONE part per direction, and the straights that flank
-  it carry the flare. Measured, not assumed — flipping it back costs about a
-  millimetre of the figure's side-to-side play. See PHYSICS.md §8.
+- **ONE channel width everywhere** — `SPEC.curveWidenMm` is 0. A real Klip Klop
+  figure measures 38 mm and its swept path fits 48 mm at every legal radius, so
+  turns need nothing added. This is what makes each piece type a single shape
+  (8 across the whole scene library, down from 16): with no width difference at
+  a seam there is nothing to taper and no `_into_curve` / `_entry` variants.
+  `resolveSeamWidths` and `SEAM_TAPER_MM` stay — correct, tested, and a no-op
+  at the Standard — because a custom build can still ask for a widened turn.
+  **`FIGURE.widthMm` is measured off the toy, never derived from the channel**;
+  it used to be `channel − 4`, and that circularity is what kept the widening
+  alive. See PHYSICS.md §8.
 - **Every exported part is engraved with its code**, derived from
   `GEOMETRY_VERSION` (MAJOR.MINOR only — the code is a compatibility claim, and
   PATCH is defined as cosmetic). `engrave.js` is a STROKE font, deliberately

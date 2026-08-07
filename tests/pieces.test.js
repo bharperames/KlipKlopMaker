@@ -96,30 +96,27 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
         expectWatertight(g, 'end platform');
     });
 
-    test('a straight between two curves, flared at both mouths', () => {
-        // Seams match on the WIDER face, so a straight that flanks a turn is a
-        // 48 mm channel with 51 mm mouths — a shape no piece had before the
-        // rule flipped, and the one the CSG is most likely to trip on.
-        const run = layoutTrack(['curveL', 'straight', 'curveL'], { slopeDeg: 11.2167 }).pieces;
-        const pc = run.find(p => p.type === 'straight');
-        expect(pc.entryWidth).toBeGreaterThan(pc.innerWidth);
-        expect(pc.exitWidth).toBeGreaterThan(pc.innerWidth);
-        const g = buildPieceExportGeometry(pc);
-        expectWatertight(g, 'flared straight');
-        expectNoFloatingProtrusion(g, pc, 'flared straight');
+    test('a straight between two curves is the SAME solid as any other', () => {
+        // The channel is one width everywhere, so flanking a turn no longer
+        // makes a different part. This is the shape that used to be
+        // `straight_between_curves`; it is now just a straight, and the mesh
+        // has to be byte-identical to prove it.
+        const flanked = layoutTrack(['curveL', 'straight', 'curveL'], { slopeDeg: 11.2167 })
+            .pieces.find(p => p.type === 'straight');
+        const plainRun = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 }).pieces;
+        const plain = plainRun.filter(p => p.type === 'straight')[1];
+        expect(flanked.entryWidth).toBe(flanked.innerWidth);
+        expect(flanked.exitWidth).toBe(flanked.innerWidth);
 
-        // the flare is really in the mesh: the part is wider across its mouths
-        // than across its middle
-        const { positions } = g.positions ? g : { positions: g.attributes.position.array };
-        const local = pieceInFrame(pc);
-        let mouthHalf = 0, midHalf = 0;
-        for (let i = 0; i < positions.length; i += 3) {
-            const along = positions[i] - local.entry.x;
-            const lateral = Math.abs(positions[i + 2] - local.entry.z);
-            if (along < 1) mouthHalf = Math.max(mouthHalf, lateral);
-            if (Math.abs(along - local.planLen / 2) < 5) midHalf = Math.max(midHalf, lateral);
+        const a = buildPieceExportGeometry(flanked), b = buildPieceExportGeometry(plain);
+        expectWatertight(a, 'straight beside curves');
+        expectNoFloatingProtrusion(a, flanked, 'straight beside curves');
+        expect(`tris ${a.indices.length}`).toBe(`tris ${b.indices.length}`);
+        let worst = 0;
+        for (let i = 0; i < a.positions.length; i++) {
+            worst = Math.max(worst, Math.abs(a.positions[i] - b.positions[i]));
         }
-        expect(mouthHalf - midHalf).toBeCloseTo(SPEC.curveWidenMm / 2, 1);
+        expect(`vertex delta ${worst.toExponential(1)}`).toBe('vertex delta 0.0e+0');
     });
 });
 
@@ -136,8 +133,8 @@ describe('engraved part codes', () => {
     test('a straight and a curve both come back watertight with material removed', () => {
         for (const pc of [pieces[1], pieces[2]]) {
             const cut = cutVolume(code => buildPieceExportGeometry(pc, code === '' ? { code: '' } : {}));
-            // 0.5 mm deep over the inked area of a ten-character code
-            expect(cut).toBeGreaterThan(10);
+            // 0.5 mm deep over the inked area of a code between 8 and 15 chars
+            expect(cut).toBeGreaterThan(5);
             expect(cut).toBeLessThan(60);
         }
     });

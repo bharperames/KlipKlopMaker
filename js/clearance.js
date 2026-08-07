@@ -18,7 +18,15 @@
  *    - footprint length: the figure's along-travel extent BELOW rail height,
  *      taken at full pendulum swing. Above the rails the channel is open, so
  *      the nose and the head do not constrain anything.
- *    - footprint width: the printed body width, `channelWidth − 4`.
+ *    - footprint width: `FIGURE.widthMm`, taken off a real Klip Klop toy. It
+ *      used to be `channelWidth − 4`, a number that justified itself, and that
+ *      circularity is what kept the curve widening alive.
+ *
+ *  MEASURED (off a printed part, n = 1):
+ *    - `printNarrowingMm`. A printed straight measures 47.68 mm across a
+ *      channel drawn at 48. The fit check subtracts it, so what it answers is
+ *      "does the figure pass through the plastic", not "does it pass through
+ *      the CAD".
  *
  *  DERIVED (rigid-body kinematics, no free parameters):
  *    - the swept band of a rectangle riding a circular centreline. This is the
@@ -28,9 +36,7 @@
  *    - the yaw model. A passive walker does not steer; it translates along a
  *      chord for one stride and is squared up by the walls at hoof strike, so
  *      heading error against the local tangent is taken as ±stride/2R. Straight
- *      pieces are modelled with zero yaw, which makes the 44 mm figure in the
- *      48 mm standard channel come out exactly at its stated 4 mm of play —
- *      i.e. the model is anchored to the one configuration known to work.
+ *      pieces are modelled with zero yaw.
  *    - the 3 mm lateral clearance floor, from PHYSICS.md §4 ("figure width +
  *      3–4 mm total clearance"). It is the bottom of a published range, not a
  *      measurement of when a hoof starts to bind.
@@ -49,6 +55,19 @@ export const CLEARANCE = {
      * under this is a defect.
      */
     warnPlayMm: 2,
+    /**
+     * How much narrower a channel comes out than it was drawn. MEASURED on a
+     * printed straight: 47.68 mm across a channel drawn at 48. Subtracted
+     * before every fit check — a model that passes in CAD and binds on the
+     * bench is worth nothing.
+     *
+     * The same part measured 53 mm overall, which works out to a 2.66 mm wall
+     * against today's 1.6. That is the OLD 2.4 mm wall plus its over-extrusion,
+     * so the outside number says nothing about the current design and only the
+     * inside one is evidence. One sample: treat it as an allowance, not a
+     * constant of nature.
+     */
+    printNarrowingMm: 0.32,
     /** Perimeter samples per footprint when measuring a swept band. */
     bandSamples: 96,
     /** Station spacing (mm of arc) for a path fit scan. */
@@ -100,10 +119,9 @@ export function walkerFootprint(opts = {}) {
     const style = opts.style ?? 'classic';
     const railY = opts.railHeightMm ?? SPEC.railHeight;
     const alpha = degToRad(opts.walker?.alphaDeg ?? FIGURE.alphaDeg);
-    // The figure is printed for the channel it was designed against, not for
-    // the widest channel it will ever cross — a curve at 51 does not get a
-    // fatter figure. Default to the STANDARD 48 unless told otherwise.
-    const widthMm = opts.figureWidthMm ?? ((opts.channelWidthMm ?? STANDARD.innerWidth) - 4);
+    // Measured off the toy (FIGURE.widthMm), not derived from the track. The
+    // channel is sized to the figure, never the other way round.
+    const widthMm = opts.figureWidthMm ?? FIGURE.widthMm;
 
     const acc = { min: Infinity, max: -Infinity };
     extentBelow(bodySideOutline(style), railY, acc);
@@ -293,11 +311,12 @@ export function channelFitProfile(pieces, opts = {}) {
     const starts = [];
     let acc = 0;
     for (const pc of running) { starts.push(acc); acc += pc.planLen; }
+    const shrink = opts.printNarrowingMm ?? CLEARANCE.printNarrowingMm;
     const widthAtDist = (d) => {
         let k = starts.length - 1;
         while (k > 0 && d < starts[k]) k--;
         const pc = running[k];
-        return innerWidthAt(pc, Math.max(0, Math.min(pc.planLen, d - starts[k])));
+        return innerWidthAt(pc, Math.max(0, Math.min(pc.planLen, d - starts[k]))) - shrink;
     };
 
     const stations = [];

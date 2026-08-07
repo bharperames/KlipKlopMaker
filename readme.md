@@ -78,16 +78,17 @@ Open the served URL in any modern browser. Everything runs client-side.
 ## Physics rule set (enforced, not suggested)
 
 Slope locked 8–14° (green 10–12°) · zero bank on curves and spirals ·
-curve radius ≥ 120 mm with +3 mm dynamic widening, carried half a footprint
-into the straights either side · base channel 46–50 mm · 2 mm floor fillets ·
+curve radius ≥ 120 mm · **one 48 mm channel everywhere** · 2 mm floor fillets ·
 ≥100 mm vertical clearance between overlapping tiers.
 
-The widening is derived, not assumed: `js/clearance.js` sweeps the figure's
-real footprint (47.5 × 44 mm below rail height) along the centreline and asks
-what the channel has to be. It wants 50.03 mm at the standard radius and 50.52
-at the 120 mm minimum — so +3 is the smallest whole millimetre that covers the
-legal range. PHYSICS.md §8 has the derivation and is explicit about which parts
-of it are measured and which are still argument.
+The channel width is derived from a measurement, not assumed. A real Klip Klop
+figure is **38 mm** across; `js/clearance.js` sweeps that footprint along the
+centreline and asks what the channel has to be. The tightest legal turn — R 120
+— is the worst case anywhere, and it wants 44.6 mm, which 48 clears by 3.4 mm.
+**So curves need no widening**, and with one width everywhere a curve and a
+straight are each a single shape: the whole scene library uses 8 distinct track
+parts rather than 16. PHYSICS.md §8 has the derivation, including the printed
+part that says a 48 mm channel comes out at 47.68.
 
 - **Persist & share**: designs save/load as portable `.klipklop.json` scene
   files (versioned format, `js/scene_format.js`). Bundled example scenes live

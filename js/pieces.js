@@ -1277,9 +1277,9 @@ function cylinderX(r, x0, x1, cz, cy, segments = segmentsForCircle(r)) {
     return g;
 }
 
-/** Builds all printable figure parts (width = trackInnerWidth − 4 mm). */
+/** Builds all printable figure parts at the measured `FIGURE.widthMm`. */
 export function buildFigureGeometries(trackInnerWidth = SPEC.innerWidth.default, opts = {}) {
-    const W = (opts.widthMm ?? trackInnerWidth - 4);
+    const W = (opts.widthMm ?? FIGURE.widthMm);
     const style = opts.style ?? 'classic';
     const F = FIGURE;
 

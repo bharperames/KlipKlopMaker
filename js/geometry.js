@@ -839,7 +839,18 @@ export const FIGURE = {
     pendBallast: { z: -9, y: 6, r: 3.5 },
     pendulumW: 8,
     legLenMm: 26,   // axle height above hoof contact
-    alphaDeg: 18    // swing angle allowed by the slot walls
+    alphaDeg: 18,   // swing angle allowed by the slot walls
+    /**
+     * MEASURED off a real Klip Klop figure, not derived from the track.
+     *
+     * It used to be `trackInnerWidth − 4`, which made it 44 — six millimetres
+     * wider than the toy it is meant to stand in for, and wide enough that it
+     * could not run in the 39.5 mm groove of the community sets PHYSICS.md §7
+     * claims figures interoperate with. It was also the sole reason curves had
+     * to be widened, and therefore the sole reason a straight next to a curve
+     * was a different part. One wrong number, three problems.
+     */
+    widthMm: 38
 };
 
 /** Approximate polygon area × width solid volume for ballast planning (mm³). */

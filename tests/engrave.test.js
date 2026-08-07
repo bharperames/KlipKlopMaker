@@ -152,16 +152,21 @@ describe('what the code says', () => {
         }
     });
 
-    test('two solids that differ never wear the same mark', () => {
+    test('identical solids wear identical marks', () => {
+        // The channel is one width everywhere, so a straight beside a curve is
+        // the same part as any other straight and says so. The IN/OUT/MID
+        // suffixes are still in the code path for a custom widened build; at
+        // the Standard nothing can earn one.
         const { pieces } = layoutTrack(['curveL', 'straight', 'curveL', 'straight', 'straight']);
+        const v = codeVersion(GEOMETRY_VERSION);
         const codes = pieces.filter(pc => pc.type === 'straight').map(pc => pieceCode(pc, GEOMETRY_VERSION));
-        expect(new Set(codes).size).toBeGreaterThan(1);
-        expect(codes).toContain(`STR MID ${codeVersion(GEOMETRY_VERSION)}`);
-        expect(codes).toContain(`STR OUT ${codeVersion(GEOMETRY_VERSION)}`);
-        // ...while every curve is one part and takes the plain code
+        expect(new Set(codes)).toEqual(new Set([`STR ${v}`]));
         for (const pc of pieces.filter(p => p.radius)) {
-            expect(pieceCode(pc, GEOMETRY_VERSION)).toBe(`LEFT CURVE ${codeVersion(GEOMETRY_VERSION)}`);
+            expect(pieceCode(pc, GEOMETRY_VERSION)).toBe(`LEFT CURVE ${v}`);
         }
+        // the suffix machinery still works when a width difference exists
+        const widened = { type: 'straight', innerWidth: 48, entryWidth: 51, exitWidth: 51 };
+        expect(pieceCode(widened, GEOMETRY_VERSION)).toBe(`STR MID ${v}`);
     });
 
     test('every code that can occur fits the surface it is cut into', () => {
