@@ -98,7 +98,7 @@ function toManifold(g) {
  * of the wall ate 6.3 mm of it — the figure could not pass the pivot in either
  * gate position. On the wall line only `hubR - vaneThk/2` intrudes.
  *
- * The bore cannot live in a 1.6 mm wall (it is Ø3.3, wider than the wall), so
+ * The bore cannot live in a 1.6 mm wall (it is Ø3.5, wider than the wall), so
  * the switch grows a local boss for it BELOW the deck, where it is out of the
  * walking channel altogether, and the rail is slotted away over the blade's
  * length so the parked blade becomes that stretch of wall.
@@ -107,7 +107,30 @@ export const GATE = {
     vaneThk: 2.6,
     len: 52,
     hubR: 2.6,      // was 5; the pin is only Ø2.9, the rest was grip
-    bossR: 3.6      // material around the Ø3.3 bore, below the deck
+    pinR: 1.45,     // Ø2.9
+    boreR: 1.75,    // Ø3.5 — see below
+    /**
+     * Ø3.5, in 3.45 mm of material, and BOTH numbers are the fix.
+     *
+     * The bore was Ø3.3 in a boss of R3.6, which leaves 1.95 mm of material
+     * around it — the same slenderness as a riser tube, and PRINT_DEVIATION
+     * says a hole in that much plastic comes out 0.37 mm under while one in a
+     * massive body comes out 0.10 under. Across that uncertainty a Ø3.3 bore
+     * prints anywhere from 2.83 to 3.30 against a pin printing 2.76 to 3.04:
+     * at the bad end the pin does not go in at all, and at the good end the
+     * pivot has 0.27 mm/side of slop. A bearing cannot be specified over a
+     * range that includes interference.
+     *
+     * So: grow the boss until the bore is unambiguously in the massive class
+     * (3.45 mm of surround), which collapses the range to 3.30-3.50, and open
+     * the bore 0.2 so the tight end still clears the fattest pin. Result is
+     * 0.13-0.37 mm/side — always free, never tight.
+     *
+     * Retention deliberately does NOT come from this fit. See the note on the
+     * gate blade: the figure's push is ~0.4 mN.m and hub friction is 0.02, so
+     * a fit tight enough to hold would have to be tight enough to seize.
+     */
+    bossR: 5.2
 };
 
 export const ADDITION = 'add';
@@ -938,7 +961,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
  * The switch-side half of the gate: a boss to carry the pivot bore, a slot in
  * the rail for the blade to live in, and the bore itself.
  *
- * The BOSS sits below the deck. A Ø3.3 bore is wider than the 1.6 mm wall it
+ * The BOSS sits below the deck. A Ø3.5 bore is wider than the 2.4 mm wall it
  * would otherwise pass through, so the wall is thickened locally — and put
  * below the deck it takes nothing from the walking channel.
  *
@@ -981,8 +1004,8 @@ function gateSeatOps(mainPiece, branchPiece, spec) {
         [(Wo + 1.5) * side, pin.s + GATE.len], [(Wi - 0.3) * side, pin.s + GATE.len]
     ], face), deck + 0.05, deck + spec.railHeight + 2));
 
-    const bore = new THREE.CylinderGeometry(1.65, 1.65, spec.railHeight + spec.floorThk + 20,
-        segmentsForCircle(1.65));
+    const bore = new THREE.CylinderGeometry(GATE.boreR, GATE.boreR,
+        spec.railHeight + spec.floorThk + 20, segmentsForCircle(GATE.boreR));
     bore.translate(pin.x, deck + spec.railHeight / 2 - 4, pin.z);
 
     return [
@@ -1113,8 +1136,8 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
 export function buildGateGeometry(spec = SPEC) {
     // hub + pin as a stacked-radius sweep along Y (vane added via CSG)
     const levels = [
-        { y: -8, r: 1.45 },                    // pin (Ø2.9 into the Ø3.3 bore)
-        { y: 0, r: 1.45 },
+        { y: -8, r: GATE.pinR },               // pin (Ø2.9 into the Ø3.5 bore)
+        { y: 0, r: GATE.pinR },
         { y: 0, r: GATE.hubR },                // hub
         { y: spec.railHeight - 2, r: GATE.hubR }
     ];
