@@ -128,7 +128,56 @@ test caught it; `SPEC.engrave.marginMm` is 14 because of it.
 
 ---
 
+## What the first real print said (2026-08-08)
+
+A ramp → curve → ramp assembly test came back. Three findings, all now fixed in
+geometry, and one of them is a lesson about the tests rather than the part.
+
+**The wall was too thin, and the saving was never real.** `SPEC.wall` had been
+cut 2.4 → 1.6 to save plastic — the shell is ~75% of all track plastic, so it
+looked like 15% off the whole job. Printed, the skirt walls were too slender to
+stand up while being built: a pier is `ARCH.pier` = 8 mm long, so at 1.6 it met
+the bed on 12.8 mm² and carried a 40 mm wall above it. A centre pier on the
+straight shifted on the plate and welded back on crooked. Back to 2.4, which
+puts 19.2 mm² under the same pier; measured bed contact on a curve goes
+803 → 918 mm².
+
+**The keys would not go in.** A shelf ran right round the pocket that nothing
+could enter past. The detent was 0.35 mm proud AS A SQUARE STEP, and the
+arithmetic nobody had done says why: the pocket is drawn 0.2 mm/side clear of
+the key, but a printed slot comes out ~0.16 mm/side narrow, so the plain throat
+is already at zero clearance — the detent then added 0.35 on top. 0.82 mm of
+interference across a 16 mm neck, against a rib far too stiff to flex. Now
+0.15 mm proud and led in over a 0.8 mm ramp, so the key rides up a wedge
+instead of shearing through a wall.
+
+**The test that should have caught it did not exist.** There WAS a detent test,
+and it passed: it proved the detent existed and was a ledge rather than a plug —
+both true of a detent so proud the key could never reach it. It tested the
+feature, not the function. The replacement sweeps the key's real footprint up
+the slot through the FINISHED mesh and requires the whole travel to be clear;
+run against the old geometry it reports `blocked at y=31.80 (lateral -8.3)`,
+which is the shelf, at the key's neck edge.
+
+The curve's arches printed badly and the floating-cantilever warning was real.
+The thicker wall stiffens the arch ribs but does NOT change the span that
+causes it: the deck still bridges the full channel, 47.4 mm, at every layer.
+See the entry below.
+
 ## Still open
+
+**The curve's arcade still bridges the full channel.** Measured on the failed
+print: the deck spans 50.3 mm wall to wall with nothing beneath it, at every
+layer, because the arcade is open by design and the deck slopes — so each
+0.2 mm layer exposes a ~1 mm strip of new ceiling and lays it as an unsupported
+strand. Removing the curve widening took that to 47.4 mm, which is inside the
+envelope the straight on the same plate (46.5 mm) printed cleanly, and the
+thicker wall stiffens the ribs; whether that is enough is a print away. The
+curve's arches are NOT the problem — it gets 4 openings of 42 mm and a 0.6 mm
+flat crown against the straight's 2 openings of 53 mm and a 24 mm flat crown.
+If it still fails, the fix is structural: the floor cannot bridge the full
+channel unsupported, and the options are restoring some support under the deck,
+raising the arch crowns, or accepting supports on curves.
 
 **Physical validation (was Phase 3).** Print one helix tier and run a figure
 through it. The clearance model predicts 2.79 mm of play at the tightest point —

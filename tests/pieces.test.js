@@ -564,8 +564,90 @@ describe('mating faces line up', () => {
     });
 });
 
-describe('bowtie pocket detent retains the key', () => {
-    test('the detent is a ledge around the pocket, not a plug', async () => {
+describe('the key can actually be fitted', () => {
+    /**
+     * Sweep the key up its slot and look for anything in the way.
+     *
+     * This is the test that was missing. The old one proved the detent EXISTED
+     * and was a ledge rather than a plug — both true of a detent so proud that
+     * the key could never reach it. A printed set came back with the keys
+     * stopped a few millimetres short, on a shelf running right round the
+     * pocket that nothing could enter past.
+     *
+     * So: take the key's real footprint, cast a ray up through the finished
+     * mesh at every point of it, and require the whole travel from the rim to
+     * the seated position to be clear. Geometry the key cannot pass fails here
+     * whatever shape it is, and whether or not anyone remembered it exists.
+     */
+    const rayUp = (positions, indices, x, z) => {
+        const hits = [];
+        for (let t = 0; t < indices.length; t += 3) {
+            const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3;
+            const ax = positions[a], az = positions[a + 2];
+            const bx = positions[b], bz = positions[b + 2];
+            const cx = positions[c], cz = positions[c + 2];
+            const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+            if (Math.abs(d) < 1e-12) continue;
+            const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+            const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+            const l3 = 1 - l1 - l2;
+            if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+            hits.push(l1 * positions[a + 1] + l2 * positions[b + 1] + l3 * positions[c + 1]);
+        }
+        return hits.sort((p, q) => p - q);
+    };
+    /** Is (x, z) solid anywhere in [y0, y1]? */
+    const blocked = (hits, y0, y1) => {
+        for (let i = 0; i + 1 < hits.length; i += 2) {
+            if (hits[i] < y1 && hits[i + 1] > y0) return Math.max(hits[i], y0);
+        }
+        return null;
+    };
+
+    /** The key's own footprint, sampled — its outline plus its interior. */
+    const keySamples = (spec, step = 0.6) => {
+        const K = spec.key;
+        const flare = (K.tipHalf - K.neckHalf) / K.depth;
+        const pts = [];
+        for (let d = -K.depth; d <= K.depth; d += step) {
+            const half = K.neckHalf + flare * Math.abs(d);
+            for (let w = -half; w <= half; w += step) pts.push([w, d]);
+        }
+        return pts;
+    };
+
+    test('the key travels from the rim to its seat without meeting anything', async () => {
+        const { SPEC, pieceInFrame } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const world = pieces[1];
+        const pc = pieceInFrame(world);
+        const g = buildPieceExportGeometry(world);
+
+        // the entry pocket sits on the piece's entry face, which pieceInFrame
+        // puts at the origin looking down +x; the pocket runs into the rib
+        const keyH = SPEC.key.height - 2 * SPEC.jointClearanceMm;
+        const pocketTop = (pc.entryDeck + SPEC.waterfallStepMm) - 3;
+        const seatBottom = pocketTop - keyH;
+
+        let worstBlock = null;
+        for (const [w, d] of keySamples(SPEC)) {
+            // plan coords → piece frame: lateral w, forward d from the face
+            const x = pc.entry.x + d, z = pc.entry.z + w;
+            const hits = rayUp(g.positions, g.indices, x, z);
+            // travel: the key rises from the rim to its seat, so its own body
+            // occupies [seatBottom, pocketTop] once there and everything below
+            // must have been clear on the way up
+            const at = blocked(hits, pc.rimY + 0.3, pocketTop - 0.05);
+            if (at !== null && (worstBlock === null || at > worstBlock.y)) {
+                worstBlock = { y: at, w, d };
+            }
+        }
+        expect(`${worstBlock ? `blocked at y=${worstBlock.y.toFixed(2)} (lateral ${worstBlock.w.toFixed(1)}, depth ${worstBlock.d.toFixed(1)})` : 'clear'}`)
+            .toBe('clear');
+        expect(seatBottom).toBeGreaterThan(pc.rimY);
+    });
+
+    test('...and the detent is still there to catch it once seated', async () => {
         const { SPEC } = await import('../js/track.js');
         const { computeMeshVolumeMm3 } = await import('../js/mesh_utils.js');
         const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
@@ -581,11 +663,23 @@ describe('bowtie pocket detent retains the key', () => {
         SPEC.key.detentProud = keep;
 
         const added = on - off;
-        expect(added).toBeGreaterThan(5);      // it exists at all
+        expect(added).toBeGreaterThan(1);      // it exists at all
         // A ledge is a thin ring. Filling the pocket section instead would add
         // roughly pocketArea * detentTall * 2 faces — hundreds of mm3.
         const pocketArea = (SPEC.key.neckHalf + SPEC.key.tipHalf) * SPEC.key.depth;
         expect(added).toBeLessThan(pocketArea * SPEC.key.detentTall * 2 * 0.25);
         expectWatertight(buildPieceExportGeometry(pc), 'piece with detent');
+    });
+
+    test('the detent leads in with a ramp, not a step', async () => {
+        // a square ledge is a wall to shear through; the ramp is what the key
+        // rides up. Guarded because the fix is invisible in a volume check.
+        const { SPEC } = await import('../js/track.js');
+        expect(SPEC.key.detentRamp).toBeGreaterThan(0.4);
+        // and the interference it leaves, once a printed slot's ~0.16 mm/side
+        // narrowing is counted, has to stay something a hand can push past
+        const printNarrowPerSide = 0.16;
+        const perSide = SPEC.key.detentProud - SPEC.jointClearanceMm + printNarrowPerSide;
+        expect(perSide).toBeLessThan(0.2);
     });
 });

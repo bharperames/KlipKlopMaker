@@ -105,12 +105,16 @@ export const SPEC = {
     minCurveRadius: 120,
     defaultCurveRadius: 150,
     railHeight: 14,
-    // 1.6 mm = exactly 4 perimeters at a 0.4 nozzle. Was 2.4 (6 perimeters),
-    // which printed visibly heavier than it needed to be: the shell is ~75% of
-    // all track plastic, so this alone is 15% off the whole job. 1.6 slices
-    // without gap fill; 1.2 would save more but leaves a 14 mm rail at three
-    // perimeters, too flimsy for a toy that gets handled.
-    wall: 1.6,
+    // 2.4 mm = 6 perimeters at a 0.4 nozzle. This was cut to 1.6 to save
+    // plastic — the shell is ~75% of all track plastic, so it looked like 15%
+    // off the whole job — and the saving was not real. PRINTED at 1.6 the
+    // skirt walls are too slender to stand up while they are being built: a
+    // pier is only `ARCH.pier` long, so at 1.6 it meets the bed on 12.8 mm²
+    // (less the 0.5 mm edge chamfer) and carries a 40 mm wall above it. A
+    // centre pier on a test straight shifted on the plate and welded back on
+    // crooked. 2.4 puts 19.2 mm² under the same pier and stiffens the wall
+    // against the nozzle knocking it.
+    wall: 2.4,
     floorThk: 2.0,
     filletR: 2.0,
     skirtDepth: 12,
@@ -151,8 +155,19 @@ export const SPEC = {
         // a short band just below the seated key: it is pushed up past them and
         // then rests on them. Kept short so it is a snap, not a press fit down
         // the whole throat, and shallow enough to print as a 0.35 mm step.
-        detentProud: 0.35,
-        detentTall: 1.5
+        // 0.35 was a press fit, not a snap, and the key never got past it.
+        // The pocket is drawn 0.2 mm/side clear of the key, but a printed slot
+        // comes out ~0.16 mm/side narrow, so the plain throat is ALREADY at
+        // zero clearance — the detent then added 0.35 on top, 0.82 mm of
+        // interference across a 16 mm neck, against a rib far too stiff to
+        // flex. 0.15 leaves a catch you can feel without one you cannot pass.
+        detentProud: 0.15,
+        detentTall: 1.5,
+        // ...and it is a RAMP now, not a step. A square ledge presents the key
+        // with a wall to shear through; over 0.8 mm of rise the same ledge is
+        // a wedge the key rides up, and it prints as four 0.04 mm steps
+        // instead of one 0.35 mm overhang.
+        detentRamp: 0.8
     },
     // Engraved part codes, cut into the CHANNEL face of a rail — inside,
     // vertical, and not a surface anything depends on (see engraveOps).

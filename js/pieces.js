@@ -354,10 +354,25 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
             [-wall(z0), z0], [wall(z0), z0], [wall(zFar), zFar], [-wall(zFar), zFar]
         ], face);
     };
+    // The void cut back out of that band tapers: full pocket width where the
+    // key arrives, narrowing to the detent over `detentRamp`. That is what
+    // makes it a wedge rather than a step — see SPEC.key.detentProud.
+    const ramp = K.detentRamp ?? 0;
+    const detentVoid = () => {
+        const levels = [
+            { y: detentBot - 0.5, c: pocketClearance },
+            { y: detentBot + ramp, c: pocketClearance - K.detentProud },
+            { y: detentTop + 0.5, c: pocketClearance - K.detentProud }
+        ];
+        return sweepSolid(
+            levels.map(l => detentPlan(l.c, -0.5).map(([x, z]) => [x, -z])),
+            levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        );
+    };
     const detent = (K.detentProud > 0 && detentBot > rimY + 0.5)
         ? [
             { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance, 0), detentBot, detentTop)) },
-            { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance - K.detentProud, -0.5), detentBot - 0.5, detentTop + 0.5)) }
+            { op: SUBTRACTION, geometry: toBufferGeometry(detentVoid()) }
         ]
         : [];
     // Lightening windows either side of the pocket. The rib is a solid slab
