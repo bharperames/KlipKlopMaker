@@ -243,8 +243,23 @@ raising the arch crowns, or accepting supports on curves.
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
 | Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
 | Track hex socket | 9.00 | 8.9–9.1 | at nominal, ±0.1 **within one socket** |
+| Key SLOT at the face | 16.40 | 16.85 | +0.225 |
+| Key SLOT at its widest | 24.58 | 23.90 | −0.339 |
 
-The diagonals are the most useful of these, because they read the corner
+**The slot measurements overturned a correction I had already made.** The key
+alone prints with a shallower rake than it is drawn with (waist fills in, tips
+round off), which looked like the explanation for a joint that was tight at one
+end and loose at the other — so the key was briefly drawn pre-distorted. Then
+the slot was measured and it does the same thing: printed flares come out 0.392
+for the key and 0.383 for the slot, within 0.01 of each other. The errors
+cancel, the printed pair is parallel, and the gap is a uniform 0.225 mm/side.
+There was nothing to compensate; 0.2 drawn simply prints as 0.225, and the
+"tight" half of the complaint was the detent. Comparing a printed part against
+a DRAWN one is what made it look like a rake problem — a mistake worth
+remembering, since the key's own numbers are convincing on their own and point
+the wrong way.
+
+The diagonals are the most useful of the key's numbers, because they read the corner
 radius directly: a tip is a 66° corner, the diagonal lies almost along its
 bisector, and the deficit is twice what a fillet pulls the vertex in. 0.43 and
 0.50 mm, with the tip-to-tip width implying 0.39 independently. The model had
@@ -277,10 +292,22 @@ dimensioning alone cannot close either joint.** Both want a compliant feature �
 something that takes up 0.2 mm without either rattling or jamming. That is the
 next real design step, and it is one design serving both joints.
 
-**Still missing:** nothing has been measured on the POCKET side, and the riser
-socket has not been read across all three flat pairs. That second one is cheap
-and settles the ovality diagnosis outright — if the riser socket is uniform
-where the track's spans 0.2, there is nothing left to argue about.
+**The grip moved front-to-back, up a taper.** The flanks were being asked to
+wedge the seam shut AND hold the key in, and the clearance that lets a key
+slide 33 mm up a throat is the same clearance that lets it rattle. Those jobs
+are split now: the flanks keep the wedging at an easy slide, and the pocket
+gets `gripTaperMm` shallower over the last `gripRiseMm`, so the key wedges
+front-to-back as it rises. The detent is off — it was a step, and a step is
+what stopped the first keys dead.
+
+The point of a taper is that it does not have to hit a dimension. 0.1 mm of
+process moves the seat height by 3 mm and nothing else changes; there is 30 mm
+of throat to absorb it. That is the compliance both the key's Monte Carlo and
+the hex socket's 0.2 mm of ovality were asking for, and it is one idea serving
+both.
+
+**Still missing:** the riser socket read across all three flat pairs. If it is
+uniform where the track's spans 0.2, the loose-socket diagnosis is settled.
 
 **Physical validation (was Phase 3).** Print one helix tier and run a figure
 through it. The clearance model predicts 2.79 mm of play at the tightest point —

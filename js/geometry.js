@@ -676,10 +676,14 @@ export function bowtieFit({ neckHalf = 8, tipHalf = 12, depth = 9,
  * was a line at the tip rather than a bearing surface, so the wedging action the
  * joint is named for could not happen.
  */
-export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25 }) {
+export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25, farCut = 0 }) {
     const flare = (tipHalf - neckHalf) / depth;
     const wall = (z) => neckHalf + clearance + flare * z;   // key flank, offset
-    const zFar = depth + clearance;
+    // `farCut` pulls the FAR wall toward the face without touching the flanks:
+    // the pocket gets shallower while its rake stays exactly parallel to the
+    // key's. That is what lets the joint grip front-to-back up a taper while
+    // the flanks keep doing the wedging at an easy slide fit.
+    const zFar = depth + clearance - farCut;
     return [
         [-wall(-0.5), -0.5], [wall(-0.5), -0.5],
         [wall(zFar), zFar],

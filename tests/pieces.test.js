@@ -707,14 +707,12 @@ describe('the key can actually be fitted', () => {
         const seatBottom = pocketTop - keyH;
 
         let worstBlock = null;
-        // The key is sampled UNDERSIZE by exactly `detentProud`, because the
-        // detent is meant to interfere by that much — it is the catch. So the
-        // rule this enforces is "nothing narrows the throat by more than the
-        // detent does", which tolerates the snap and fails anything bigger.
+        // The key is sampled at its PRINTED size, and the travel checked is
+        // the free part of the throat — from the rim up to where the grip
+        // taper starts. Above that the pocket closes on the key on purpose.
         const keyPlan = bowtieKeyPlan({
             neckHalf: SPEC.key.neckHalf, tipHalf: SPEC.key.tipHalf,
-            depth: SPEC.key.depth, tipChamfer: SPEC.key.tipChamfer,
-            clearance: -SPEC.key.detentProud
+            depth: SPEC.key.depth, tipChamfer: SPEC.key.tipChamfer
         });
         for (const [w, d] of keySamples(keyPlan)) {
             // plan coords → piece frame: lateral w, forward d from the face
@@ -723,7 +721,8 @@ describe('the key can actually be fitted', () => {
             // travel: the key rises from the rim to its seat, so its own body
             // occupies [seatBottom, pocketTop] once there and everything below
             // must have been clear on the way up
-            const at = blocked(hits, pc.rimY + 0.3, pocketTop - 0.05);
+            const freeTop = pocketTop - (SPEC.key.gripRiseMm ?? 0) - 0.2;
+            const at = blocked(hits, pc.rimY + 0.3, freeTop);
             if (at !== null && (worstBlock === null || at > worstBlock.y)) {
                 worstBlock = { y: at, w, d };
             }
@@ -733,100 +732,68 @@ describe('the key can actually be fitted', () => {
         expect(seatBottom).toBeGreaterThan(pc.rimY);
     });
 
-    test('...and the detent is still there to catch it once seated', async () => {
-        const { SPEC } = await import('../js/track.js');
-        const { computeMeshVolumeMm3 } = await import('../js/mesh_utils.js');
+    test('the pocket closes front-to-back over the last of the travel', async () => {
+        // The grip is a taper on the FAR wall, not a step on the flanks. This
+        // reads the built mesh: pocket depth at a series of heights, which has
+        // to be flat up the throat and then close as the key nears its seat.
+        const { SPEC, pieceInFrame } = await import('../js/track.js');
         const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
-        const pc = pieces[1];
-        const vol = () => {
-            const g = buildPieceExportGeometry(pc);
-            return computeMeshVolumeMm3(g.positions, g.indices);
-        };
-        const on = vol();
-        const keep = SPEC.key.detentProud;
-        SPEC.key.detentProud = 0;
-        const off = vol();
-        SPEC.key.detentProud = keep;
-
-        const added = on - off;
-        expect(added).toBeGreaterThan(1);      // it exists at all
-        // A ledge is a thin ring. Filling the pocket section instead would add
-        // roughly pocketArea * detentTall * 2 faces — hundreds of mm3.
-        const pocketArea = (SPEC.key.neckHalf + SPEC.key.tipHalf) * SPEC.key.depth;
-        expect(added).toBeLessThan(pocketArea * SPEC.key.detentTall * 2 * 0.25);
-        expectWatertight(buildPieceExportGeometry(pc), 'piece with detent');
-    });
-
-    test('the flanks carry the fit, not the corners', async () => {
-        // The printed set rattled AND would not seat, which sounds
-        // contradictory and is not: at 0.2 mm clearance the corner
-        // interference (0.20 mm) exceeded the flank gap (0.18 mm), so the key
-        // stood on its four tips and never touched the surfaces meant to wedge
-        // it. Both numbers have to be right, and only one of them is the
-        // clearance.
-        const { SPEC } = await import('../js/track.js');
-        const { bowtieFit } = await import('../js/geometry.js');
-        const K = SPEC.key;
-        const shape = { neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth };
-        const fit = bowtieFit({ ...shape, clearance: K.fitClearanceMm, tipChamfer: K.tipChamfer });
-        expect(`corner ${fit.seats ? 'clears' : 'BINDS'}`).toBe('corner clears');
-        expect(fit.cornerBindMm).toBeLessThan(-0.1);          // and with margin
-        // a firm slide, not a rattle: tighter than the 0.18 that failed, and
-        // not so tight the key cannot be pushed up a 39 mm throat by hand
-        expect(fit.flankGapMm).toBeGreaterThan(0.05);
-        expect(fit.flankGapMm).toBeLessThan(0.12);
-
-        // and the chamfer is what buys it — without one, this clearance binds
-        expect(bowtieFit({ ...shape, clearance: K.fitClearanceMm }).seats).toBe(false);
-    });
-
-    test('the track socket is cut tighter than every other socket', async () => {
-        // Riser into riser is snug at the nominal size and must not change.
-        // The same tenon in the track's boss came out loose even though the
-        // two sockets measure identically, so the compensation belongs to the
-        // track socket alone — and this is what stops someone "simplifying"
-        // it back to one number.
-        const { SPEC, layoutTrack, planPillarPositions, pieceInFrame, planPosAt } =
-            await import('../js/track.js');
-        const { buildRiserGeometry } = await import('../js/pieces.js');
-        expect(SPEC.socket.trackShrinkAF).toBeGreaterThan(0);
-
-        /** Narrowest across-flats of the hole on the axis, by plane section. */
-        const socketAF = (g, cx, cz, y) => {
-            const P = g.positions, I = g.indices;
-            let best = Infinity;
-            for (let t = 0; t < I.length; t += 3) {
-                const v = [0, 1, 2].map(k => I[t + k] * 3);
-                const seg = [];
-                for (let e = 0; e < 3; e++) {
-                    const a = v[e], b = v[(e + 1) % 3];
-                    if ((P[a + 1] - y) * (P[b + 1] - y) > 0) continue;
-                    if (Math.abs(P[b + 1] - P[a + 1]) < 1e-12) continue;
-                    const f = (y - P[a + 1]) / (P[b + 1] - P[a + 1]);
-                    seg.push([P[a] + (P[b] - P[a]) * f, P[a + 2] + (P[b + 2] - P[a + 2]) * f]);
-                }
-                if (seg.length < 2) continue;
-                const [p, q] = seg;
-                const dx = q[0] - p[0], dz = q[1] - p[1];
-                const L2 = dx * dx + dz * dz || 1;
-                const u = Math.max(0, Math.min(1, ((cx - p[0]) * dx + (cz - p[1]) * dz) / L2));
-                best = Math.min(best, Math.hypot(cx - (p[0] + dx * u), cz - (p[1] + dz * u)));
-            }
-            return 2 * best;
-        };
-
-        const riser = socketAF(buildRiserGeometry(30), 0, 0, 5);
-        expect(riser).toBeCloseTo(SPEC.socket.hexAF, 2);         // unchanged
-
-        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
-        const sup = planPillarPositions(pieces);
         const world = pieces[1];
-        const g = buildPieceExportGeometry(world, { support: sup.find(s => s.pieceIndex === world.index) });
         const pc = pieceInFrame(world);
-        const m = planPosAt(pc, pc.planLen / 2);
-        const track = socketAF(g, m.x, m.z, pc.rimY + 5);
-        expect(track).toBeCloseTo(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF, 2);
-        expect(track).toBeLessThan(riser);
+        const g = buildPieceExportGeometry(world);
+        const pocketTop = (pc.entryDeck + SPEC.waterfallStepMm) - 3;
+
+        /**
+         * How deep the void runs in from the face on the centreline, by
+         * marching a ray along +x and taking the last point still in air.
+         */
+        const depthAt = (y) => {
+            const P = g.positions, I = g.indices;
+            const solidAt = (x) => {          // ray up from (x, 0) — inside iff odd crossings
+                let n = 0;
+                for (let t = 0; t < I.length; t += 3) {
+                    const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+                    const ax = P[a], az = P[a + 2], bx = P[b], bz = P[b + 2], cx = P[c], cz = P[c + 2];
+                    const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+                    if (Math.abs(d) < 1e-12) continue;
+                    const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (0 - cz)) / d;
+                    const l2 = ((cz - az) * (x - cx) + (ax - cx) * (0 - cz)) / d;
+                    const l3 = 1 - l1 - l2;
+                    if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+                    if (l1 * P[a + 1] + l2 * P[b + 1] + l3 * P[c + 1] > y) n++;
+                }
+                return n % 2 === 1;
+            };
+            let far = 0;
+            for (let x = 0.5; x < SPEC.key.depth + 0.6; x += 0.05) if (!solidAt(x)) far = x;
+            return far;
+        };
+        const rise = SPEC.key.gripRiseMm, taper = SPEC.key.gripTaperMm;
+        const low = depthAt(pocketTop - rise - 5);
+        const mid = depthAt(pocketTop - rise);
+        const top = depthAt(pocketTop - 0.5);
+        expect(`straight below the grip: ${Math.abs(mid - low) < 0.05}`).toBe('straight below the grip: true');
+        expect(`closes toward the seat: ${mid - top > taper * 0.7}`).toBe('closes toward the seat: true');
+        expect(mid - top).toBeLessThan(taper + 0.1);
+    });
+
+    test('the taper turns variation into seat height, not into jam', async () => {
+        // The whole reason for a taper rather than a dimension: it does not
+        // have to hit a number. The measured process moves ~0.1 mm/side, and
+        // this is the check that the throat can absorb that without the key
+        // either falling through or stopping before it is captured.
+        const { SPEC } = await import('../js/track.js');
+        const K = SPEC.key;
+        const slope = K.gripTaperMm / K.gripRiseMm;      // mm of depth per mm of rise
+        const processMm = 0.1;
+        const seatShift = processMm / slope;
+        expect(seatShift).toBeLessThan(K.gripRiseMm);    // still inside the taper
+        // and the key is still fully captured that far down
+        const keyH = K.height - 2 * SPEC.jointClearanceMm;
+        expect(K.gripRiseMm - seatShift).toBeGreaterThan(keyH * 0.5);
+        // the flanks are NOT the grip: they stay an easy slide
+        expect(K.fitClearanceMm).toBeGreaterThan(0.08);
+        expect(K.detentProud).toBe(0);                   // superseded, not forgotten
     });
 
     test('the fit is chosen by simulation, and the corner is not the limiter', async () => {
@@ -859,41 +826,32 @@ describe('the key can actually be fitted', () => {
             .toBe(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood);
     });
 
-    test('the key is drawn pre-distorted so it PRINTS parallel to the pocket', async () => {
-        // Measured off a printed key: the concave waist fills in 0.20/side
-        // while flat faces move 0.035, so a bowtie prints with a different
-        // RAKE than it is drawn with — which is why one joint could pinch at
-        // the neck and rattle at the tips at the same time.
+    test('the key is NOT pre-distorted, because the slot distorts with it', async () => {
+        // Measured, the key prints with a shallower rake than it is drawn with:
+        // the nozzle fills its concave waist and rounds its convex tips. That
+        // looked like a reason to draw it pre-distorted, and it was wrong —
+        // the SLOT does exactly the same thing, so the two stay parallel and
+        // the errors cancel. Printed flares came out 0.392 for the key and
+        // 0.383 for the slot.
         //
-        // The drawn key therefore does NOT sit parallel to the drawn pocket,
-        // and it must not: it is the PRINTED key that has to. Anyone
-        // "correcting" the CAD so the two look parallel would put the pinch
-        // straight back.
+        // Kept as a test because the key's numbers ALONE are convincing and
+        // point the wrong way. Comparing a printed part against a drawn one is
+        // what made this look like a rake problem.
         const { SPEC } = await import('../js/track.js');
-        const K = SPEC.key, comp = K.printComp;
-        const pocketFlare = (K.tipHalf - K.neckHalf) / K.depth;
-        const drawnFlare = ((K.tipHalf + comp.tipMm) - (K.neckHalf - comp.neckMm)) / K.depth;
-        expect(drawnFlare).toBeGreaterThan(pocketFlare);       // deliberately steeper
+        const K = SPEC.key;
+        expect(K.printComp.neckMm).toBe(0);
+        expect(K.printComp.tipMm).toBe(0);
 
-        // once printing has filled the waist back in, the rake matches
-        const printedNeck = (K.neckHalf - comp.neckMm) + comp.neckMm;
-        const printedTip = (K.tipHalf + comp.tipMm);
-        expect((printedTip - printedNeck) / K.depth).toBeCloseTo(pocketFlare, 6);
-        // ...and the gap is the clearance, evenly, instead of 0 at one end
-        expect((K.neckHalf + K.fitClearanceMm) - printedNeck).toBeCloseTo(K.fitClearanceMm, 6);
-        expect((K.tipHalf + K.fitClearanceMm) - printedTip).toBeCloseTo(K.fitClearanceMm, 6);
+        const keyFlarePrinted = ((23.45 / 2) - (16.40 / 2)) / K.depth;      // measured
+        const slotFlarePrinted = ((23.90 / 2) - (16.85 / 2)) / (K.depth + 0.2);
+        expect(Math.abs(keyFlarePrinted - slotFlarePrinted)).toBeLessThan(0.02);
+
+        // and the gap that leaves is even end to end, which is what a flank
+        // fit needs — it is the SIZE of it that was wrong, not its shape
+        const gapNear = (16.85 - 16.40) / 2, gapFar = (23.90 - 23.45) / 2;
+        expect(Math.abs(gapNear - gapFar)).toBeLessThan(0.05);
+        // drawn 0.2 measured 0.225, so drawing less is the whole correction
+        expect(K.fitClearanceMm).toBeLessThan(0.2);
     });
 
-    test('the detent leads in with a ramp, not a step', async () => {
-        // a square ledge is a wall to shear through; the ramp is what the key
-        // rides up. Guarded because the fix is invisible in a volume check.
-        const { SPEC } = await import('../js/track.js');
-        expect(SPEC.key.detentRamp).toBeGreaterThan(0.4);
-        // and the interference it leaves, once a printed slot's ~0.16 mm/side
-        // narrowing is counted, has to stay something a hand can push past
-        // the catch is the detent minus the clearance it eats into
-        const perSide = SPEC.key.detentProud - SPEC.key.fitClearanceMm;
-        expect(perSide).toBeGreaterThan(0);        // it catches at all
-        expect(perSide).toBeLessThan(0.1);         // and a hand can push past it
-    });
 });

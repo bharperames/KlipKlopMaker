@@ -180,36 +180,34 @@ export const SPEC = {
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
         neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
-        // Per side, key flank to pocket wall, drawn. With `printComp` below
-        // the key now prints at its nominal rake, so this IS the gap all the
-        // way along the flank instead of varying from 0 to 0.475.
-        // Interpolated between the two measured ends of a printed joint: at an
-        // effective 0 the key had to be forced, at ~0.2+ it rattled.
+        // Per side, key flank to pocket wall, drawn. Printing adds ~0.025 to
+        // it (measured: 0.2 drawn came out 0.225), so this lands at ~0.145 on
+        // the part — a comfortable slide where 0.225 rattled. It does not need
+        // to be tight: the flanks only bear when something tries to pull the
+        // seam open, and retention is the grip taper's job now.
         fitClearanceMm: 0.12,
         /**
-         * Drawn-vs-printed compensation for the key, MEASURED off a printed one
-         * (n = 1): 18.07 front to back, 23.45 tip to tip, 16.4 at the waist,
-         * against 18 / 24 / 16 drawn.
+         * NO drawn-vs-printed compensation, and the reason is worth keeping.
          *
-         * The interesting part is that those do not agree on a single offset.
-         * Flat faces came out +0.035/side, the CONCAVE waist +0.200, and the
-         * CONVEX tips −0.275 — a nozzle fills an inside corner and rounds an
-         * outside one, so a bowtie prints with a different rake than it is
-         * drawn with. That is the whole "tight and loose at once": against a
-         * pocket parallel to the DRAWN flank the printed key pinches at the
-         * neck and rattles at the tips.
+         * Measured off the printed key, a bowtie does not print as a scaled
+         * bowtie: the nozzle fills the concave waist (+0.20/side) and rounds
+         * the convex tips (−0.275), so it prints with a shallower rake than it
+         * is drawn with. That looked like the explanation for a joint that was
+         * tight at one end and loose at the other, and the key was briefly
+         * drawn pre-distorted to correct it.
          *
-         * So the key's WAIST is drawn 0.2 undersize and prints at nominal, the
-         * pocket is left alone, and the printed pair ends up parallel with
-         * `fitClearanceMm` between them.
+         * Then the SLOT was measured, and it does exactly the same thing:
+         * +0.225/side at the face, −0.339 at the wide end. Printed flares come
+         * out 0.392 for the key and 0.383 for the slot — within 0.01 of each
+         * other. The two errors cancel, the printed pair is still parallel,
+         * and the gap is a uniform 0.225/side end to end.
          *
-         * The tips are NOT compensated even though they measured 0.275 under:
-         * that rounding is what a nozzle does to a sharp convex corner, and
-         * `tipChamfer` has since replaced those corners with two shallow ones
-         * that barely round at all. Compensating a corner that no longer
-         * exists would push the key back into the pocket wall.
+         * So there was nothing to compensate. The joint was loose for the
+         * simple reason that 0.2 drawn prints as 0.225, and the "tight" half
+         * of the complaint was the detent, not the flanks. Comparing a printed
+         * part against a drawn one is what made it look like a rake problem.
          */
-        printComp: { neckMm: 0.20, tipMm: 0 },
+        printComp: { neckMm: 0, tipMm: 0 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that
@@ -229,13 +227,38 @@ export const SPEC = {
         // a short band just below the seated key: it is pushed up past them and
         // then rests on them. Kept short so it is a snap, not a press fit down
         // the whole throat, and shallow enough to print as a 0.35 mm step.
-        // 0.35 was a press fit, not a snap, and the key never got past it.
+        /**
+         * THE GRIP IS FRONT TO BACK, UP A TAPER — not side to side.
+         *
+         * The flanks were being asked to do two jobs at once: wedge the seam
+         * shut AND hold the key in. They cannot. The clearance that lets a key
+         * slide 33 mm up a throat is the same clearance that lets it rattle,
+         * and every measurement so far says the process moves more than the
+         * window between those two.
+         *
+         * So the jobs are split. The flanks keep the wedging at an easy slide
+         * fit, where clearance is harmless — they only bear when something
+         * tries to pull the seam open. Retention comes from the pocket getting
+         * `gripTaperMm` SHALLOWER over the last `gripRiseMm` of travel, so the
+         * key wedges front-to-back as it rises.
+         *
+         * The point of a taper is that it does not have to hit a dimension. A
+         * key that prints 0.1 mm over just stops 3 mm lower; one that prints
+         * under goes 3 mm higher. Variation becomes seat height instead of
+         * rattle or jam, and there is 30 mm of throat to absorb it. That is
+         * the compliance both the key's Monte Carlo and the hex socket's
+         * 0.2 mm of ovality have been asking for.
+         */
+        gripTaperMm: 0.3,
+        gripRiseMm: 10,
+        // The detent is off: the taper does its job and does it better. It was
+        // a step, and a step is what stopped the first printed keys dead.
         // The pocket is drawn 0.2 mm/side clear of the key, but a printed slot
         // comes out ~0.16 mm/side narrow, so the plain throat is ALREADY at
         // zero clearance — the detent then added 0.35 on top, 0.82 mm of
         // interference across a 16 mm neck, against a rib far too stiff to
         // flex. 0.15 leaves a catch you can feel without one you cannot pass.
-        detentProud: 0.15,
+        detentProud: 0,
         detentTall: 1.5,
         // ...and it is a RAMP now, not a step. A square ledge presents the key
         // with a wall to shear through; over 0.8 mm of rise the same ledge is

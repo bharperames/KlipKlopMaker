@@ -330,10 +330,11 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     // needed now the pocket wall is parallel to the key flank, and 0.20/side is
     // the clearance the printed hex joints are proven at.
     const pocketClearance = K.fitClearanceMm ?? spec.jointClearanceMm;
-    const pocket = planToWorld(bowtiePocketPlan({
+    const pocketAt = (farCut) => planToWorld(bowtiePocketPlan({
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-        clearance: pocketClearance
+        clearance: pocketClearance, farCut
     }), face);
+    const pocket = pocketAt(0);
 
     // Detent band: the pocket profile narrowed by detentProud, sitting just
     // below where the key seats, so the key snaps past it and rests on it.
@@ -425,6 +426,26 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
         return sweepSolid(profiles, stations);
     }
 
+    /**
+     * The pocket, tapering shallower over the last `gripRiseMm` so the key
+     * wedges front-to-back as it rises. Straight below that, so the key slides
+     * the length of the throat without touching anything.
+     */
+    function pocketVoid() {
+        const rise = K.gripRiseMm ?? 0, taper = K.gripTaperMm ?? 0;
+        const gripBase = pocketTop - rise;
+        if (!(rise > 0 && taper > 0) || gripBase <= rimY) {
+            return extrudePolygonY(pocket, rimY - 1, pocketTop);
+        }
+        const levels = [
+            { y: rimY - 1, cut: 0 }, { y: gripBase, cut: 0 }, { y: pocketTop, cut: taper }
+        ];
+        return sweepSolid(
+            levels.map(l => pocketAt(l.cut).map(([x, z]) => [x, -z])),
+            levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        );
+    }
+
     const WALL = 2.0;                       // material kept around each window
     const winZ0 = 1.5, winZ1 = K.ribThk - spec.wall;
     const winInner = K.tipHalf + WALL;
@@ -446,7 +467,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
 
     return [
         { op: ADDITION, geometry: toBufferGeometry(ribSolid()) },
-        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, pocketTop)) },
+        { op: SUBTRACTION, geometry: toBufferGeometry(pocketVoid()) },
         ...detent,          // added back AFTER the pocket is cut
         ...windows
     ];
