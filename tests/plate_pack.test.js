@@ -130,6 +130,32 @@ describe('packPlates', () => {
         expect(plates.length).toBeLessThanOrEqual(3);
     });
 
+    test('a grouped part never shares a plate, however much room is left', () => {
+        // Curves print alone so the slicer's cantilever warning is
+        // attributable and a failure costs one part type. The packer would
+        // happily fill the rest of the plate — that is the point being
+        // overridden, so the test has to prove the room was there and went
+        // unused rather than that the parts merely happened to land apart.
+        const { plates } = packPlates([
+            { name: 'curveL', w: 150, d: 51, count: 2, group: 'curves' },
+            { name: 'riser', w: 20, d: 20, count: 30 }
+        ]);
+        for (const p of plates) {
+            const names = new Set(p.items.map(i => i.name));
+            expect(`${p.index}: ${[...names].sort().join('+')}`)
+                .toBe(`${p.index}: ${names.has('curveL') ? 'curveL' : 'riser'}`);
+        }
+        const curvePlate = plates.find(p => p.group === 'curves');
+        expect(curvePlate.items).toHaveLength(2);
+        expect(curvePlate.utilisation).toBeLessThan(0.3);   // room to spare, left empty
+        // and without the group they WOULD have shared it
+        const mixed = packPlates([
+            { name: 'curveL', w: 150, d: 51, count: 2 },
+            { name: 'riser', w: 20, d: 20, count: 30 }
+        ]);
+        expect(new Set(mixed.plates[0].items.map(i => i.name)).size).toBeGreaterThan(1);
+    });
+
     test('the manifest names every plate and flags what did not fit', () => {
         const { plates, oversized } = packPlates([
             { name: 'straight', w: 150, d: 51, count: 3 },

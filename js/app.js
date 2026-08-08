@@ -4342,6 +4342,21 @@ function bedFootprint(positions) {
 }
 
 /**
+ * Which parts may share a plate.
+ *
+ * Curves print alone. Bambu Studio raises its cantilever warning on them
+ * whatever the geometry underneath, so on a mixed plate the warning names a
+ * plate full of unrelated parts and tells you nothing about which one is at
+ * risk — and if a curve does come loose it takes the risers packed around it
+ * with it. Alone, the warning is attributable and a failure costs one part
+ * type. That is worth the plate area it gives away, and it is the only way
+ * the next curve print answers the arcade question.
+ */
+function plateGroup(name) {
+    return /^curve|_curve/.test(name) ? 'curves' : '';
+}
+
+/**
  * Lays every built part out on full beds and writes one file per plate.
  *
  * 3MF carries each copy as its own build item referencing a shared mesh, which
@@ -4354,11 +4369,12 @@ function writePlateFiles(files, built, format) {
     const byName = new Map(built.map(b => [b.name, b]));
     const { plates, oversized } = packPlates(built.map(b => {
         const f = bedFootprint(b.mesh.positions);
-        return { name: b.name, w: f.w, d: f.d, h: f.h, count: b.count };
+        return { name: b.name, w: f.w, d: f.d, h: f.h, count: b.count, group: plateGroup(b.name) };
     }));
     for (const plate of plates) {
         const grams = plate.items.reduce((g, it) => g + printedWeightG(byName.get(it.name).vol, 'track'), 0);
-        const stem = `plate_${String(plate.index).padStart(2, '0')}_${plate.items.length}parts_${Math.round(grams)}g`;
+        const stem = `plate_${String(plate.index).padStart(2, '0')}` +
+            `${plate.group ? `_${plate.group}` : ''}_${plate.items.length}parts_${Math.round(grams)}g`;
         if (format === '3mf') {
             files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(plate.items.map(it => {
                 const src = byName.get(it.name);
@@ -4607,7 +4623,8 @@ function shopRepack() {
     const items = shop.items
         .map(it => ({ ...it, count: shop.counts.get(it.name) ?? 0 }))
         .filter(it => it.count > 0);
-    const { plates, oversized } = packPlates(items.map(({ name, w, d, h, count }) => ({ name, w, d, h, count })));
+    const { plates, oversized } = packPlates(items.map(({ name, w, d, h, count }) =>
+        ({ name, w, d, h, count, group: plateGroup(name) })));
     shop.plates = plates;
 
     while (shop.group.children.length) shop.group.remove(shop.group.children[0]);

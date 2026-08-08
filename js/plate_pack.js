@@ -96,7 +96,17 @@ class MaxRects {
 /**
  * Lay parts out over as many plates as they need.
  *
- * @param {Array<{name: string, w: number, d: number, h?: number, count?: number}>} items
+ * `group` KEEPS PARTS APART. An item only ever shares a plate with items
+ * carrying the same group, and that is not a packing nicety — it is how you
+ * get usable information back from a print. Bambu Studio raises its cantilever
+ * warning on the curve pieces whatever their geometry, and on a mixed plate
+ * the warning names the plate, so it says nothing about which part is at risk
+ * and a failure on the curve takes eleven risers down with it. On their own
+ * plate the warning is attributable and the blast radius is one part type.
+ * Packing efficiency is the thing being traded away, deliberately.
+ *
+ * @param {Array<{name: string, w: number, d: number, h?: number, count?: number,
+ *                group?: string}>} items
  *        footprints in mm, already in the printer's XY. `count` defaults to 1.
  * @param {object} [opts] - { plate, allowRotate }
  * @returns {{plates: Array<{index: number, items: Array<{name, x, y, w, d, rot, copy}>,
@@ -134,32 +144,45 @@ export function packPlates(items, opts = {}) {
         Math.max(b.w, b.d) - Math.max(a.w, a.d) ||
         String(a.name).localeCompare(String(b.name)));
 
+    // Groups pack independently. Order follows first appearance in `items`, so
+    // the same design always produces the same plate numbering.
+    const order = [];
+    const byGroup = new Map();
+    for (const it of items) {
+        const key = it.group ?? '';
+        if (!byGroup.has(key)) { byGroup.set(key, []); order.push(key); }
+    }
+    for (const it of queue) byGroup.get(it.group ?? '').push(it);
+
     const plates = [];
-    let remaining = queue;
-    while (remaining.length) {
-        const bin = new MaxRects(usableW, usableD);
-        const placed = [], leftover = [];
-        for (const it of remaining) {
-            const spot = bin.find(it.w, it.d, allowRotate);
-            if (!spot) { leftover.push(it); continue; }
-            bin.place(spot);
-            placed.push({
-                name: it.name, copy: it.copy, rot: spot.rot,
-                // back to the part's true size, and to plate-centred coords
-                w: it.w - plate.gap, d: it.d - plate.gap,
-                x: spot.x + spot.w / 2 - usableW / 2,
-                y: spot.y + spot.d / 2 - usableD / 2
+    for (const key of order) {
+        let remaining = byGroup.get(key) ?? [];
+        while (remaining.length) {
+            const bin = new MaxRects(usableW, usableD);
+            const placed = [], leftover = [];
+            for (const it of remaining) {
+                const spot = bin.find(it.w, it.d, allowRotate);
+                if (!spot) { leftover.push(it); continue; }
+                bin.place(spot);
+                placed.push({
+                    name: it.name, copy: it.copy, rot: spot.rot,
+                    // back to the part's true size, and to plate-centred coords
+                    w: it.w - plate.gap, d: it.d - plate.gap,
+                    x: spot.x + spot.w / 2 - usableW / 2,
+                    y: spot.y + spot.d / 2 - usableD / 2
+                });
+            }
+            if (!placed.length) break;  // nothing fits an empty plate: give up
+            const used = placed.reduce((s, p) => s + p.w * p.d, 0);
+            plates.push({
+                index: plates.length + 1,
+                group: key,
+                items: placed,
+                used,
+                utilisation: used / (usableW * usableD)
             });
+            remaining = leftover;
         }
-        if (!placed.length) break;      // nothing fits an empty plate: give up
-        const used = placed.reduce((s, p) => s + p.w * p.d, 0);
-        plates.push({
-            index: plates.length + 1,
-            items: placed,
-            used,
-            utilisation: used / (usableW * usableD)
-        });
-        remaining = leftover;
     }
     return { plates, oversized };
 }
@@ -170,8 +193,8 @@ export function describePlates(plates, oversized = []) {
     for (const p of plates) {
         const tally = new Map();
         for (const it of p.items) tally.set(it.name, (tally.get(it.name) ?? 0) + 1);
-        lines.push(`Plate ${p.index} — ${p.items.length} parts, ` +
-            `${(p.utilisation * 100).toFixed(0)}% of the usable area`);
+        lines.push(`Plate ${p.index}${p.group ? ` (${p.group} only)` : ''} — ` +
+            `${p.items.length} parts, ${(p.utilisation * 100).toFixed(0)}% of the usable area`);
         for (const [name, n] of [...tally].sort((a, b) => a[0].localeCompare(b[0]))) {
             lines.push(`    ${n} x ${name}`);
         }
