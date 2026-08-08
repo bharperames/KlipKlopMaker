@@ -3488,7 +3488,12 @@ function initGallery() {
     gallery.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     holder.appendChild(gallery.renderer.domElement);
     gallery.scene = new THREE.Scene();
-    gallery.scene.background = new THREE.Color(0xeef3f9);
+    // Near-black, not near-white. The plate is opaque from above, so a light
+    // background was only ever seen from BELOW — and the underside is where
+    // this viewer earns its keep (sockets, pockets, the arcade). Down there a
+    // pale field washed out the plate's own grid and the part's dark edges
+    // both. Dark reads from every angle, which is why CAD viewers use it.
+    gallery.scene.background = new THREE.Color(0x0b1017);
     // studio environment: reflections make the physical material read as
     // injection-molded plastic instead of untextured CAD
     const pmrem = new THREE.PMREMGenerator(gallery.renderer);
@@ -3570,9 +3575,9 @@ function makeDimGroup(box, part) {
         g.add(l);
     };
     /** Solid arrowhead: apex AT `tip`, pointing along `dir`. */
-    const arrow = (tip, dir) => {
-        const geo = new THREE.ConeGeometry(S * 0.26, S, 8);
-        geo.translate(0, -S / 2, 0);           // apex to the origin
+    const arrow = (tip, dir, s = S) => {
+        const geo = new THREE.ConeGeometry(s * 0.26, s, 8);
+        geo.translate(0, -s / 2, 0);           // apex to the origin
         const m = new THREE.Mesh(geo, inkMat);
         m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.clone().normalize());
         m.position.copy(tip);
@@ -3662,15 +3667,19 @@ function makeDimGroup(box, part) {
         // live inside 30 mm at one end of a 150 mm ramp — piled into an
         // unreadable heap.
         const txt = Math.min(TXT, Math.max(0.5, len * 0.13));
-        if (len > 5 * S) {
+        // The arrowhead is part of the callout, so it scales with the callout.
+        // Sized off the part instead, a 2.6 mm head sat on a 3 mm dimension
+        // whose text was 0.5 mm — five times the lettering it belonged to.
+        const s = Math.min(S, Math.max(0.2, len * 0.09));
+        if (len > 5 * s) {
             seg(A, B);                                   // arrows inside, pointing out
-            arrow(A, dir.clone().negate());
-            arrow(B, dir);
+            arrow(A, dir.clone().negate(), s);
+            arrow(B, dir, s);
         } else {
-            seg(A.clone().addScaledVector(dir, -3 * S),  // too short: arrows outside
-                B.clone().addScaledVector(dir, 3 * S));
-            arrow(A, dir);
-            arrow(B, dir.clone().negate());
+            seg(A.clone().addScaledVector(dir, -3 * s),  // too short: arrows outside
+                B.clone().addScaledVector(dir, 3 * s));
+            arrow(A, dir, s);
+            arrow(B, dir.clone().negate(), s);
         }
         const sub = opts.sub ?? printedNote(opts.drawnMm, opts.klass);
         const mid = A.clone().add(B).multiplyScalar(0.5)
@@ -3842,8 +3851,41 @@ function orientDimText(group, camera) {
     camRight.setFromMatrixColumn(camera.matrixWorld, 0);
     for (const p of planes) {
         dir.copy(p.userData.dir);
-        // read left to right on screen, whichever side you have walked round to
-        if (dir.dot(camRight) < 0) dir.negate();
+        /**
+         * Which way the text reads.
+         *
+         * A vertical dimension is the degenerate case: its direction is
+         * perpendicular to the camera's right vector from every angle, so
+         * "does it point screen-right?" is a coin toss decided by rounding,
+         * and the label flickers between reading up and reading down as you
+         * orbit. Vertical dimensions get the drafting convention instead —
+         * they always read UPWARD — which is stable because the direction is
+         * fixed in the world, not in the view.
+         *
+         * Everything else follows the camera, with a deadband so a dimension
+         * you happen to be sighting along does not flip on noise either. The
+         * chosen sign is remembered, so inside the deadband it simply keeps
+         * doing what it was doing.
+         */
+        const upness = dir.y;                       // dir is unit length
+        if (Math.abs(upness) > 0.5) {
+            // A vertical dimension is the case a paper drawing solves by
+            // turning the text on its side. In a viewer you can orbit, that
+            // is the worst of both: 90°-rotated lettering is hard to read AND
+            // its direction is perpendicular to the camera's right vector from
+            // every angle, so "does it point screen-right?" is a coin toss
+            // decided by rounding and the label flips as you move. Vertical
+            // callouts read HORIZONTALLY instead — still sitting on their own
+            // dimension line, just kept upright.
+            dir.copy(camRight);
+            dir.y = 0;
+            if (dir.lengthSq() < 1e-9) continue;    // looking straight down
+            dir.normalize();
+        } else {
+            const d = dir.dot(camRight);
+            if (Math.abs(d) > 0.15) p.userData.sign = d < 0 ? -1 : 1;
+            if ((p.userData.sign ?? 1) < 0) dir.negate();
+        }
         toCam.copy(camera.position).sub(p.position);
         // the normal is the part of the view direction perpendicular to the
         // reading direction: the text spins about its own dimension line until
