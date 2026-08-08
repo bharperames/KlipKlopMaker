@@ -3316,7 +3316,7 @@ function assembleParts() {
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: 'gate_paddle', count: switchPairs.size, sig: 'gate_paddle', kind: 'gate', note: note.gate, build: () => buildGateGeometry() });
+        parts.push({ name: 'gate_paddle', count: switchPairs.size, sig: 'gate_paddle', kind: 'gate', note: note.gate, build: () => buildGateGeometry(SPEC, { forPrint: true }) });
     }
     parts.push({ name: 'bowtie_key', count: joints, sig: 'bowtie_key', kind: 'key', note: note.key, build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) });
 
@@ -4952,7 +4952,7 @@ async function openPrintShop() {
 
             const catalogue = [
                 { name: 'bowtie_key', kind: 'key', build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) },
-                { name: 'gate_paddle', kind: 'gate', build: () => buildGateGeometry() },
+                { name: 'gate_paddle', kind: 'gate', build: () => buildGateGeometry(SPEC, { forPrint: true }) },
                 { name: 'support_foot', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
                 ...[120, 60, 30, 15].map(r => ({
                     name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),

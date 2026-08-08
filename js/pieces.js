@@ -1159,7 +1159,28 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
  * Printable switch gate: pivot hub + vane that deflects the figure into the
  * selected route, with a pin that drops into the deck bore. Prints on its side.
  */
-export function buildGateGeometry(spec = SPEC) {
+/**
+ * `forPrint` turns the gate over to stand on its blade with the PIN UP.
+ *
+ * Modelled, the pin hangs 8 mm below everything else — that is the assembly
+ * frame, where the hub sits on the deck and the pin reaches down into the
+ * bore. Exported straight from that frame the part lands on the bed on the
+ * tip of its pin: 3.4 mm² of contact with the whole blade cantilevered in
+ * mid-air. Turned over it rests on the blade's top edge and the hub's top
+ * face — 148 mm², both flat, neither functional — and the pin becomes a
+ * vertical tube whose bore and slot print as straight extrusions with no
+ * overhang and no bridge across the one surface here that has to be round.
+ *
+ * 180° about X: a proper rotation, so the C's slot stays on the side away
+ * from the vane.
+ */
+export function buildGateGeometry(spec = SPEC, opts = {}) {
+    if (opts.forPrint) {
+        const g = buildGateGeometry(spec);
+        const p = g.positions ?? g.attributes.position.array;
+        for (let i = 0; i < p.length; i += 3) { p[i + 1] = -p[i + 1]; p[i + 2] = -p[i + 2]; }
+        return g;
+    }
     const PIN_L = 8;
     // hub + pin as a stacked-radius sweep along Y (vane added via CSG)
     const levels = [

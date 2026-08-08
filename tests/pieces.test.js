@@ -875,6 +875,32 @@ describe('the key can actually be fitted', () => {
             .toBeLessThan(Math.abs(PRINT_DEVIATION.hole.devMm));
     });
 
+    test('the gate is exported standing on its blade, not on the pin tip', async () => {
+        // The assembly frame hangs the pin 8 mm below everything else, and the
+        // exporter drops a part's lowest point to the bed — so straight from
+        // that frame the gate lands on the TIP OF ITS PIN with the whole blade
+        // in mid-air. `forPrint` turns it over.
+        const bedContact = (g) => {
+            const P = g.positions, I = g.indices;
+            let lo = Infinity;
+            for (let i = 1; i < P.length; i += 3) lo = Math.min(lo, P[i]);
+            let area = 0;
+            for (let t = 0; t < I.length; t += 3) {
+                const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+                if (Math.max(P[a + 1], P[b + 1], P[c + 1]) > lo + 0.15) continue;
+                area += Math.abs((P[b] - P[a]) * (P[c + 2] - P[a + 2])
+                    - (P[c] - P[a]) * (P[b + 2] - P[a + 2])) / 2;
+            }
+            return area;
+        };
+        const assembly = bedContact(buildGateGeometry());
+        const printed = bedContact(buildGateGeometry(SPEC, { forPrint: true }));
+        expect(assembly).toBeLessThan(10);          // a spike
+        expect(printed).toBeGreaterThan(100);       // the blade edge and the hub face
+        // and it is still a solid: a proper rotation cannot flip the winding
+        expectWatertight(buildGateGeometry(SPEC, { forPrint: true }), 'gate, print orientation');
+    });
+
     test('the grip cannot spend the seat height', async () => {
         // The decks meet flush at the seam only if the key seats hard against
         // both pocket ceilings, so the seat is a HARD STOP and not an outcome.
