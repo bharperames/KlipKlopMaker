@@ -859,6 +859,31 @@ describe('the key can actually be fitted', () => {
             .toBe(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood);
     });
 
+    test('the key is drawn pre-distorted so it PRINTS parallel to the pocket', async () => {
+        // Measured off a printed key: the concave waist fills in 0.20/side
+        // while flat faces move 0.035, so a bowtie prints with a different
+        // RAKE than it is drawn with — which is why one joint could pinch at
+        // the neck and rattle at the tips at the same time.
+        //
+        // The drawn key therefore does NOT sit parallel to the drawn pocket,
+        // and it must not: it is the PRINTED key that has to. Anyone
+        // "correcting" the CAD so the two look parallel would put the pinch
+        // straight back.
+        const { SPEC } = await import('../js/track.js');
+        const K = SPEC.key, comp = K.printComp;
+        const pocketFlare = (K.tipHalf - K.neckHalf) / K.depth;
+        const drawnFlare = ((K.tipHalf + comp.tipMm) - (K.neckHalf - comp.neckMm)) / K.depth;
+        expect(drawnFlare).toBeGreaterThan(pocketFlare);       // deliberately steeper
+
+        // once printing has filled the waist back in, the rake matches
+        const printedNeck = (K.neckHalf - comp.neckMm) + comp.neckMm;
+        const printedTip = (K.tipHalf + comp.tipMm);
+        expect((printedTip - printedNeck) / K.depth).toBeCloseTo(pocketFlare, 6);
+        // ...and the gap is the clearance, evenly, instead of 0 at one end
+        expect((K.neckHalf + K.fitClearanceMm) - printedNeck).toBeCloseTo(K.fitClearanceMm, 6);
+        expect((K.tipHalf + K.fitClearanceMm) - printedTip).toBeCloseTo(K.fitClearanceMm, 6);
+    });
+
     test('the detent leads in with a ramp, not a step', async () => {
         // a square ledge is a wall to shear through; the ramp is what the key
         // rides up. Guarded because the fix is invisible in a volume check.

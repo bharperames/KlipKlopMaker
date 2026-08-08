@@ -171,12 +171,36 @@ export const SPEC = {
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
         neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
-        // Per side, key flank to pocket wall. Was `jointClearanceMm` = 0.2,
-        // which left 0.37 mm of slop across the joint — the printed keys
-        // rattled. The flanks are raked, so only 91% of a horizontal clearance
-        // is perpendicular gap; 0.10 leaves 0.09 mm/side of real gap, a firm
-        // slide rather than a rattle. See `bowtieFit`.
-        fitClearanceMm: 0.08,
+        // Per side, key flank to pocket wall, drawn. With `printComp` below
+        // the key now prints at its nominal rake, so this IS the gap all the
+        // way along the flank instead of varying from 0 to 0.475.
+        // Interpolated between the two measured ends of a printed joint: at an
+        // effective 0 the key had to be forced, at ~0.2+ it rattled.
+        fitClearanceMm: 0.12,
+        /**
+         * Drawn-vs-printed compensation for the key, MEASURED off a printed one
+         * (n = 1): 18.07 front to back, 23.45 tip to tip, 16.4 at the waist,
+         * against 18 / 24 / 16 drawn.
+         *
+         * The interesting part is that those do not agree on a single offset.
+         * Flat faces came out +0.035/side, the CONCAVE waist +0.200, and the
+         * CONVEX tips −0.275 — a nozzle fills an inside corner and rounds an
+         * outside one, so a bowtie prints with a different rake than it is
+         * drawn with. That is the whole "tight and loose at once": against a
+         * pocket parallel to the DRAWN flank the printed key pinches at the
+         * neck and rattles at the tips.
+         *
+         * So the key's WAIST is drawn 0.2 undersize and prints at nominal, the
+         * pocket is left alone, and the printed pair ends up parallel with
+         * `fitClearanceMm` between them.
+         *
+         * The tips are NOT compensated even though they measured 0.275 under:
+         * that rounding is what a nozzle does to a sharp convex corner, and
+         * `tipChamfer` has since replaced those corners with two shallow ones
+         * that barely round at all. Compensating a corner that no longer
+         * exists would push the key back into the pocket wall.
+         */
+        printComp: { neckMm: 0.20, tipMm: 0 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that

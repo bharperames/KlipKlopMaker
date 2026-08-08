@@ -231,11 +231,28 @@ If it still fails, the fix is structural: the floor cannot bridge the full
 channel unsupported, and the options are restoring some support under the deck,
 raising the arch crowns, or accepting supports on curves.
 
-**A calibration coupon.** One key and one pocket, printed and measured, would
-turn the process bias from a swept unknown into a number — and that is the only
-thing standing between the Monte Carlo and an actual guarantee. It would also
-settle whether the track socket's 0.2 AF compensation is right, too much, or
-too little. Cheapest outstanding item by far.
+**Calibration, half done.** Measured off the printed set (n = 1):
+
+| Feature | Drawn | Printed | Per side |
+|---|---|---|---|
+| Key, front to back (flat faces) | 18.00 | 18.07 | +0.035 |
+| Key, waist (CONCAVE vertex) | 16.00 | 16.40 | **+0.200** |
+| Key, tip to tip (CONVEX vertices) | 24.00 | 23.45 | **−0.275** |
+| Skirt wall | 1.60 | 1.76 | +0.080 |
+| Channel | 48.00 | 47.68 | −0.080 (walls encroach) |
+| Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
+
+Two things fall out. The wall and the channel agree exactly and independently —
+every printed surface sits ~0.08 mm proud — and the tenon is true, so the track
+socket printing loose is the SOCKET's error, not the tenon's. And a bowtie does
+not print as a scaled bowtie: the nozzle fills the concave waist and rounds the
+convex tips, so it prints with a different RAKE. That is the whole "tight and
+loose at once", and the key is now drawn pre-distorted at the waist to correct
+it.
+
+**Still missing, and it is what stops the Monte Carlo guaranteeing anything:**
+nothing has been measured on the POCKET side. The bias is still swept ±0.10
+because the key's error is known and the pocket's is not.
 
 **Physical validation (was Phase 3).** Print one helix tier and run a figure
 through it. The clearance model predicts 2.79 mm of play at the tightest point —

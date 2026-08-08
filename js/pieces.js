@@ -1052,7 +1052,12 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         );
         return marks.length ? csgChain(toBufferGeometry(plain), marks) : plain;
     }
-    const shape = { neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer };
+    // drawn pre-distorted so it PRINTS at nominal — see SPEC.key.printComp
+    const comp = K.printComp ?? { neckMm: 0, tipMm: 0 };
+    const shape = {
+        neckHalf: K.neckHalf - comp.neckMm, tipHalf: K.tipHalf + comp.tipMm,
+        depth: K.depth, tipChamfer: K.tipChamfer
+    };
     const full = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
     const inset = bowtieKeyPlan({ ...shape, clearance: -0.5 }).map(([x, z]) => [x, -z]);
     // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
