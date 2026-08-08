@@ -242,6 +242,7 @@ raising the arch crowns, or accepting supports on curves.
 | Channel | 48.00 | 47.68 | −0.080 (walls encroach) |
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
 | Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
+| Track hex socket | 9.00 | 8.9–9.1 | at nominal, ±0.1 **within one socket** |
 
 The diagonals are the most useful of these, because they read the corner
 radius directly: a tip is a 66° corner, the diagonal lies almost along its
@@ -252,16 +253,34 @@ number existed (0.8 tolerates 0.46, 1.4 tolerates 0.60, and 0.63 is needed at
 three sigma). It is 1.8 now.
 
 Two more things fall out. The wall and the channel agree exactly and independently —
-every printed surface sits ~0.08 mm proud — and the tenon is true, so the track
-socket printing loose is the SOCKET's error, not the tenon's. And a bowtie does
+every printed surface sits ~0.08 mm proud — and the track socket
+turned out NOT to be oversize, which killed the obvious explanation for its
+loose fit — see below. And a bowtie does
 not print as a scaled bowtie: the nozzle fills the concave waist and rounds the
 convex tips, so it prints with a different RAKE. That is the whole "tight and
 loose at once", and the key is now drawn pre-distorted at the waist to correct
 it.
 
-**Still missing, and it is what stops the Monte Carlo guaranteeing anything:**
-nothing has been measured on the POCKET side. The bias is still swept ±0.10
-because the key's error is known and the pocket's is not.
+**The loose track socket is a compliance problem, not a size one.** The
+hypothesis was that it printed oversize, since riser-into-riser is snug at the
+same nominal and the same tenon is loose in the track. Measured, both are at
+nominal: socket 8.9–9.1 against 9.0, tenon 8.6–8.7 against 8.6, giving
+0.10–0.25 mm/side — which brackets what the riser joint gets. What the numbers
+do show is a socket varying **0.2 mm within itself**. A hex tenon in something
+that irregular bears on the tightest flat pair and rocks on the rest: it
+measures correct and feels loose. `trackShrinkAF` is 0.1 rather than 0.2
+because 0.2 drives the tight end to zero, where it stops assembling at all.
+
+This is the same conclusion the key's Monte Carlo reached from the other
+direction: **the process variation is wider than these fit windows, so
+dimensioning alone cannot close either joint.** Both want a compliant feature —
+something that takes up 0.2 mm without either rattling or jamming. That is the
+next real design step, and it is one design serving both joints.
+
+**Still missing:** nothing has been measured on the POCKET side, and the riser
+socket has not been read across all three flat pairs. That second one is cheap
+and settles the ovality diagnosis outright — if the riser socket is uniform
+where the track's spans 0.2, there is nothing left to argue about.
 
 **Physical validation (was Phase 3).** Print one helix tier and run a figure
 through it. The clearance model predicts 2.79 mm of play at the tightest point —
