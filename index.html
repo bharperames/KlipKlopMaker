@@ -612,14 +612,21 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
     </div>
 
     <details class="acc">
-        <summary>Track geometry · <span id="params-mode">STANDARD v1.0.0 🔒</span></summary>
+        <summary>Track geometry · <span id="params-mode">STANDARD 🔒</span></summary>
         <div class="card">
-            <b>Canonical part geometry</b> (semver <b id="geo-version">1.0.0</b>) —
-            constant by design so every part ever printed interoperates:
-            slope <b>11.22°</b> (30 mm drop per tile incl. the waterfall seam),
-            curves <b>R 143.6 mm</b> (45 mm), channel <b>48 mm</b>, supports on a
-            15 mm riser grid. Designs from files with other geometry are re-laid
-            on this standard and flagged.
+            <b>Canonical part geometry</b> — the numbers below are fixed, so any
+            two parts carrying the same code mate:
+            slope <b>11.22°</b> (30 mm drop per tile incl. the 0.25 mm waterfall
+            seam), curves <b>R 143.6 mm</b> (45 mm drop), channel <b>48 mm</b>,
+            supports on a 15 mm riser grid. Designs loaded with other geometry
+            are re-laid on this standard and flagged.
+            <div style="margin-top:6px; color:var(--ink-3); font-size:11px;">
+                Every exported part is engraved with its code and this version.
+                The version is a <i>compatibility claim</i>: parts with different
+                MAJOR numbers are not expected to fit each other. Joints changed
+                in <b>2.0</b> — the track socket, the key pocket and the gate
+                pivot — so 2.0 parts do not mate with 1.x parts.
+            </div>
         </div>
     </details>
 
@@ -719,9 +726,12 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <h2>Print settings (research-derived)</h2>
         <div class="card">
             <b>Material:</b> PLA (rigid → loud, sharp clack)<br>
-            <b>Walls &amp; infill:</b> barely matter — the track is a 1.6 mm shell, four
+            <b>Walls &amp; infill:</b> barely matter — the track is a 2.4 mm shell, six
             lines wide at a 0.4 nozzle, so it prints solid whatever you set<br>
             <b>Track:</b> as oriented (rim down, deck up), no supports<br>
+            <b>Curves &amp; switches:</b> one part per plate. The cantilever warning
+            fires on them regardless, so alone it is attributable and a failure
+            costs one part<br>
             <b>Cooling:</b> run it full. The arch crowns and the walking surface are
             both bridged across open air
         </div>

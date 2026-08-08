@@ -36,7 +36,7 @@ Open the served URL in any modern browser. Everything runs client-side.
 - **Export**: one click generates a ZIP of **watertight** (Manifold-CSG
   verified) STL or 3MF meshes, pre-oriented for printing with **zero
   overhangs** (slicer-verified). Every part comes out **engraved with its own
-  code** — `CURVEL 1.1`, `STR IN 1.1`, `R120 1.1` — cut 0.5 mm into a face you
+  code** — `LEFT CURVE 2.0`, `STR 2.0`, `R120 2.0` — cut 0.5 mm into a face you
   never see from outside an assembled tower: the inside of a rail for track
   pieces, a single hex flat for risers, the base of a foot. The lettering is a
   stroke font, not an outline one — the stroke width IS the minimum printable
@@ -143,6 +143,6 @@ outward-wound manifold.
 Designed for toddler use per the original toy's class: no printed axles
 (use 3 mm metal rod), and **all ballast bores and axle ends must be sealed
 with glued plugs** — BBs and rods are choke hazards. (Perimeter count used to
-be listed here as a safety measure; it is not one. The track is a 1.6 mm
-shell — four lines wide at a 0.4 nozzle — so it prints solid regardless of
+be listed here as a safety measure; it is not one. The track is a 2.4 mm
+shell — six lines wide at a 0.4 nozzle — so it prints solid regardless of
 the setting.)

@@ -1738,10 +1738,10 @@ const MATRIX = [
     ['Toy slides without walking', 'Slope too steep, friction too low, or hoof cam too flat', 'Reduce slope 2°. Use the washboard finish. Verify the hoof arcs printed smooth (parts must lie on their sides).'],
     ['Toy stops / stalls mid-ramp', 'Slope too shallow or axle friction too high', 'Increase slope. Ream the axle bores, add dry graphite to the metal pin. Raise axle-quality in the model to see the effect.'],
     ['Toy tips forward and falls', 'Center of mass too high or too far forward', 'Move ballast lower and rearward in the bore. Slightly flatten the front of the hoof cam.'],
-    ['Toy turns sideways and jams', 'Track too wide or legs asymmetric', 'Keep inner width ≤ figure width + 4 mm. Confirm left/right hooves weigh the same.'],
+    ['Toy turns sideways and jams', 'Figure too wide for the turn, or legs asymmetric', 'The channel is 48 mm and a real Klip Klop measures 38 — that pairing is measured, not tunable, and it clears the tightest legal curve with 3.4 mm to spare. Check the figure is under 41 mm across and that both hooves weigh the same.'],
     ['Swinging leg barely moves', 'Pendulum rubbing inside the slot', 'Sand the pendulum faces; add thin washers on the axle as spacers; confirm 0.5 mm clearance per side.'],
     ['Horse stumbles at a seam', 'Uphill lip at the joint', 'Exports drop each downhill floor 0.25 mm (waterfall rule) — check the printed seam for blobs and re-seat the bowtie key.'],
-    ['Horse stops at a switch', 'Gate vane misaligned or pin too tight', 'The vane must clear the selected route completely; ream the pin bore, verify the gate swings freely.']
+    ['Horse stops at a switch', 'Gate vane misaligned, or the gate has drifted off its position', 'The vane must clear the selected route completely. Do NOT ream the bore: the pivot is a SPLIT PIN that grips by spring, and the grip is what holds the gate against the figure. If it is stiff, work it back and forth to bed the C in.']
 ];
 $('matrix').innerHTML = MATRIX.map(([sym, cause, fix]) => `
     <details class="matrix"><summary>${sym}</summary>
@@ -3151,7 +3151,7 @@ const exportMode = () => document.querySelector('input[name="export-mode"]:check
 
 function refreshExportModeHint() {
     $('export-mode-hint').textContent = exportMode() === 'plates'
-        ? `One file per ${PLATE.width} mm plate, parts laid out and rotated to fit.`
+        ? `One file per ${PLATE.width} mm plate, parts laid out and rotated to fit. Curves and switches get plates of their own.`
         : 'One file per part, unpacked.';
 }
 for (const r of document.querySelectorAll('input[name="export-mode"]')) {
@@ -3172,10 +3172,10 @@ function assembleParts() {
     const parts = [];
     const note = {
         piece: 'End ribs carry the bowtie pockets; hex socket under the boss; washboard floor.',
-        switch: 'Two routes merged with an open frog, three bowtie pockets, gate-pin bore at the mouth.',
+        switch: 'Two routes merged with an open frog, three bowtie pockets, and the gate-pin bore where the branch first pulls clear of the main.',
         key: 'Slots up into the pockets of two mating pieces and pulls the seam closed.',
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
-        pillar: 'Hex tenon, 8.6 mm across the flats, plugs into any track or scenery socket (9 mm across flats × 10 deep).',
+        pillar: 'Hex tenon, 8.6 mm across the flats, 10 mm deep. Sockets are drawn 9.0 in risers and scenery but 8.75 in a track piece — the same hole prints 0.25 mm bigger in that much plastic, so they are drawn apart to print alike.',
         jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
         scenery: 'Shares the same hex tenon/socket interlock standard.',
         figure: 'Print on its side; hoof cams must be smooth arcs.'
@@ -5080,18 +5080,24 @@ function exportReadme(joints, switchCount, plateManifest = null) {
     // Numbered as a list, not as literal digits: a design with no switches used
     // to print an empty step "3." where the gate instructions would have gone.
     const steps = [
-        `Slide a bowtie connector key UP into each seam from underneath. The
-   pocket is a through-slot open at the rim, so the key goes in from below,
-   not down from the deck. Push until it snaps past the retention ledge
-   (${SPEC.key.detentProud} mm) and rests on it. ${joints} seams, ${joints} keys.`,
+        `Slide a bowtie key UP into each seam from underneath. The pocket is a
+   through-slot open at the rim, so the key goes in from below, not down from
+   the deck. Push it ALL THE WAY UP until its top face stops against the top
+   of the pocket — that stop is what makes the two walking surfaces meet
+   flush, so a key left short leaves a step at the seam. The last
+   ${(SPEC.key.gripRiseMm + SPEC.key.seatLandMm).toFixed(1)} mm are a firm slide as the pocket flanks close on it.
+   ${joints} seams, ${joints} keys.`,
         `The downhill floor at every seam sits ${SPEC.waterfallStepMm} mm lower than the uphill
    one. That is the waterfall rule and it is deliberate — do not sand it flat.`,
         `Stack a support under each socket: one foot plus risers (120/60/30/15 mm)
    summing to that piece's rim height, which is always a multiple of 15 mm.
    The app's parts list already tells you how many of each.`,
         switchCount
-            ? `Insert the ${switchCount} gate paddle(s) into the switch bores; flick to route
-   the figure. The paddle must swing freely.`
+            ? `Press the ${switchCount} gate paddle(s) into the switch bores. The pin is a
+   SPLIT PIN: it is drawn oversize and squeezes closed as it goes in, so it
+   should take a firm push and then hold wherever you set it. That grip is
+   what stops the figure knocking the gate off its route — do not ream the
+   bore to ease it.`
             : null,
         `Cut a 3 mm steel/brass rod to ${(FIGURE.widthMm + 3).toFixed(0)} mm for the figure's axle.
    The pendulum must swing DEAD FREE — dry graphite, never oil.`,
@@ -5137,8 +5143,16 @@ PRINTING
   socket boss. That is a modest footprint for a 150-225 mm part: use a brim
   if your first layer is at all marginal.
 - Pillars, risers, feet and towers: print upright. Everything shares one
-  interlock — hex tenon ${SPEC.socket.hexAF - 0.4} mm AF into hex socket ${SPEC.socket.hexAF} mm AF x ${SPEC.socket.depth} deep.
-- Connector keys print flat. Gate paddles print on their sides.
+  interlock — a hex tenon ${(SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm).toFixed(1)} mm across the flats, ${SPEC.socket.depth} mm deep. The
+  socket it goes into is drawn ${SPEC.socket.hexAF} in a riser or a scenery part and
+  ${(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF).toFixed(2)} in a track piece: the same hole prints ${SPEC.socket.trackShrinkAF} mm bigger
+  surrounded by that much more plastic, so the two are drawn apart to come
+  out the same size.
+- Curves and switches are packed one to a plate. The slicer's cantilever
+  warning fires on them whatever the geometry, so alone it tells you which
+  part it means, and a part that comes loose takes nothing else with it.
+- Bowtie keys print flat. Gate paddles print on their sides — note the pin is
+  a split C and needs no support inside its slot.
 - Palm trees are pre-rotated crown-down. The figure's body and pendulum are
   pre-rotated onto their sides so the hoof cams print as smooth arcs —
   NEVER print the figure upright.
