@@ -242,7 +242,9 @@ raising the arch crowns, or accepting supports on curves.
 | Channel | 48.00 | 47.68 | −0.080 (walls encroach) |
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
 | Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
-| Track hex socket | 9.00 | 8.95 on all three flat pairs | −0.05, and round |
+| Track hex socket ×3 | 9.00 | 8.95 / 8.90 / 8.85, all round | −0.05 to −0.15 |
+| Hex tenon | 8.60 | 8.60 uniform | 0 |
+| Boss outer | Ø19.00 | 18.90 | −0.05 (same 0.53% as the socket) |
 | Key SLOT neck, at the top | 16.40 | 16.85 | +0.225 |
 | Key SLOT neck, low down | 16.40 | 16.94 | +0.270 |
 | Key SLOT neck, at the bed | 16.40 | 17.00 | +0.300 |
@@ -279,18 +281,30 @@ convex tips, so it prints with a different RAKE. That is the whole "tight and
 loose at once", and the key is now drawn pre-distorted at the waist to correct
 it.
 
-**The loose track socket is still unexplained, and two hypotheses have died.**
-First: it prints oversize. Measured 8.95 against 9.00 drawn — slightly UNDER.
-Second: it prints oval, so a tenon bears on the tight flat pair and rocks on
-the others. Measured across all three pairs it reads 8.95 on every one: round
-and true. Achieved clearance is 0.125–0.175 mm/side against a tenon at
-8.6–8.7, which is not obviously loose on paper while the hand says it is.
+**The track socket, settled by measurement rather than by explanation.** Three
+sockets read uniform on all three flat pairs — 8.95, 8.90, 8.85 against 9.00
+drawn — and the tenon dead on 8.60. Achieved clearance 0.125–0.175 mm/side with
+only 0.05 of spread, where a located hex joint wants nearer 0.10. So the socket
+is drawn 0.1 AF small and lands at 0.075–0.125.
 
-So either the RISER socket is smaller than this one, or the difference is not a
-size at all — and the riser socket has not been measured. `trackShrinkAF` is
-0.1 as a hedge: tighter than measured, still assembling at the tight end, and
-it leaves the riser-to-riser joint that already works alone. It is labelled
-provisional in the code.
+Three explanations for why it prints under died on the way: oversize (no,
+under), oval (no, uniform on every pair), and "the hole is the problem" — the
+boss outer is 18.90 against Ø19.00, and 18.90/19.00 matches 8.95/9.00 to four
+decimals, so the whole boss simply shrank 0.53% thermally. None of that matters
+in the end: the clearance is measured, the target is known, and the correction
+is the difference. Worth noticing that the TENON prints exactly to size, which
+is the tell — an external feature gets +nozzle and −shrink and they cancel, an
+internal one gets both inward.
+
+**The key's taper does not transfer to the hex, and it nearly did.** A taper
+works on the key because its seat height is free: it stops wherever it wedges,
+3 mm either way changes nothing, and there is 30 mm of throat. A riser meets
+the part above SHOULDER TO SHOULDER, with the tenon a locator, and every stack
+height is on the 15 mm grid — so a wedging taper there holds the shoulder off
+and makes the tower tall. The measured clearance spread is comparable to the
+whole interference budget too, so no single taper grips the loose end without
+pressing the tight one. If 0.1 AF is not enough, the right feature is a
+crushable rib: compliance that is local, so the shoulder still seats.
 
 **Z is an order of magnitude better than XY, which is the real argument for the
 taper.** Per side, measured on the same parts: Z +0.022 (the key is 5.645 tall

@@ -131,29 +131,43 @@ export const SPEC = {
     socket: {
         hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7,
         /**
-         * The track's socket is cut slightly smaller than everything else's,
-         * and this is PROVISIONAL — the measurement that would justify it
-         * properly has not been taken.
+         * The track socket is drawn 0.1 AF small, and this time the number
+         * comes from the joint rather than from a theory about it.
          *
-         * Two hypotheses have already died here. The first was that the track
-         * socket prints oversize, since riser-into-riser is snug at the same
-         * nominal and the same tenon is loose in the track: measured, it comes
-         * out 8.95 against 9.00 drawn, slightly UNDER. The second was that it
-         * prints oval, so a tenon would bear on the tight flat pair and rock
-         * on the rest: measured across all three pairs, it reads 8.95 on every
-         * one. The socket is round, true, and very slightly small.
+         * Three sockets measured uniform on all three flat pairs — 8.95, 8.90,
+         * 8.85 against 9.00 drawn — and the tenon dead on 8.60. That gives an
+         * achieved clearance of 0.125-0.175 mm/side with only 0.05 of spread,
+         * where a located hex joint in PLA wants nearer 0.10. Drawing 0.1 AF
+         * out lands it at 0.075-0.125.
          *
-         * Which leaves the achieved clearance at 0.125-0.175 mm/side — not
-         * obviously loose on paper — while the hand says it is. So either the
-         * RISER socket is smaller than this one, or the difference is not a
-         * size at all, and nobody has measured the riser socket yet.
-         *
-         * 0.1 AF is a hedge, not an answer: it takes the track joint to
-         * 0.075-0.125 mm/side, tighter than measured and still assembling at
-         * the tight end, without touching the riser-to-riser joint that
-         * already works. One number settles it.
+         * Three explanations for WHY it prints under have all died — oversize,
+         * oval, and "the hole is the problem" (the boss outer is 18.90 against
+         * Ø19.00, and 18.90/19.00 matches 8.95/9.00 to four decimals, so the
+         * whole boss simply shrank 0.53%, thermally). None of that matters now:
+         * the clearance is measured, the target is known, and the correction is
+         * the difference. The tenon printing exactly to size is the tell — an
+         * external feature gets +nozzle and −shrink and they cancel; an
+         * internal one gets both inward.
          */
-        trackShrinkAF: 0.1
+        trackShrinkAF: 0.1,
+        /**
+         * NO grip taper here, unlike the key — and the reason is worth keeping,
+         * because the key's answer looks like it should transfer and does not.
+         *
+         * A taper works on the key because its SEAT HEIGHT IS FREE: it stops
+         * wherever it wedges, three millimetres either way changes nothing, and
+         * there is 30 mm of throat to give. A riser meets the part above
+         * SHOULDER TO SHOULDER, with the tenon a locator carrying 1 mm of air
+         * under it, and every stack height sits on the 15 mm grid. A wedging
+         * taper there holds the shoulder off and makes the tower tall.
+         *
+         * The measured clearance spread (0.10 AF) is also comparable to the
+         * whole interference budget, so no single taper grips the loose end
+         * without pressing the tight one. If this joint still needs help after
+         * the 0.1 AF, the right feature is a crushable rib — compliance that
+         * is local, so the shoulder still seats.
+         */
+        gripTaperAF: 0
     },
     /**
      * The JOG: an offset riser that moves a support column sideways when the

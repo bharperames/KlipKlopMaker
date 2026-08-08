@@ -478,13 +478,15 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
  * tenon self-align instead of binding on a sharp 90° opening (and absorbs
  * elephant-foot flare on the mating part).
  */
-function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null) {
+function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 0) {
     const AF = afOverride ?? spec.socket.hexAF;
     const dir = Math.sign(yEnd - yOpen);
     const levels = [
         { y: yOpen, af: AF + 1.2 },
         { y: yOpen + dir * 0.8, af: AF },
-        { y: yEnd, af: AF }
+        // closing slightly toward the far end makes a tenon wedge instead of
+        // slip — see SPEC.socket.gripTaperAF
+        { y: yEnd, af: AF - taperAF }
     ];
     const profiles = levels.map(l => hexPlan(l.af).map(([x, z]) => [cx + x, -(cz + z)]));
     const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
@@ -601,7 +603,7 @@ function bossOps(piece, spec, support) {
         op: SUBTRACTION,
         // the track's socket alone is cut undersize — see socket.trackShrinkAF
         geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec,
-            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0))
+            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0), spec.socket.gripTaperAF ?? 0)
     });
     // Core the boss out above the socket: only the socket walls carry the
     // tenon, so a solid post is ~6.6 cm3 doing nothing. The bore continues the
