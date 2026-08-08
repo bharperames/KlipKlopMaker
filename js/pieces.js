@@ -121,35 +121,40 @@ function toManifold(g) {
  * them seized: on a bearing, interference is not a press you can lean on,
  * it is a gate that will not move.
  *
- * So the pin is compliant. A hollow pin with one axial slot is a C-spring:
- * drawn deliberately OVERSIZE, it closes to whatever the bore turns out to
- * be, and it is still pushing outward at the loose end of the range. Every
- * printed pair is then an interference fit and every one of them assembles.
- * At 0.8 mm of wall over 8 mm the C gives roughly 74 N/mm, so across the
- * whole tolerance band the holding torque runs about 3-25 mN.m — from 7x the
- * figure's push at the loose end to half a finger at the tight end.
+ * So the pin is compliant. A hollow pin with one axial slot is a C-spring —
+ * a circlip, in effect. The bore stays a plain, rigid, fully enclosed round
+ * hole; the PIN is the part that gives, squeezing its slot narrower as it
+ * enters and pressing back out against the bore wall.
  *
- * This is a spring, not a crush rib. Nothing is asked to yield: a 0.8 mm
- * section in bending is genuinely compliant, which is exactly what a rib
- * standing proud of a rigid PLA wall is not.
+ * PIN AND BORE ARE DRAWN THE SAME SIZE, Ø4.0, and the shrink does the rest.
+ * Every hole in the measured set came out UNDER, by 0.05 to 0.38 mm, and no
+ * external feature was out by more than 0.10. Draw the two the same and the
+ * pin therefore prints 3.90-4.10 into a bore of 3.62-3.95: an interference of
+ * 0 to 0.48 mm, on eleven readings, with no classification of holes and no
+ * theory about why one socket differs from another. Taking only the external
+ * readings near this size (the key, at +0.045) the floor rises to 0.10.
+ *
+ * Drawing the pin oversize on top of that — it was Ø4.2 for a while — adds
+ * 0.2 mm the shrink has already provided and pushes the worst case from 1.19%
+ * to 1.69% of bending strain in the wall for nothing.
+ *
+ * Nothing is asked to yield: at 0.8 mm of wall on a 1.6 mm mid-wall radius,
+ * closing 0.48 mm is 1.19% strain, against PLA's 2-3% yield. It is a spring,
+ * which is exactly what a rib standing proud of a rigid PLA wall is not.
  */
 export const GATE = {
     vaneThk: 2.6,
     len: 52,
     hubR: 2.9,      // was 5; the rest was grip. Must clear the pin's shoulder.
-    pinR: 2.1,      // Ø4.2 OVERSIZE into a Ø4.0 bore — the C closes to suit
-    pinBoreR: 1.3,  // hollow, leaving 0.8 mm of wall: two perimeters, and a spring
+    pinR: 2.0,      // Ø4.0 — the SAME as the bore; see below
+    pinBoreR: 1.2,  // hollow, leaving 0.8 mm of wall: two perimeters, and a spring
     pinSlot: 1.0,   // the gap that makes it a C rather than a tube
-    boreR: 2.0,     // Ø4.0
+    boreR: 2.0,     // Ø4.0, plain and fully enclosed — the pin is what gives
     /**
-     * 3.2 mm of material around the bore, and that is the other half of the
-     * fix. The boss used to be R3.6, leaving 1.95 mm — the same slenderness
-     * as a riser tube, and PRINT_DEVIATION says a hole in that much plastic
-     * comes out 0.37 mm under where one in a massive body comes out 0.10.
-     * That is a 0.27 mm swing in the bore before any run-to-run variation, so
-     * the bore's own size was not knowable, let alone the fit. Grown until the
-     * hole is unambiguously in the massive class, it is 3.90-4.10 printed, and
-     * the C-pin can be sized against a number instead of a range of theories.
+     * 3.2 mm of material around the bore, and the reason is structural, not
+     * a print-shrinkage theory. The boss was R3.6, which leaves 1.6 mm of
+     * wall around a Ø4 bore — thin for a bearing that takes its load
+     * sideways, through a 52 mm blade. R5.2 doubles it.
      */
     bossR: 5.2
 };

@@ -861,8 +861,18 @@ describe('the key can actually be fitted', () => {
                 `${Math.abs(gapDeg - nominal) <= 5 ? 'within 5' : 'OFF'}`);
         expect(solidAt(0, 0, -4)).toBe(false);        // hollow
         expect(GATE.pinR - GATE.pinBoreR).toBeCloseTo(0.8, 6);   // two perimeters of spring
-        // and drawn OVERSIZE, or it is not a spring, it is a loose pin
-        expect(GATE.pinR).toBeGreaterThan(GATE.boreR);
+        // Pin and bore are drawn the SAME size, and the shrink supplies the
+        // interference: every hole in the measured set came out under, and no
+        // external feature was out by more than 0.10, so equal nominals land
+        // between 0 and 0.48 mm of interference on the readings alone — no
+        // classification of holes, no theory about why one socket differs
+        // from another. Drawing the pin oversize on top of that only adds
+        // bending strain in the wall for grip the shrink already provides.
+        expect(GATE.pinR).toBe(GATE.boreR);
+        const { PRINT_DEVIATION } = await import('../js/geometry.js');
+        expect(PRINT_DEVIATION.hole.devMm).toBeLessThan(0);
+        expect(Math.abs(PRINT_DEVIATION.external.devMm))
+            .toBeLessThan(Math.abs(PRINT_DEVIATION.hole.devMm));
     });
 
     test('the grip cannot spend the seat height', async () => {

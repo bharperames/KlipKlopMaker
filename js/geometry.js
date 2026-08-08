@@ -745,50 +745,63 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
 /**
  * How a printed feature differs from the model it was cut from — MEASURED.
  *
- * A drawn size and a printed size are different numbers, and the difference is
- * not one number: it depends on whether the feature is made of material or
- * made of air, and — this is the part that cost a print run — on how much
- * plastic surrounds it.
+ * Everything here is calipers on one printed set. `devMm` is printed minus
+ * drawn, ACROSS the feature (not per side), so a negative deviation on a hole
+ * means the hole came out small.
  *
- * Everything here comes off one printed set with calipers. `devMm` is the
- * printed size minus the drawn size, ACROSS the feature (not per side), so a
- * negative deviation on a hole means the hole came out small.
+ *   feature measured             drawn    printed          deviation
+ *   ---------------------------------------------------------------
+ *   hex tenon AF (riser)          8.60    8.60              0.000
+ *   hex tenon AF (foot pier)      8.60    8.60-8.70         0.00 .. +0.10
+ *   socket boss OD               19.00    18.90            -0.100
+ *   key thickness                 5.60    5.645            +0.045
+ *   key front-to-back            18.00    18.07            +0.070
+ *   track socket AF (x3)          9.00    8.95/8.90/8.85   -0.05 .. -0.15
+ *   riser socket AF (x2)          9.00    8.62, 8.65       -0.35 .. -0.38
  *
- *   class          feature measured            drawn    printed        dev
- *   external       hex tenon AF (x2)            8.60     8.60, 8.6-8.7  0.00
- *                  socket boss OD              19.00    18.90          -0.10
- *                  key thickness                5.60     5.64-5.65     +0.05
- *                  key front-to-back           18.00    18.07          +0.07
- *   holeMassive    track socket AF (x3)         9.00     8.95/8.90/8.85 -0.10
- *   holeSlender    riser socket AF (x2)         9.00     8.62, 8.65     -0.37
+ * THE ONE ROBUST STATEMENT: every hole came out under, by 0.05 to 0.38, and
+ * every external feature came out within 0.10 either way. Not one hole
+ * printed over. Anything that only needs that much — and a joint drawn so
+ * that shrinkage HELPS it only needs that much — stands on eleven readings
+ * with no theory in between.
  *
- * The last two rows are the same drawn feature — hexSocketSolid at AF 9 — and
- * they print a quarter of a millimetre apart. That is not noise: it is the
- * only thing that explains why the pillar-to-pillar joint feels right while
- * the same joint into a track piece falls apart. A socket in a slender hex
- * tube is surrounded by two perimeters and a few seconds of layer time; a
- * socket buried in a track piece's boss has a big cool body around it. The
- * hot, thin one closes in on itself; the massive one barely moves.
+ * THE PART THAT IS NOT ESTABLISHED: the two socket rows are the same drawing
+ * (hexSocketSolid at AF 9) and land 0.25 apart, and the cause is unknown.
+ * A previous version of this comment blamed thermal mass — a "slender" riser
+ * tube against a "massive" track boss — and that does not survive checking:
+ * the riser body is 15 AF around a 9 AF socket, so it carries 3.0 mm of wall,
+ * against the boss's 5.0. Both are thick. Live alternatives, none excluded:
  *
- * So a socket that must PRINT at one size has to be DRAWN at two — see
- * SPEC.socket.trackShrinkAF, which is exactly the difference between these
- * two rows.
+ *  - MEASUREMENT. hexSocketSolid opens with a 0.8 mm flare from AF+1.2 down
+ *    to AF. Caliper jaws sitting anywhere in that flare read up to 1.2 mm
+ *    over, and a socket recessed inside a Ø19 boss is harder to reach into
+ *    than one in the end of a 15 mm hex tube — which predicts exactly the
+ *    sign observed. This alone could be the whole 0.25.
+ *  - Different plates, different layer times, different heights in the print.
+ *  - Blind (capped by the cored boss) against through.
  *
- * Corner rounding is tracked separately (cornerRadiusMm): it is not a size
- * error, it is a shape error, and on a 66° bowtie tip it dwarfs everything
- * here. Two of the "measurements" that look wildly off — a key waist reading
- * 16.4 where 16.0 was drawn, its slot reading 16.85 where 16.4 was — are
- * neither: a caliper jaw is flat and cannot enter a CONCAVE vertex, so it
- * rides up the flanks and reads a bowtie waist wide. Both parts read wide by
- * the same amount, which is why the pair still fits and why pre-shrinking the
- * key on the strength of that number was a mistake.
+ * What IS independent of all that is how the joints behave: the same tenon is
+ * snug in a riser socket and falls out of a track socket. A caliper artefact
+ * cannot make a joint feel loose. So the DIRECTION is real and the MAGNITUDE
+ * is the uncertain part — which is why SPEC.socket.trackShrinkAF rests on the
+ * fit reports and treats 0.25 as its best available estimate, not as a fact.
+ *
+ * Corner rounding is tracked separately (cornerRadiusMm): a shape error, not
+ * a size error, and on a 66° bowtie tip it dwarfs everything here. Two
+ * readings that look wildly off — a key waist at 16.4 where 16.0 was drawn,
+ * its slot at 16.85 where 16.4 was — are neither: a flat caliper jaw cannot
+ * enter a CONCAVE vertex, so it rides up the flanks and reads a bowtie waist
+ * wide. Both parts read wide by the same amount, which is why the pair still
+ * fits and why pre-shrinking the key on that number was a mistake.
  */
 export const PRINT_DEVIATION = {
-    /** material — outer surfaces of tenons, keys, walls */
-    external: { devMm: 0.00, sigmaMm: 0.07, n: 4 },
-    /** air, in a body with thermal mass around it — track sockets, pockets */
+    /** material — outer surfaces of tenons, keys, walls. n=5, range ±0.10 */
+    external: { devMm: 0.00, sigmaMm: 0.07, n: 5 },
+    /** every hole, pooled: the statement that needs no classification */
+    hole: { devMm: -0.21, sigmaMm: 0.14, n: 5 },
+    /** the three track-piece sockets on their own */
     holeMassive: { devMm: -0.10, sigmaMm: 0.05, n: 3 },
-    /** air, in a slender part — riser/foot sockets, thin hex tubes */
+    /** the two riser sockets on their own — same drawing, 0.25 apart, cause unknown */
     holeSlender: { devMm: -0.37, sigmaMm: 0.05, n: 2 }
 };
 

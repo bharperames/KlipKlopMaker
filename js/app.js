@@ -3175,7 +3175,7 @@ function assembleParts() {
         switch: 'Two routes merged with an open frog, three bowtie pockets, and the gate-pin bore where the branch first pulls clear of the main.',
         key: 'Slots up into the pockets of two mating pieces and pulls the seam closed.',
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
-        pillar: 'Hex tenon, 8.6 mm across the flats, 10 mm deep. Sockets are drawn 9.0 in risers and scenery but 8.75 in a track piece — the same hole prints 0.25 mm bigger in that much plastic, so they are drawn apart to print alike.',
+        pillar: 'Hex tenon, 8.6 mm across the flats, 10 mm deep. Sockets are drawn 9.0 in risers and scenery but 8.75 in a track piece: from the same AF 9 drawing the riser sockets measured 8.62–8.65 and the track sockets 8.85–8.95, and the same tenon is snug in one and loose in the other.',
         jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
         scenery: 'Shares the same hex tenon/socket interlock standard.',
         figure: 'Print on its side; hoof cams must be smooth arcs.'
@@ -5145,9 +5145,11 @@ PRINTING
 - Pillars, risers, feet and towers: print upright. Everything shares one
   interlock — a hex tenon ${(SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm).toFixed(1)} mm across the flats, ${SPEC.socket.depth} mm deep. The
   socket it goes into is drawn ${SPEC.socket.hexAF} in a riser or a scenery part and
-  ${(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF).toFixed(2)} in a track piece: the same hole prints ${SPEC.socket.trackShrinkAF} mm bigger
-  surrounded by that much more plastic, so the two are drawn apart to come
-  out the same size.
+  ${(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF).toFixed(2)} in a track piece. From the same AF ${SPEC.socket.hexAF} drawing the riser sockets
+  measured 8.62-8.65 and the track sockets 8.85-8.95, and the same tenon is
+  snug in the first and loose in the second, so they are drawn ${SPEC.socket.trackShrinkAF} apart to
+  come out alike. Measure yours: past the 0.8 mm lead-in flare at the mouth,
+  both should now read about 8.65.
 - Curves and switches are packed one to a plate. The slicer's cantilever
   warning fires on them whatever the geometry, so alone it tells you which
   part it means, and a part that comes loose takes nothing else with it.
