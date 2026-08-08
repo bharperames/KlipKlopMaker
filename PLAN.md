@@ -243,7 +243,9 @@ raising the arch crowns, or accepting supports on curves.
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
 | Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
 | Track hex socket | 9.00 | 8.9–9.1 | at nominal, ±0.1 **within one socket** |
-| Key SLOT at the face | 16.40 | 16.85 | +0.225 |
+| Key SLOT neck, at the top | 16.40 | 16.85 | +0.225 |
+| Key SLOT neck, low down | 16.40 | 16.94 | +0.270 |
+| Key SLOT neck, at the bed | 16.40 | 17.00 | +0.300 |
 | Key SLOT at its widest | 24.58 | 23.90 | −0.339 |
 
 **The slot measurements overturned a correction I had already made.** The key
@@ -291,6 +293,13 @@ direction: **the process variation is wider than these fit windows, so
 dimensioning alone cannot close either joint.** Both want a compliant feature —
 something that takes up 0.2 mm without either rattling or jamming. That is the
 next real design step, and it is one design serving both joints.
+
+**The slot is prismatic, which is what lets the grip taper work.** Read at three
+heights it goes 17.00 at the bed, 16.94 low down, 16.85 at the top — 0.15 mm of
+drift over 39 mm, and running the helpful way, widest where the key enters. So
+the throat is its own lead-in, nothing unintended grips anywhere along it, and
+the deliberate 0.3 mm over 10 mm is 8x steeper than the drift. The grip is the
+thing gripping, not a print artefact. There is a test on that ratio.
 
 **The grip moved front-to-back, up a taper.** The flanks were being asked to
 wedge the seam shut AND hold the key in, and the clearance that lets a key

@@ -181,10 +181,18 @@ export const SPEC = {
     key: {
         neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
         // Per side, key flank to pocket wall, drawn. Printing adds ~0.025 to
-        // it (measured: 0.2 drawn came out 0.225), so this lands at ~0.145 on
-        // the part — a comfortable slide where 0.225 rattled. It does not need
-        // to be tight: the flanks only bear when something tries to pull the
-        // seam open, and retention is the grip taper's job now.
+        // it — the slot's neck came out 16.85 against 16.40 drawn while the
+        // key's came out 16.40 against 16.00, so the two oversizes very nearly
+        // cancel — and this lands at ~0.145/side at the seat where 0.225
+        // rattled. It does not need to be tight: the flanks only bear when
+        // something tries to pull the seam open, and retention is the grip
+        // taper's job now.
+        //
+        // Measured up the throat, the slot runs 17.00 at the bed, 16.94 low
+        // down and 16.85 at the top: essentially prismatic, 0.15 mm of drift
+        // over 39 mm, and running the helpful way — widest where the key goes
+        // in. So the throat is its own lead-in, and nothing unintended is
+        // gripping anywhere along it.
         fitClearanceMm: 0.12,
         /**
          * NO drawn-vs-printed compensation, and the reason is worth keeping.
@@ -244,7 +252,9 @@ export const SPEC = {
          *
          * The point of a taper is that it does not have to hit a dimension. A
          * key that prints 0.1 mm over just stops 3 mm lower; one that prints
-         * under goes 3 mm higher. Variation becomes seat height instead of
+         * under goes 3 mm higher. At 0.3 mm over 10 mm it is 8x steeper than
+         * the 0.15 mm of drift the slot shows over its whole 39 mm height, so
+         * the grip is the thing doing the gripping and not a print artefact. Variation becomes seat height instead of
          * rattle or jam, and there is 30 mm of throat to absorb it. That is
          * the compliance both the key's Monte Carlo and the hex socket's
          * 0.2 mm of ovality have been asking for.

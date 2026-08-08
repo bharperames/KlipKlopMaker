@@ -785,6 +785,10 @@ describe('the key can actually be fitted', () => {
         const { SPEC } = await import('../js/track.js');
         const K = SPEC.key;
         const slope = K.gripTaperMm / K.gripRiseMm;      // mm of depth per mm of rise
+        // measured: a printed slot drifts 0.15 mm over its ~39 mm height, so
+        // the deliberate grip has to be much steeper than that or a print
+        // artefact would decide where the key stops
+        expect(slope).toBeGreaterThan(5 * (0.15 / 39));
         const processMm = 0.1;
         const seatShift = processMm / slope;
         expect(seatShift).toBeLessThan(K.gripRiseMm);    // still inside the taper
