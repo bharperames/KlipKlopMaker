@@ -254,7 +254,14 @@ export const SPEC = {
          * key that prints 0.1 mm over just stops 3 mm lower; one that prints
          * under goes 3 mm higher. At 0.3 mm over 10 mm it is 8x steeper than
          * the 0.15 mm of drift the slot shows over its whole 39 mm height, so
-         * the grip is the thing doing the gripping and not a print artefact. Variation becomes seat height instead of
+         * the grip is the thing doing the gripping and not a print artefact.
+         *
+         * It also moves the fit onto the axis this printer is actually good
+         * at. Measured per side: Z +0.022 (the key is 5.645 tall against 5.60
+         * drawn, 28 exact layers), XY flat faces +0.035, and the XY features
+         * that were being asked to hold the joint — the concave waist and the
+         * slot — +0.20 to +0.30. Z is an order of magnitude better controlled,
+         * and a taper spends XY error as Z position, which is free. Variation becomes seat height instead of
          * rattle or jam, and there is 30 mm of throat to absorb it. That is
          * the compliance both the key's Monte Carlo and the hex socket's
          * 0.2 mm of ovality have been asking for.

@@ -247,6 +247,7 @@ raising the arch crowns, or accepting supports on curves.
 | Key SLOT neck, low down | 16.40 | 16.94 | +0.270 |
 | Key SLOT neck, at the bed | 16.40 | 17.00 | +0.300 |
 | Key SLOT at its widest | 24.58 | 23.90 | −0.339 |
+| Key HEIGHT (Z) | 5.60 | 5.64–5.65 | **+0.022** |
 
 **The slot measurements overturned a correction I had already made.** The key
 alone prints with a shallower rake than it is drawn with (waist fills in, tips
@@ -293,6 +294,14 @@ direction: **the process variation is wider than these fit windows, so
 dimensioning alone cannot close either joint.** Both want a compliant feature —
 something that takes up 0.2 mm without either rattling or jamming. That is the
 next real design step, and it is one design serving both joints.
+
+**Z is an order of magnitude better than XY, which is the real argument for the
+taper.** Per side, measured on the same parts: Z +0.022 (the key is 5.645 tall
+against 5.60 drawn — 28 exact layers), XY flat faces +0.035, and the XY
+features that were being asked to hold this joint, the concave waist and the
+slot, +0.20 to +0.30. So the flanks were carrying the fit on the printer's
+worst dimension. A taper spends XY error as seat height, and seat height is
+both free and measured in the accurate axis.
 
 **The slot is prismatic, which is what lets the grip taper work.** Read at three
 heights it goes 17.00 at the bed, 16.94 low down, 16.85 at the top — 0.15 mm of
