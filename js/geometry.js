@@ -586,14 +586,72 @@ function deckYOffset(piece, station) {
  * ribs; the old protruding tab was a floating cantilever in the slicer).
  * Plan coords: z along the track (seam at z=0), x lateral.
  */
-export function bowtieKeyPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0 }) {
+export function bowtieKeyPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0, tipChamfer = 0 }) {
     const n = neckHalf + clearance, t = tipHalf + clearance, d = depth + clearance;
-    return [
+    const corners = [
         [-t, -d], [t, -d],
         [n, 0],
         [t, d], [-t, d],
         [-n, 0]
     ];
+    if (!(tipChamfer > 0)) return corners;
+    // Cut the four TIP corners back. They are the only convex vertices that
+    // meet an internal corner of the pocket, and an internal corner has a
+    // nozzle radius in it — so a sharp tip lands on that radius and holds the
+    // key off its own flanks. The neck vertices are concave and meet open air.
+    const out = [];
+    for (let i = 0; i < corners.length; i++) {
+        const p = corners[i];
+        if (Math.abs(Math.abs(p[0]) - t) > 1e-9) { out.push(p); continue; }
+        const prev = corners[(i + corners.length - 1) % corners.length];
+        const next = corners[(i + 1) % corners.length];
+        out.push(towards(p, prev, tipChamfer), towards(p, next, tipChamfer));
+    }
+    return out;
+}
+
+/** `dist` along the segment from `a` to `b`. */
+function towards(a, b, dist) {
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const L = Math.hypot(dx, dz) || 1;
+    const f = Math.min(0.45, dist / L);
+    return [a[0] + dx * f, a[1] + dz * f];
+}
+
+/**
+ * Does a printed key actually fit its printed pocket?
+ *
+ * The joint has two independent ways to fail and the printed set found both.
+ * The FLANKS are what should carry the wedging load, and a horizontal
+ * clearance only buys 91% of itself there because they are raked. The far
+ * CORNERS of the pocket are internal, so a nozzle leaves a radius in them; a
+ * sharp key tip cannot enter that radius, and if the interference there
+ * exceeds the flank gap the key rides on its corners and rattles everywhere
+ * else. At the shipped 0.2 mm clearance it did exactly that: 0.20 mm of corner
+ * bind against 0.18 mm of flank gap.
+ *
+ * Returns millimetres, per side. `cornerBindMm > 0` means the key cannot seat.
+ */
+export function bowtieFit({ neckHalf = 8, tipHalf = 12, depth = 9,
+                            clearance = 0.1, tipChamfer = 0, cornerRadius = 0.3 } = {}) {
+    const flare = (tipHalf - neckHalf) / depth;
+    const flankGapMm = clearance / Math.sqrt(1 + flare * flare);
+    // pocket's far corner, and the arc a nozzle leaves in it
+    const zFar = depth + clearance;
+    const px = neckHalf + clearance + flare * zFar;
+    const cx = px - cornerRadius, cz = zFar - cornerRadius;
+    // the nearest point of the key to that arc centre
+    const key = bowtieKeyPlan({ neckHalf, tipHalf, depth, tipChamfer });
+    let nearest = Infinity;
+    for (let i = 0; i < key.length; i++) {
+        const a = key[i], b = key[(i + 1) % key.length];
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const L2 = dx * dx + dz * dz || 1;
+        let t = ((cx - a[0]) * dx + (cz - a[1]) * dz) / L2;
+        t = Math.max(0, Math.min(1, t));
+        nearest = Math.min(nearest, Math.hypot(cx - (a[0] + dx * t), cz - (a[1] + dz * t)));
+    }
+    return { flankGapMm, cornerBindMm: cornerRadius - nearest, seats: cornerRadius - nearest <= 0 };
 }
 
 /**
@@ -627,6 +685,81 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
         [wall(zFar), zFar],
         [-wall(zFar), zFar]
     ];
+}
+
+/**
+ * How a printed feature differs from the model it was cut from, per side.
+ *
+ * Positive means the printed surface sits PROUD of the model — so a key comes
+ * out fatter and a slot comes out narrower, both of which eat clearance. The
+ * sign is not known for small features on this printer: a 48 mm channel
+ * measured 47.68 (0.16/side proud), which would make every joint tight, while
+ * the printed keys came out loose. Those cannot both be one bias, so the bias
+ * is treated as UNKNOWN and swept. What the simulation reports is how robust a
+ * clearance is across the range, not a single answer that depends on believing
+ * one measurement over another.
+ */
+export const PROCESS = {
+    biasMm: 0,          // systematic; swept over ±0.1 rather than trusted
+    sigmaMm: 0.05,      // run to run, per side
+    cornerRadiusMm: 0.30,
+    cornerSigmaMm: 0.08,
+    /** interference a hand can push a key past, per side */
+    maxPressMm: 0.05,
+    /** gap above which the joint rattles, per side */
+    looseMm: 0.12
+};
+
+/** Deterministic PRNG — a test that moves when nobody changed anything is noise. */
+function mulberry32(seed) {
+    return () => {
+        seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * Monte Carlo over the printing variation: what fraction of printed keys both
+ * GO IN and come out snug?
+ *
+ * A single nominal fit tells you little here, because the two failure modes
+ * pull opposite ways — tighten it and more keys bind, loosen it and more
+ * rattle — and the printed set managed BOTH at once by riding on its corners
+ * while its flanks floated. So the thing to maximise is the fraction of runs
+ * landing in between, and the thing to choose is the clearance whose good
+ * fraction survives the bias being unknown.
+ */
+export function bowtieFitTrials({
+    neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.1, tipChamfer = 0,
+    process = PROCESS, bias = null, trials = 4000, seed = 12345
+} = {}) {
+    const rnd = mulberry32(seed);
+    const normal = () => {
+        const u = Math.max(1e-9, rnd()), v = rnd();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    };
+    const b = bias ?? process.biasMm;
+    let assembles = 0, snug = 0, good = 0;
+    const gaps = [];
+    for (let i = 0; i < trials; i++) {
+        // key proud by one draw, pocket wall proud by another: both eat clearance
+        const eaten = (b + normal() * process.sigmaMm) + (b + normal() * process.sigmaMm);
+        const r = Math.max(0, process.cornerRadiusMm + normal() * process.cornerSigmaMm);
+        const f = bowtieFit({ neckHalf, tipHalf, depth, clearance: clearance - eaten, tipChamfer, cornerRadius: r });
+        gaps.push(f.flankGapMm);
+        const goesIn = f.cornerBindMm <= process.maxPressMm && f.flankGapMm >= -process.maxPressMm;
+        const isSnug = f.flankGapMm <= process.looseMm;
+        if (goesIn) assembles++;
+        if (isSnug) snug++;
+        if (goesIn && isSnug) good++;
+    }
+    gaps.sort((x, y) => x - y);
+    return {
+        pAssembles: assembles / trials, pSnug: snug / trials, pGood: good / trials,
+        medianFlankGapMm: gaps[gaps.length >> 1]
+    };
 }
 
 /** Regular polygon (plan) for hex sockets / tenons. acrossFlats in mm. */

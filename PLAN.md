@@ -164,6 +164,44 @@ The thicker wall stiffens the arch ribs but does NOT change the span that
 causes it: the deck still bridges the full channel, 47.4 mm, at every layer.
 See the entry below.
 
+## Tuning the joints from the printed set (2026-08-08)
+
+Both joints came back wrong, in ways that sound contradictory until you measure
+them, and `bowtieFitTrials` in geometry.js now runs the printing variation
+rather than assuming a nominal.
+
+**The key was tight and loose at the same time, and that is one fault.** At the
+shipped 0.2 mm clearance the flanks had 0.18 mm of gap while the four TIP
+corners interfered by 0.20 mm — a pocket's far corners are internal, a 0.4 mm
+nozzle leaves a ~0.30 mm radius in them, and a sharp key tip cannot enter that.
+So the key stood on its corners and rattled everywhere else, which is exactly
+what it felt like in the hand.
+
+**The chamfer was the binding constraint, not the clearance.** That is what the
+simulation was worth: at 0.8 mm of tip chamfer the joint only tolerates a corner
+radius up to 0.37 mm, and the radius is 0.30 ± 0.08, so a fifth of printed keys
+still bound. Past ~1.2 mm the corner stops being the limiter at all. 1.4 mm
+tolerates 0.58 mm, past three sigma, and more buys nothing.
+
+    printed set (0.20, no chamfer)   P(goes in)  9%   P(snug) 17%   P(both)  0%
+    now         (0.08, 1.4 chamfer)  P(goes in) 96%   P(snug) 77%   P(both) 73%
+
+**What the simulation will not do is guarantee it.** Swept over an unknown
+process bias of ±0.10 mm/side, no clearance keeps a good fraction — 0.10 mm of
+bias alone eats the whole fit window. The honest next step is to MEASURE the
+bias off a calibration coupon (one key, one pocket, calipers) and set
+`SPEC.key.fitClearanceMm` from it; the constant and the model are both one line
+to re-tune. Failing that the joint wants a compliant feature rather than a
+better dimension.
+
+**The track's hex socket is loose while riser-to-riser is snug — with identical
+CAD.** Both sockets measure 9.00 AF at every height; the difference is that a
+lone boss hanging under the deck of a 150 mm part does not hold size the way a
+compact hex prism standing on the bed does. There is no number to derive from
+that, only one to compensate with, so the TRACK socket alone is cut 0.2 AF
+undersize (`SPEC.socket.trackShrinkAF`) and every riser-to-riser joint is left
+exactly as it prints today — that one already works and must not be "fixed".
+
 ## Still open
 
 **The curve's arcade still bridges the full channel.** Measured on the failed
@@ -178,6 +216,12 @@ flat crown against the straight's 2 openings of 53 mm and a 24 mm flat crown.
 If it still fails, the fix is structural: the floor cannot bridge the full
 channel unsupported, and the options are restoring some support under the deck,
 raising the arch crowns, or accepting supports on curves.
+
+**A calibration coupon.** One key and one pocket, printed and measured, would
+turn the process bias from a swept unknown into a number — and that is the only
+thing standing between the Monte Carlo and an actual guarantee. It would also
+settle whether the track socket's 0.2 AF compensation is right, too much, or
+too little. Cheapest outstanding item by far.
 
 **Physical validation (was Phase 3).** Print one helix tier and run a figure
 through it. The clearance model predicts 2.79 mm of play at the tightest point —

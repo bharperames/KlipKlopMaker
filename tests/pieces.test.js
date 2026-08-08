@@ -604,20 +604,34 @@ describe('the key can actually be fitted', () => {
         return null;
     };
 
-    /** The key's own footprint, sampled — its outline plus its interior. */
-    const keySamples = (spec, step = 0.6) => {
-        const K = spec.key;
-        const flare = (K.tipHalf - K.neckHalf) / K.depth;
+    /**
+     * The key's own footprint, sampled — the REAL plan, chamfers and all, not
+     * an idealised bowtie. Sampling the nominal outline instead would test a
+     * key nobody prints and would miss exactly the corner the chamfer exists
+     * for.
+     */
+    const keySamples = (keyPlan, step = 0.5) => {
+        const xs = keyPlan.map(p => p[0]), zs = keyPlan.map(p => p[1]);
+        const inside = (x, z) => {
+            let hit = false;
+            for (let i = 0, j = keyPlan.length - 1; i < keyPlan.length; j = i++) {
+                const [xi, zi] = keyPlan[i], [xj, zj] = keyPlan[j];
+                if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) hit = !hit;
+            }
+            return hit;
+        };
         const pts = [];
-        for (let d = -K.depth; d <= K.depth; d += step) {
-            const half = K.neckHalf + flare * Math.abs(d);
-            for (let w = -half; w <= half; w += step) pts.push([w, d]);
+        for (let z = Math.min(...zs); z <= Math.max(...zs); z += step) {
+            for (let x = Math.min(...xs); x <= Math.max(...xs); x += step) {
+                if (inside(x, z)) pts.push([x, z]);
+            }
         }
         return pts;
     };
 
     test('the key travels from the rim to its seat without meeting anything', async () => {
         const { SPEC, pieceInFrame } = await import('../js/track.js');
+        const { bowtieKeyPlan } = await import('../js/geometry.js');
         const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
         const world = pieces[1];
         const pc = pieceInFrame(world);
@@ -630,7 +644,16 @@ describe('the key can actually be fitted', () => {
         const seatBottom = pocketTop - keyH;
 
         let worstBlock = null;
-        for (const [w, d] of keySamples(SPEC)) {
+        // The key is sampled UNDERSIZE by exactly `detentProud`, because the
+        // detent is meant to interfere by that much — it is the catch. So the
+        // rule this enforces is "nothing narrows the throat by more than the
+        // detent does", which tolerates the snap and fails anything bigger.
+        const keyPlan = bowtieKeyPlan({
+            neckHalf: SPEC.key.neckHalf, tipHalf: SPEC.key.tipHalf,
+            depth: SPEC.key.depth, tipChamfer: SPEC.key.tipChamfer,
+            clearance: -SPEC.key.detentProud
+        });
+        for (const [w, d] of keySamples(keyPlan)) {
             // plan coords → piece frame: lateral w, forward d from the face
             const x = pc.entry.x + d, z = pc.entry.z + w;
             const hits = rayUp(g.positions, g.indices, x, z);
@@ -671,6 +694,108 @@ describe('the key can actually be fitted', () => {
         expectWatertight(buildPieceExportGeometry(pc), 'piece with detent');
     });
 
+    test('the flanks carry the fit, not the corners', async () => {
+        // The printed set rattled AND would not seat, which sounds
+        // contradictory and is not: at 0.2 mm clearance the corner
+        // interference (0.20 mm) exceeded the flank gap (0.18 mm), so the key
+        // stood on its four tips and never touched the surfaces meant to wedge
+        // it. Both numbers have to be right, and only one of them is the
+        // clearance.
+        const { SPEC } = await import('../js/track.js');
+        const { bowtieFit } = await import('../js/geometry.js');
+        const K = SPEC.key;
+        const shape = { neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth };
+        const fit = bowtieFit({ ...shape, clearance: K.fitClearanceMm, tipChamfer: K.tipChamfer });
+        expect(`corner ${fit.seats ? 'clears' : 'BINDS'}`).toBe('corner clears');
+        expect(fit.cornerBindMm).toBeLessThan(-0.1);          // and with margin
+        // a firm slide, not a rattle: tighter than the 0.18 that failed, and
+        // not so tight the key cannot be pushed up a 39 mm throat by hand
+        expect(fit.flankGapMm).toBeGreaterThan(0.05);
+        expect(fit.flankGapMm).toBeLessThan(0.12);
+
+        // and the chamfer is what buys it — without one, this clearance binds
+        expect(bowtieFit({ ...shape, clearance: K.fitClearanceMm }).seats).toBe(false);
+    });
+
+    test('the track socket is cut tighter than every other socket', async () => {
+        // Riser into riser is snug at the nominal size and must not change.
+        // The same tenon in the track's boss came out loose even though the
+        // two sockets measure identically, so the compensation belongs to the
+        // track socket alone — and this is what stops someone "simplifying"
+        // it back to one number.
+        const { SPEC, layoutTrack, planPillarPositions, pieceInFrame, planPosAt } =
+            await import('../js/track.js');
+        const { buildRiserGeometry } = await import('../js/pieces.js');
+        expect(SPEC.socket.trackShrinkAF).toBeGreaterThan(0);
+
+        /** Narrowest across-flats of the hole on the axis, by plane section. */
+        const socketAF = (g, cx, cz, y) => {
+            const P = g.positions, I = g.indices;
+            let best = Infinity;
+            for (let t = 0; t < I.length; t += 3) {
+                const v = [0, 1, 2].map(k => I[t + k] * 3);
+                const seg = [];
+                for (let e = 0; e < 3; e++) {
+                    const a = v[e], b = v[(e + 1) % 3];
+                    if ((P[a + 1] - y) * (P[b + 1] - y) > 0) continue;
+                    if (Math.abs(P[b + 1] - P[a + 1]) < 1e-12) continue;
+                    const f = (y - P[a + 1]) / (P[b + 1] - P[a + 1]);
+                    seg.push([P[a] + (P[b] - P[a]) * f, P[a + 2] + (P[b + 2] - P[a + 2]) * f]);
+                }
+                if (seg.length < 2) continue;
+                const [p, q] = seg;
+                const dx = q[0] - p[0], dz = q[1] - p[1];
+                const L2 = dx * dx + dz * dz || 1;
+                const u = Math.max(0, Math.min(1, ((cx - p[0]) * dx + (cz - p[1]) * dz) / L2));
+                best = Math.min(best, Math.hypot(cx - (p[0] + dx * u), cz - (p[1] + dz * u)));
+            }
+            return 2 * best;
+        };
+
+        const riser = socketAF(buildRiserGeometry(30), 0, 0, 5);
+        expect(riser).toBeCloseTo(SPEC.socket.hexAF, 2);         // unchanged
+
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const sup = planPillarPositions(pieces);
+        const world = pieces[1];
+        const g = buildPieceExportGeometry(world, { support: sup.find(s => s.pieceIndex === world.index) });
+        const pc = pieceInFrame(world);
+        const m = planPosAt(pc, pc.planLen / 2);
+        const track = socketAF(g, m.x, m.z, pc.rimY + 5);
+        expect(track).toBeCloseTo(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF, 2);
+        expect(track).toBeLessThan(riser);
+    });
+
+    test('the fit is chosen by simulation, and the corner is not the limiter', async () => {
+        // `bowtieFitTrials` runs the printing variation rather than assuming a
+        // single nominal, because the two failure modes pull opposite ways and
+        // the printed set hit BOTH at once. What it found is that the CHAMFER
+        // was the binding constraint, not the clearance: a 0.4 nozzle leaves a
+        // ~0.30 ± 0.08 mm radius in the pocket's corner, and at 0.8 mm of
+        // chamfer a fifth of printed keys still stood on their tips.
+        const { SPEC } = await import('../js/track.js');
+        const { bowtieFit, bowtieFitTrials, PROCESS } = await import('../js/geometry.js');
+        const K = SPEC.key;
+        const shape = { neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth };
+        const tolerates = (ch) => {
+            let r = 0.2;
+            while (r < 1.2 && bowtieFit({ ...shape, clearance: K.fitClearanceMm, tipChamfer: ch, cornerRadius: r }).cornerBindMm <= PROCESS.maxPressMm) r += 0.01;
+            return r - 0.01;
+        };
+        // the chosen chamfer clears any corner a 0.4 nozzle can leave, with margin
+        expect(tolerates(K.tipChamfer)).toBeGreaterThan(PROCESS.cornerRadiusMm + 3 * PROCESS.cornerSigmaMm);
+        // ...and it is past the knee: more chamfer would buy nothing
+        const good = (ch) => bowtieFitTrials({ ...shape, tipChamfer: ch, clearance: K.fitClearanceMm }).pGood;
+        expect(good(K.tipChamfer)).toBeGreaterThan(good(0.8));
+        expect(good(K.tipChamfer * 1.5)).toBeLessThanOrEqual(good(K.tipChamfer) + 0.02);
+        // the chosen clearance beats the 0.2 that was printed and rattled
+        expect(good(K.tipChamfer)).toBeGreaterThan(
+            bowtieFitTrials({ ...shape, tipChamfer: K.tipChamfer, clearance: 0.2 }).pGood);
+        // deterministic: a simulation that moves on its own is not evidence
+        expect(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood)
+            .toBe(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood);
+    });
+
     test('the detent leads in with a ramp, not a step', async () => {
         // a square ledge is a wall to shear through; the ramp is what the key
         // rides up. Guarded because the fix is invisible in a volume check.
@@ -678,8 +803,9 @@ describe('the key can actually be fitted', () => {
         expect(SPEC.key.detentRamp).toBeGreaterThan(0.4);
         // and the interference it leaves, once a printed slot's ~0.16 mm/side
         // narrowing is counted, has to stay something a hand can push past
-        const printNarrowPerSide = 0.16;
-        const perSide = SPEC.key.detentProud - SPEC.jointClearanceMm + printNarrowPerSide;
-        expect(perSide).toBeLessThan(0.2);
+        // the catch is the detent minus the clearance it eats into
+        const perSide = SPEC.key.detentProud - SPEC.key.fitClearanceMm;
+        expect(perSide).toBeGreaterThan(0);        // it catches at all
+        expect(perSide).toBeLessThan(0.1);         // and a hand can push past it
     });
 });

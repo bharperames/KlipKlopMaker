@@ -120,11 +120,33 @@ export const SPEC = {
     skirtDepth: 12,
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
+    // Assembly clearance where nothing better is known. The two joints that
+    // have now been printed carry their own MEASURED numbers instead —
+    // `key.fitClearanceMm` and `socket.tenonClearanceMm` — because 0.2 turned
+    // out to be too generous for both of them.
     jointClearanceMm: 0.2,
     tileLen: 150,
     platformLen: 150,
     clearanceHeight: 100,
-    socket: { hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7 },
+    socket: {
+        hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7,
+        /**
+         * The track's socket is cut SMALLER than everything else's.
+         *
+         * Riser into riser, at the nominal 9 AF against an 8.6 tenon, prints
+         * snug and feels right. The SAME tenon in the track's boss socket —
+         * measurably the same 9.00 AF at every height, the CAD is identical —
+         * comes out loose. So this is the process, not the geometry: a lone
+         * boss hanging under the deck of a 150 mm part does not hold size the
+         * way a compact hex prism standing on the bed does.
+         *
+         * There is no number to derive from that, only one to compensate with.
+         * 0.2 AF takes the track joint from 0.20 mm/side to 0.10 and leaves
+         * every riser-to-riser joint exactly as it prints today, which is the
+         * one that already works. Confirm or adjust after the next print.
+         */
+        trackShrinkAF: 0.2
+    },
     /**
      * The JOG: an offset riser that moves a support column sideways when the
      * column straight under a piece would spear the tier below.
@@ -149,6 +171,25 @@ export const SPEC = {
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
         neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
+        // Per side, key flank to pocket wall. Was `jointClearanceMm` = 0.2,
+        // which left 0.37 mm of slop across the joint — the printed keys
+        // rattled. The flanks are raked, so only 91% of a horizontal clearance
+        // is perpendicular gap; 0.10 leaves 0.09 mm/side of real gap, a firm
+        // slide rather than a rattle. See `bowtieFit`.
+        fitClearanceMm: 0.08,
+        // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
+        // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
+        // that, so it rides on its corners and never touches the flanks that
+        // are supposed to do the wedging — at the old clearance the corner
+        // interference was 0.20 mm while the flank gap was 0.18. Chamfering
+        // the key's four tips takes the corners out of the fit entirely.
+        // 1.2 mm, chosen by `bowtieFitTrials` rather than by eye. The corner
+        // is the binding constraint, not the clearance: at 0.8 the joint only
+        // tolerates a pocket corner radius up to 0.37 mm, and a 0.4 nozzle
+        // leaves ~0.30 ± 0.08, so a fifth of printed keys still stood on their
+        // tips. Past 1.2 the corner stops being the limiter at all — it
+        // tolerates 0.58 mm, past three sigma of it — and more buys nothing.
+        tipChamfer: 1.4,
         // Retention. The pocket is a through-slot open to the rim, so a seated
         // key had nothing under it and simply fell back out — the joint has
         // never actually held itself together. These bumps narrow the pocket in

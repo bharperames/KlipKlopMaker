@@ -325,7 +325,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     // jointClearanceMm exactly — the +0.05 fudge that used to be here is not
     // needed now the pocket wall is parallel to the key flank, and 0.20/side is
     // the clearance the printed hex joints are proven at.
-    const pocketClearance = spec.jointClearanceMm;
+    const pocketClearance = K.fitClearanceMm ?? spec.jointClearanceMm;
     const pocket = planToWorld(bowtiePocketPlan({
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
         clearance: pocketClearance
@@ -420,8 +420,8 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
  * tenon self-align instead of binding on a sharp 90° opening (and absorbs
  * elephant-foot flare on the mating part).
  */
-function hexSocketSolid(cx, cz, yOpen, yEnd, spec) {
-    const AF = spec.socket.hexAF;
+function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null) {
+    const AF = afOverride ?? spec.socket.hexAF;
     const dir = Math.sign(yEnd - yOpen);
     const levels = [
         { y: yOpen, af: AF + 1.2 },
@@ -541,7 +541,9 @@ function bossOps(piece, spec, support) {
     }
     ops.push({
         op: SUBTRACTION,
-        geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec)
+        // the track's socket alone is cut undersize — see socket.trackShrinkAF
+        geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec,
+            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0))
     });
     // Core the boss out above the socket: only the socket walls carry the
     // tenon, so a solid post is ~6.6 cm3 doing nothing. The bore continues the
@@ -1009,8 +1011,9 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         );
         return marks.length ? csgChain(toBufferGeometry(plain), marks) : plain;
     }
-    const full = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth }).map(([x, z]) => [x, -z]);
-    const inset = bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, clearance: -0.5 }).map(([x, z]) => [x, -z]);
+    const shape = { neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer };
+    const full = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
+    const inset = bowtieKeyPlan({ ...shape, clearance: -0.5 }).map(([x, z]) => [x, -z]);
     // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
     // its pockets without snagging a sharp corner
     return sweepSolid(
