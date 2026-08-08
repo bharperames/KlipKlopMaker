@@ -223,13 +223,15 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     if (hasEntryJoint) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec
+            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec,
+            (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
+            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec,
+            (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
 
@@ -278,12 +280,14 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec
+        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec
+            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec,
+            (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }
     ops.push(...bossOps(mainPiece, spec, support));
@@ -315,7 +319,7 @@ function fineShell(piece, spec, bossStations, forced) {
  *                    (pocket bands anchor here so both sides align absolutely)
  * @param rimY - piece rim (bed) height
  */
-function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
+function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = null) {
     const Wi = innerWidth / 2;
     const K = spec.key;
     const rib = planToWorld(
@@ -389,11 +393,44 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
     // instead, leaving 3.5 mm of solid backing across the whole face — 5 g per
     // tall rib, and its only job was sealing the chamber, which is not
     // something this part needs to do.
+    /**
+     * The rib, with its TOP FOLLOWING THE DECK.
+     *
+     * It used to be a prism with a level top taken at the face — and the deck
+     * it lives under falls 0.198 mm per mm, so over `ribThk` = 12 mm the deck
+     * drops 2.4 mm while the rib stayed put. The floor is 2 mm thick, so the
+     * rib came up THROUGH the walking surface near its inner edge: 0.28 mm
+     * proud on a straight and 0.48 on a curve, where the flat slab also
+     * diverges from the arc and so breaks through further on one side than the
+     * other. It shows in a print as a fin crossing the washboard.
+     *
+     * Same fault the socket boss had and the same fix (see slantedCylinder):
+     * a level top cannot sit under a sloping floor — one edge is always wrong.
+     */
+    function ribSolid() {
+        const top = (d) => (deckAtDepth ? deckAtDepth(d) : deckY) - spec.floorThk + 0.5;
+        const dir = [Math.cos(face.h), Math.sin(face.h)];
+        const right = [Math.sin(face.h), -Math.cos(face.h)];
+        const n = 5;
+        const profiles = [], stations = [];
+        for (let i = 0; i < n; i++) {
+            const d = (K.ribThk * i) / (n - 1);
+            const t = top(d);
+            profiles.push([[-Wi - 1, rimY], [Wi + 1, rimY], [Wi + 1, t], [-Wi - 1, t]]);
+            stations.push({
+                origin: [face.x + dir[0] * d, 0, face.z + dir[1] * d],
+                right: [right[0], 0, right[1]], up: [0, 1, 0]
+            });
+        }
+        return sweepSolid(profiles, stations);
+    }
+
     const WALL = 2.0;                       // material kept around each window
     const winZ0 = 1.5, winZ1 = K.ribThk - spec.wall;
     const winInner = K.tipHalf + WALL;
     const winOuter = Wi + 1 - WALL;
-    const ribTop = deckY - spec.floorThk + 0.5;
+    // the windows are cut inside the rib, so they must clear its LOWEST top
+    const ribTop = Math.min(deckY, deckAtDepth ? deckAtDepth(K.ribThk) : deckY) - spec.floorThk + 0.5;
     const windows = winOuter - winInner > 3
         ? [-1, 1].map(sgn => ({
             op: SUBTRACTION,
@@ -408,7 +445,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec) {
         : [];
 
     return [
-        { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(rib, rimY, ribTop)) },
+        { op: ADDITION, geometry: toBufferGeometry(ribSolid()) },
         { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(pocket, rimY - 1, pocketTop)) },
         ...detent,          // added back AFTER the pocket is cut
         ...windows
@@ -782,13 +819,15 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         // seam's uphill deck = this entry + the waterfall step
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec
+            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec,
+            (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec
+            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec,
+            (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
     ops.push(...bossOps(piece, spec, opts.support));
@@ -834,12 +873,14 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec
+        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec
+            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec,
+            (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }
     ops.push(...bossOps(mainPiece, spec, opts.support));

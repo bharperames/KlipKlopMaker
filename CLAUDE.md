@@ -71,6 +71,14 @@ building, gait physics simulation, and watertight STL/3MF export.
   *floor*/*drumhead*/*deck* = the walking surface · *rails* above it.
   "Rim plane" is shorthand for the horizontal plane at `rimY`; it is this
   project's word, not a 3D-printing term (that would be "first layer").
+- **Nothing under the deck may have a LEVEL top.** The deck falls at the ramp
+  slope, so a level top is always wrong at one edge: over `key.ribThk` = 12 mm
+  the deck drops 2.4 mm through a 2 mm floor. Both the socket boss
+  (`slantedCylinder`) and the end rib (`ribSolid`) take the deck height as a
+  function of position for this reason — the rib did not, and surfaced through
+  the walking surface as a fin across the washboard. `tests/pieces.test.js`
+  checks the floor is the highest thing in the channel; it is a surface check,
+  not a per-feature one, so the next feature to get this wrong is caught too.
 - **Print-friendliness is a contract**: parts print rim-down with no supports.
   Never add geometry that protrudes past an end face or floats above the bed
   (the original dovetail tab failed in the slicer as a floating cantilever) —

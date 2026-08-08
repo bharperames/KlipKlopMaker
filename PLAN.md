@@ -202,6 +202,20 @@ that, only one to compensate with, so the TRACK socket alone is cut 0.2 AF
 undersize (`SPEC.socket.trackShrinkAF`) and every riser-to-riser joint is left
 exactly as it prints today — that one already works and must not be "fixed".
 
+**A level top under a sloping deck (found in CAD, 2026-08-08).** The end rib
+was a prism whose top was taken at its own face. The deck falls 0.198 mm/mm, so
+over 12 mm of rib it drops 2.4 mm while the rib stayed level — and through a
+2 mm floor that surfaced 0.28 mm proud on a straight, 0.48 on a curve (where
+the flat slab also diverges from the arc, so it breaks through further on one
+side than the other), and 0.32 on a LIFT at the far end, because a climbing
+piece flips which rib is guilty. It printed as a fin crossing the washboard.
+
+The socket boss had exactly this fault once and was fixed by sloping its top;
+the rib was simply never revisited. Both now take the deck as a function of
+position. The test added for it checks the SURFACE — nothing in the channel may
+rise above the washboard crest — rather than checking the rib, so the next
+feature to get it wrong is caught without anyone remembering to look.
+
 ## Still open
 
 **The curve's arcade still bridges the full channel.** Measured on the failed

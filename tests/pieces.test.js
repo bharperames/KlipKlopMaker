@@ -564,6 +564,69 @@ describe('mating faces line up', () => {
     });
 });
 
+describe('nothing pokes up through the walking surface', () => {
+    /**
+     * The end rib used to be a prism with a LEVEL top taken at its face, under
+     * a deck that falls 0.198 mm per mm. Over 12 mm of rib the deck drops
+     * 2.4 mm; the floor is 2 mm thick; so the rib surfaced through the walking
+     * surface near its inner edge — 0.28 mm proud on a straight, 0.48 on a
+     * curve, where the flat slab also diverges from the arc and breaks through
+     * further on one side than the other. It printed as a fin across the
+     * washboard, and a hoof would have caught it.
+     *
+     * Anything under the deck can do this: the socket boss had the same fault
+     * once. So this checks the surface itself rather than any one feature.
+     */
+    const highestAt = (g, x, z) => {
+        const P = g.positions, I = g.indices;
+        let best = -Infinity;
+        for (let t = 0; t < I.length; t += 3) {
+            const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+            const ax = P[a], az = P[a + 2], bx = P[b], bz = P[b + 2], cx = P[c], cz = P[c + 2];
+            const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+            if (Math.abs(d) < 1e-12) continue;
+            const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+            const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+            if (l1 < 0 || l2 < 0 || 1 - l1 - l2 < 0) continue;
+            best = Math.max(best, l1 * P[a + 1] + l2 * P[b + 1] + (1 - l1 - l2) * P[c + 1]);
+        }
+        return best;
+    };
+
+    test.each(['straight', 'curveR', 'lift'])('%s: the floor is the highest thing in the channel', async (type) => {
+        const { SPEC, pieceInFrame, planPosAt, deckYAt, innerWidthAt, planPillarPositions } =
+            await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'curveR', 'lift', 'straight'], { slopeDeg: 11.2167 });
+        const sup = planPillarPositions(pieces);
+        const world = pieces.find(p => p.type === type);
+        const g = buildPieceExportGeometry(world, { support: sup.find(s => s.pieceIndex === world.index) });
+        const pc = pieceInFrame(world);
+
+        // the ends are where the ribs are, so sample them closely; the middle
+        // carries the boss, so sample that too
+        const stations = [];
+        for (let s = 2; s <= SPEC.key.ribThk + 6; s += 1) stations.push(s, pc.planLen - s);
+        for (let s = pc.planLen * 0.4; s <= pc.planLen * 0.6; s += 3) stations.push(s);
+
+        let worst = { proud: -Infinity };
+        for (const s of stations) {
+            const p = planPosAt(pc, s), deck = deckYAt(pc, s);
+            const right = [Math.sin(p.h), -Math.cos(p.h)];
+            const half = innerWidthAt(pc, s) / 2 - SPEC.filletR - 0.5;
+            for (let lat = -half; lat <= half; lat += 2) {
+                const top = highestAt(g, p.x + right[0] * lat, p.z + right[1] * lat);
+                // the washboard crest is the highest the floor may legitimately be
+                const proud = top - (deck + SPEC.ridge.height);
+                if (proud > worst.proud) worst = { proud, s, lat };
+            }
+        }
+        // 0.1 mm of slack for the faceting of the swept ridges; the fault this
+        // guards was 0.28-0.48 mm
+        expect(`${type} proud by ${worst.proud.toFixed(2)} mm at s=${worst.s?.toFixed(0)}`)
+            .toBe(`${type} proud by ${Math.min(worst.proud, 0.1).toFixed(2)} mm at s=${worst.s?.toFixed(0)}`);
+    });
+});
+
 describe('the key can actually be fitted', () => {
     /**
      * Sweep the key up its slot and look for anything in the way.
