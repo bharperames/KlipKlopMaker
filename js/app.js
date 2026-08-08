@@ -3261,11 +3261,24 @@ function assembleParts() {
      * position and so never had one). The list is a shopping list: `straight
      * ×6` is what you print and what you reach into the bin for.
      *
-     * `_boss` marks the one variant that genuinely differs: a piece carrying
-     * the hex socket for a support column. Anything else that splits a
-     * signature — only custom parameters can, at the Standard — falls through
-     * to a `_2`, `_3` suffix rather than silently colliding.
+     * `_boss` marks a piece carrying the hex socket for a support column —
+     * but ONLY where the same design also has one without. A suffix that
+     * every part carries distinguishes nothing, and almost every piece takes
+     * a support, so it read as decoration on all of them. Anything else that
+     * splits a signature — only custom parameters can, at the Standard —
+     * falls through to a `_2`, `_3` suffix rather than silently colliding.
      */
+    const shapeOf = (pc) => (pc.role === 'main' ? (pc.switchType ?? 'switch') : pc.type) + seamRole(pc);
+    const hasBoss = (support) => !!(support && support.mode !== 'none');
+    const bossSplit = new Set();
+    {
+        const seen = new Map();
+        for (const { pc, support } of uniqueParts.values()) {
+            const k = shapeOf(pc), b = hasBoss(support);
+            if (seen.has(k) && seen.get(k) !== b) bossSplit.add(k);
+            seen.set(k, b);
+        }
+    }
     const nameUse = new Map();
     const uniqueName = (base) => {
         const n = (nameUse.get(base) ?? 0) + 1;
@@ -3274,9 +3287,9 @@ function assembleParts() {
     };
     for (const [sig, item] of uniqueParts.entries()) {
         const { pc, support, count } = item;
-        const shape = pc.role === 'main' ? (pc.switchType ?? 'switch') : pc.type;
-        const baseName = uniqueName(shape + seamRole(pc)
-            + (support && support.mode !== 'none' ? '_boss' : ''));
+        const shape = shapeOf(pc);
+        const baseName = uniqueName(shape +
+            (bossSplit.has(shape) ? (hasBoss(support) ? '_boss' : '_plain') : ''));
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             parts.push({
@@ -4353,7 +4366,11 @@ function bedFootprint(positions) {
  * the next curve print answers the arcade question.
  */
 function plateGroup(name) {
-    return /^curve|_curve/.test(name) ? 'curves' : '';
+    // Each risky type gets its OWN group, not one shared "curved" group: a
+    // switch carries a curved branch and draws the same warning, and pairing
+    // it with a curve would put the two hardest parts on one plate and lose
+    // exactly the attribution this exists for.
+    return /^curve|^switch/.test(name) ? name : '';
 }
 
 /**
