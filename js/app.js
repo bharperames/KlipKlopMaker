@@ -3666,7 +3666,10 @@ function makeDimGroup(box, part) {
         // 9 mm pocket depth, and the seven joint dimensions — all of which
         // live inside 30 mm at one end of a 150 mm ramp — piled into an
         // unreadable heap.
-        const txt = Math.min(TXT, Math.max(0.5, len * 0.13));
+        // Sized by what it measures, but only within a 2:1 band. Scaling text
+        // linearly with the dimension put a 3.2 mm label beside a 0.5 mm one
+        // on the same part — a 6x spread that reads as a bug, not a hierarchy.
+        const txt = Math.min(TXT, Math.max(TXT * 0.5, len * 0.13));
         // The arrowhead is part of the callout, so it scales with the callout.
         // Sized off the part instead, a 2.6 mm head sat on a 3 mm dimension
         // whose text was 0.5 mm — five times the lettering it belonged to.
@@ -3792,18 +3795,31 @@ function makeDimGroup(box, part) {
             { offMm: spec.railHeight + OFF,
               sub: `prints ≈${(pc.innerWidth - CLEARANCE.printNarrowingMm).toFixed(2)} (measured)` });
 
+        /**
+         * Feature clusters stand off by a FEATURE-sized amount, not the
+         * part's. `OFF` is 13 mm on a 150 mm ramp, which is right for the
+         * ramp's own overall dimensions and absurd for a 19 mm boss — it put
+         * the socket callouts 13 and 28 mm out in open air below the piece,
+         * where they read as belonging to nothing. Innermost feature closest,
+         * as on a drawing.
+         */
+        const FOFF = 5;
+
         // ---- the support socket ------------------------------------------
         if (support && support.mode !== 'none') {
             const [sx, sz] = at(support.x, support.z);
             const af = spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0);
             dim(V(sx - af / 2, 0, sz), V(sx + af / 2, 0, sz), Y.clone().negate(),
-                `socket ${af.toFixed(2)} mm across flats`, { drawnMm: af, klass: 'holeMassive' });
-            dim(V(sx, 0, sz + spec.socket.bossR), V(sx, spec.socket.depth, sz + spec.socket.bossR),
-                Z, `${spec.socket.depth.toFixed(1)} mm deep`);
+                `socket ${af.toFixed(2)} mm across flats`,
+                { drawnMm: af, klass: 'holeMassive', offMm: FOFF });
             const bossOD = 2 * spec.socket.bossR;
             dim(V(sx - spec.socket.bossR, 0, sz), V(sx + spec.socket.bossR, 0, sz),
                 Y.clone().negate(), `boss Ø ${bossOD.toFixed(1)} mm`,
-                { drawnMm: bossOD, klass: 'external', offMm: OFF * 2.2 });
+                { drawnMm: bossOD, klass: 'external', offMm: FOFF * 2.6 });
+            // depth runs UP into the boss, so it goes beside it rather than
+            // under it — under it, it lands inside the two width callouts
+            dim(V(sx, 0, sz + spec.socket.bossR), V(sx, spec.socket.depth, sz + spec.socket.bossR),
+                Z, `${spec.socket.depth.toFixed(1)} mm deep`, { offMm: FOFF });
         }
 
         // ---- the bowtie pocket at the exit face ---------------------------
@@ -3821,21 +3837,26 @@ function makeDimGroup(box, part) {
         const inward = exX >= 0 ? -1 : 1;
         const outward = X.clone().multiplyScalar(-inward);
 
+        // Both widths go BELOW the piece, on parallel lines, because that is
+        // the side you look at the pocket from — and because the wide end sat
+        // above the deck when it was pushed +Y, drawn straight across the
+        // walking surface it has nothing to do with. They are already 9 mm
+        // apart along the track, so the pair reads as the taper it is.
         dim(V(exX, bandY, exZ - mouthHalf), V(exX, bandY, exZ + mouthHalf),
             Y.clone().negate(), `mouth ${(2 * mouthHalf).toFixed(2)} mm`,
-            { drawnMm: 2 * mouthHalf, klass: 'holeMassive', offMm: bandY + OFF });
-        dim(V(exX + inward * pocDepth, ceilY, exZ - tipHalf),
-            V(exX + inward * pocDepth, ceilY, exZ + tipHalf), Y,
-            `tip ${(2 * tipHalf).toFixed(2)} mm`,
-            { drawnMm: 2 * tipHalf, klass: 'holeMassive' });
+            { drawnMm: 2 * mouthHalf, klass: 'holeMassive', offMm: bandY + FOFF });
+        dim(V(exX + inward * pocDepth, bandY, exZ - tipHalf),
+            V(exX + inward * pocDepth, bandY, exZ + tipHalf), Y.clone().negate(),
+            `wide end ${(2 * tipHalf).toFixed(2)} mm`,
+            { drawnMm: 2 * tipHalf, klass: 'holeMassive', offMm: bandY + FOFF * 2.6 });
         dim(V(exX, ceilY, exZ + tipHalf), V(exX + inward * pocDepth, ceilY, exZ + tipHalf),
-            Z, `${pocDepth.toFixed(2)} mm deep`);
+            Z, `${pocDepth.toFixed(2)} mm deep`, { offMm: FOFF });
         // the band the key occupies and the cap of material above it: the two
         // numbers that decide whether the decks meet flush at the seam
         dim(V(exX, bandY, exZ - tipHalf), V(exX, ceilY, exZ - tipHalf),
-            outward, `key band ${keyH.toFixed(1)} mm`);
+            outward, `key band ${keyH.toFixed(1)} mm`, { offMm: FOFF });
         dim(V(exX, ceilY, exZ - tipHalf), V(exX, exY, exZ - tipHalf),
-            outward, 'cap 3.0 mm', { offMm: OFF * 2.4 });
+            outward, 'cap 3.0 mm', { offMm: FOFF * 2.6 });
     }
 }
 
