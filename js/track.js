@@ -50,6 +50,28 @@ export const STANDARD = {
     liftSlopeDeg: Math.atan(30.25 / 150) * 180 / Math.PI,    // 11.4045° (powered)
     curveRadius: (44.75 / (29.75 / 150)) / (Math.PI / 2),    // 143.637 mm
     innerWidth: 48,
+    /**
+     * The riser ladder. Every size is exactly TWICE the next, which is the
+     * property doing the work: over a 15 mm grid that makes it a binary
+     * system, so every height a track can ask for is buildable AND the greedy
+     * decomposition in decomposeSupport is provably the fewest parts. Break
+     * the doubling and both guarantees go — [90, 45, 15] and [120, 45, 30, 15]
+     * look tidier and cost MORE risers (114 against 111 over a measured
+     * sample of 38 columns from one-, two- and three-tier towers).
+     *
+     * There is nothing to optimise toward on the demand side. A tier drops
+     * four curves at 45 mm, supports land three grid units apart inside a
+     * tier, and across towers the heights come out as 2, 5, 8, 11, 13, 14, 16,
+     * 19 ... 40 units — i.e. essentially every grid unit. So the ladder has to
+     * cover all of them, not hit favoured multiples.
+     *
+     * Adding 240 would keep the doubling and cut the sample from 111 risers to
+     * 96 (2.92 to 2.53 per column). It is deliberately NOT here: a riser is a
+     * hex tube that can only print standing up, and 240 mm on a 19 mm section
+     * is 12.6:1 — past the point where a knock from the nozzle takes the print
+     * out. 120 mm at 6.3:1 is the practical ceiling, and paying one extra
+     * riser per tall column is the cheaper side of that trade.
+     */
     riserSizes: [120, 60, 30, 15],
     footHeight: 15
 };
