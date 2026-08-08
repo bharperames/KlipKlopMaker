@@ -103,32 +103,53 @@ function toManifold(g) {
  * walking channel altogether, and the rail is slotted away over the blade's
  * length so the parked blade becomes that stretch of wall.
  */
+/**
+ * THE GATE PIVOT IS A SPLIT PIN, AND IT HAS TO BE.
+ *
+ * The gate must hold its position against the figure and still turn by hand.
+ * The figure's push is 0.11-0.40 mN.m about the pivot (45 g at 128 mm/s
+ * deflected 18 deg); the gate's own weight on its hub gives 0.010-0.020, so
+ * friction from gravity is 10-40x short. A finger on the blade tip is
+ * 52 mN.m, so the window between "holds" and "turns" is enormous — three
+ * orders of magnitude — and the problem is purely that a plain cylindrical
+ * fit cannot be placed inside it.
+ *
+ * It cannot because of the spread, not the target. Pin and bore together
+ * carry 0.043 mm/side of sigma, and the whole usable band for a PIVOT —
+ * clear enough to turn, tight enough to grip — is about 0.07 wide. A Monte
+ * Carlo over the measured populations tops out near 58% good, with 15% of
+ * them seized: on a bearing, interference is not a press you can lean on,
+ * it is a gate that will not move.
+ *
+ * So the pin is compliant. A hollow pin with one axial slot is a C-spring:
+ * drawn deliberately OVERSIZE, it closes to whatever the bore turns out to
+ * be, and it is still pushing outward at the loose end of the range. Every
+ * printed pair is then an interference fit and every one of them assembles.
+ * At 0.8 mm of wall over 8 mm the C gives roughly 74 N/mm, so across the
+ * whole tolerance band the holding torque runs about 3-25 mN.m — from 7x the
+ * figure's push at the loose end to half a finger at the tight end.
+ *
+ * This is a spring, not a crush rib. Nothing is asked to yield: a 0.8 mm
+ * section in bending is genuinely compliant, which is exactly what a rib
+ * standing proud of a rigid PLA wall is not.
+ */
 export const GATE = {
     vaneThk: 2.6,
     len: 52,
-    hubR: 2.6,      // was 5; the pin is only Ø2.9, the rest was grip
-    pinR: 1.45,     // Ø2.9
-    boreR: 1.75,    // Ø3.5 — see below
+    hubR: 2.9,      // was 5; the rest was grip. Must clear the pin's shoulder.
+    pinR: 2.1,      // Ø4.2 OVERSIZE into a Ø4.0 bore — the C closes to suit
+    pinBoreR: 1.3,  // hollow, leaving 0.8 mm of wall: two perimeters, and a spring
+    pinSlot: 1.0,   // the gap that makes it a C rather than a tube
+    boreR: 2.0,     // Ø4.0
     /**
-     * Ø3.5, in 3.45 mm of material, and BOTH numbers are the fix.
-     *
-     * The bore was Ø3.3 in a boss of R3.6, which leaves 1.95 mm of material
-     * around it — the same slenderness as a riser tube, and PRINT_DEVIATION
-     * says a hole in that much plastic comes out 0.37 mm under while one in a
-     * massive body comes out 0.10 under. Across that uncertainty a Ø3.3 bore
-     * prints anywhere from 2.83 to 3.30 against a pin printing 2.76 to 3.04:
-     * at the bad end the pin does not go in at all, and at the good end the
-     * pivot has 0.27 mm/side of slop. A bearing cannot be specified over a
-     * range that includes interference.
-     *
-     * So: grow the boss until the bore is unambiguously in the massive class
-     * (3.45 mm of surround), which collapses the range to 3.30-3.50, and open
-     * the bore 0.2 so the tight end still clears the fattest pin. Result is
-     * 0.13-0.37 mm/side — always free, never tight.
-     *
-     * Retention deliberately does NOT come from this fit. See the note on the
-     * gate blade: the figure's push is ~0.4 mN.m and hub friction is 0.02, so
-     * a fit tight enough to hold would have to be tight enough to seize.
+     * 3.2 mm of material around the bore, and that is the other half of the
+     * fix. The boss used to be R3.6, leaving 1.95 mm — the same slenderness
+     * as a riser tube, and PRINT_DEVIATION says a hole in that much plastic
+     * comes out 0.37 mm under where one in a massive body comes out 0.10.
+     * That is a 0.27 mm swing in the bore before any run-to-run variation, so
+     * the bore's own size was not knowable, let alone the fit. Grown until the
+     * hole is unambiguously in the massive class, it is 3.90-4.10 printed, and
+     * the C-pin can be sized against a number instead of a range of theories.
      */
     bossR: 5.2
 };
@@ -1134,11 +1155,13 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
  * selected route, with a pin that drops into the deck bore. Prints on its side.
  */
 export function buildGateGeometry(spec = SPEC) {
+    const PIN_L = 8;
     // hub + pin as a stacked-radius sweep along Y (vane added via CSG)
     const levels = [
-        { y: -8, r: GATE.pinR },               // pin (Ø2.9 into the Ø3.5 bore)
+        { y: -PIN_L, r: GATE.pinR - 0.35 },    // lead-in: the C has to start in
+        { y: -PIN_L + 1, r: GATE.pinR },
         { y: 0, r: GATE.pinR },
-        { y: 0, r: GATE.hubR },                // hub
+        { y: 0, r: GATE.hubR },                // hub, shoulder onto the deck
         { y: spec.railHeight - 2, r: GATE.hubR }
     ];
     const nHub = segmentsForCircle(Math.max(...levels.map(l => l.r)));
@@ -1147,7 +1170,23 @@ export function buildGateGeometry(spec = SPEC) {
     const hub = toBufferGeometry(sweepSolid(profiles, stations));
     const vane = new THREE.BoxGeometry(GATE.vaneThk, spec.railHeight - 2, GATE.len);
     vane.translate(0, (spec.railHeight - 2) / 2, GATE.len / 2 - 2);
-    return csgChain(hub, [{ op: ADDITION, geometry: vane }]);
+
+    // The C: a hollow through the pin and one axial slot. Both stop 0.6 mm
+    // short of the shoulder so the hub stays solid — the spring is the pin,
+    // and a slot carried up into the hub would only weaken the part where the
+    // vane is cantilevered off it.
+    const cavity = new THREE.CylinderGeometry(GATE.pinBoreR, GATE.pinBoreR, PIN_L + 1,
+        segmentsForCircle(GATE.pinBoreR));
+    cavity.translate(0, -PIN_L / 2 - 0.6, 0);
+    // Slot faces AWAY from the vane, so the C opens across the axis the vane
+    // loads it on: the blade's push closes the gap rather than spreading it.
+    const slot = new THREE.BoxGeometry(GATE.pinSlot, PIN_L + 1, GATE.pinR + 1);
+    slot.translate(0, -PIN_L / 2 - 0.6, -(GATE.pinR + 1) / 2);
+    return csgChain(hub, [
+        { op: ADDITION, geometry: vane },
+        { op: SUBTRACTION, geometry: cavity },
+        { op: SUBTRACTION, geometry: slot }
+    ]);
 }
 
 // ---------------------------------------------------------------------------
