@@ -5,11 +5,11 @@ const INVENTORY = [
     { name: '01_straight', kind: 'track', count: 4 },
     { name: '02_curveL', kind: 'track', count: 3 },
     { name: 'switch_03', kind: 'track', count: 1 },
-    { name: 'gate_paddle_print', kind: 'gate', count: 1 },
-    { name: 'connector_key_print', kind: 'key', count: 12 },
-    { name: 'support_foot_print', kind: 'support', count: 5 },
-    { name: 'support_riser_60mm_print', kind: 'support', count: 3 },
-    { name: 'scenery_tower_print', kind: 'scenery', count: 2 }
+    { name: 'gate_paddle', kind: 'gate', count: 1 },
+    { name: 'bowtie_key', kind: 'key', count: 12 },
+    { name: 'support_foot', kind: 'support', count: 5 },
+    { name: 'support_riser_60mm', kind: 'support', count: 3 },
+    { name: 'scenery_tower', kind: 'scenery', count: 2 }
 ];
 
 describe('export sets', () => {
@@ -41,7 +41,7 @@ describe('export sets', () => {
     });
 
     test('a sample run never asks for more of a part than the design needs', () => {
-        const scarce = [{ name: 'connector_key_print', kind: 'key', count: 2 }];
+        const scarce = [{ name: 'bowtie_key', kind: 'key', count: 2 }];
         expect(applyExportSet('sample', scarce).parts[0].count).toBe(2);
     });
 

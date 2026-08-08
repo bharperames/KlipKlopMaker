@@ -30,7 +30,7 @@ import {
 } from './engrave.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
-    bowtieKeyPlan, bowtiePocketPlan, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
+    bowtieKeyPlan, bowtiePocketPlan, insetPolygon, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
     ridgeStationSpacing, archStations,
     bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
 } from './geometry.js';
@@ -330,11 +330,13 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     // needed now the pocket wall is parallel to the key flank, and 0.20/side is
     // the clearance the printed hex joints are proven at.
     const pocketClearance = K.fitClearanceMm ?? spec.jointClearanceMm;
-    const pocketAt = (farCut) => planToWorld(bowtiePocketPlan({
+    // `c` is the FLANK clearance, which varies up the key's travel; the far
+    // wall keeps the nominal clearance at every height (see bowtiePocketPlan)
+    const pocketAt = (c) => planToWorld(bowtiePocketPlan({
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-        clearance: pocketClearance, farCut
+        clearance: c, depthClearance: pocketClearance
     }), face);
-    const pocket = pocketAt(0);
+    const pocket = pocketAt(pocketClearance);
 
     // Detent band: the pocket profile narrowed by detentProud, sitting just
     // below where the key seats, so the key snaps past it and rests on it.
@@ -427,21 +429,32 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     }
 
     /**
-     * The pocket, tapering shallower over the last `gripRiseMm` so the key
-     * wedges front-to-back as it rises. Straight below that, so the key slides
-     * the length of the throat without touching anything.
+     * The pocket. Free up the throat, then the FLANKS close by `seatGripMm`
+     * over `gripRiseMm`, then a `seatLandMm` land at that constant section
+     * before the ceiling.
+     *
+     * The land is the whole point. A wedge that is still tightening when the
+     * key arrives decides for itself where the key stops — and where the key
+     * stops is where the two decks meet, so that has to be the ceiling and
+     * nothing else. Over the land the key slides against a fixed interference
+     * instead of an increasing one, so a hand can push it home against a hard
+     * stop. See SPEC.key.seatGripMm.
      */
     function pocketVoid() {
-        const rise = K.gripRiseMm ?? 0, taper = K.gripTaperMm ?? 0;
-        const gripBase = pocketTop - rise;
-        if (!(rise > 0 && taper > 0) || gripBase <= rimY) {
+        const rise = K.gripRiseMm ?? 0, grip = K.seatGripMm ?? 0, land = K.seatLandMm ?? 0;
+        const landBase = pocketTop - land;
+        const gripBase = landBase - rise;
+        if (!(rise > 0 && grip > 0) || gripBase <= rimY) {
             return extrudePolygonY(pocket, rimY - 1, pocketTop);
         }
         const levels = [
-            { y: rimY - 1, cut: 0 }, { y: gripBase, cut: 0 }, { y: pocketTop, cut: taper }
+            { y: rimY - 1, c: pocketClearance },
+            { y: gripBase, c: pocketClearance },
+            { y: landBase, c: pocketClearance - grip },
+            { y: pocketTop, c: pocketClearance - grip }
         ];
         return sweepSolid(
-            levels.map(l => pocketAt(l.cut).map(([x, z]) => [x, -z])),
+            levels.map(l => pocketAt(l.c).map(([x, z]) => [x, -z])),
             levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
         );
     }
@@ -1082,7 +1095,9 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         depth: K.depth, tipChamfer: K.tipChamfer
     };
     const full = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
-    const inset = bowtieKeyPlan({ ...shape, clearance: -0.5 }).map(([x, z]) => [x, -z]);
+    // a TRUE inward offset, so the chamfer band's quads stay planar and the
+    // chamfer is the same 0.5 mm on every edge — see insetPolygon
+    const inset = insetPolygon(full, 0.5);
     // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
     // its pockets without snagging a sharp corner
     return sweepSolid(

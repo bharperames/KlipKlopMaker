@@ -721,7 +721,7 @@ describe('the key can actually be fitted', () => {
             // travel: the key rises from the rim to its seat, so its own body
             // occupies [seatBottom, pocketTop] once there and everything below
             // must have been clear on the way up
-            const freeTop = pocketTop - (SPEC.key.gripRiseMm ?? 0) - 0.2;
+            const freeTop = pocketTop - (SPEC.key.gripRiseMm ?? 0) - (SPEC.key.seatLandMm ?? 0) - 0.2;
             const at = blocked(hits, pc.rimY + 0.3, freeTop);
             if (at !== null && (worstBlock === null || at > worstBlock.y)) {
                 worstBlock = { y: at, w, d };
@@ -732,7 +732,7 @@ describe('the key can actually be fitted', () => {
         expect(seatBottom).toBeGreaterThan(pc.rimY);
     });
 
-    test('the pocket closes front-to-back over the last of the travel', async () => {
+    test('the far wall never moves, at any height', async () => {
         // The grip is a taper on the FAR wall, not a step on the flanks. This
         // reads the built mesh: pocket depth at a series of heights, which has
         // to be flat up the throat and then close as the key nears its seat.
@@ -768,35 +768,81 @@ describe('the key can actually be fitted', () => {
             for (let x = 0.5; x < SPEC.key.depth + 0.6; x += 0.05) if (!solidAt(x)) far = x;
             return far;
         };
-        const rise = SPEC.key.gripRiseMm, taper = SPEC.key.gripTaperMm;
-        const low = depthAt(pocketTop - rise - 5);
-        const mid = depthAt(pocketTop - rise);
+        const K = SPEC.key;
+        const rise = K.gripRiseMm, land = K.seatLandMm;
+        const low = depthAt(pocketTop - rise - land - 5);
+        const mid = depthAt(pocketTop - rise - land);
         const top = depthAt(pocketTop - 0.5);
-        expect(`straight below the grip: ${Math.abs(mid - low) < 0.05}`).toBe('straight below the grip: true');
-        expect(`closes toward the seat: ${mid - top > taper * 0.7}`).toBe('closes toward the seat: true');
-        expect(mid - top).toBeLessThan(taper + 0.1);
+        // The far wall is FLAT the whole way up, and that is the point. It used
+        // to close by 0.3 mm over the last of the travel, which puts the key's
+        // two tips in compression between two pockets at once — and the only
+        // place that force can go is into shoving the pieces apart. Anything
+        // here bigger than the ray march's own step is a regression.
+        expect(`throat flat: ${Math.abs(mid - low) < 0.06}`).toBe('throat flat: true');
+        expect(`far wall does not move: ${Math.abs(mid - top) < 0.06}`).toBe('far wall does not move: true');
     });
 
-    test('the taper turns variation into seat height, not into jam', async () => {
-        // The whole reason for a taper rather than a dimension: it does not
-        // have to hit a number. The measured process moves ~0.1 mm/side, and
-        // this is the check that the throat can absorb that without the key
-        // either falling through or stopping before it is captured.
+    test('the flanks close toward the seat, then hold for the land', async () => {
+        // The grip is on the FLANKS, because they are the only surfaces whose
+        // tightening pulls the seam SHUT. Read the built mesh: pocket width on
+        // the centreline at a series of heights.
+        const { SPEC, pieceInFrame } = await import('../js/track.js');
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const world = pieces[1];
+        const pc = pieceInFrame(world);
+        const g = buildPieceExportGeometry(world);
+        const pocketTop = (pc.entryDeck + SPEC.waterfallStepMm) - 3;
+        const K = SPEC.key;
+
+        // half-width of the void at (depth d into the face, height y), by
+        // walking outward until the ray up hits solid
+        const halfWidthAt = (y, d) => {
+            let w = 0;
+            for (let z = 0.05; z < K.tipHalf + 2; z += 0.005) {
+                const hits = rayUp(g.positions, g.indices, pc.entry.x + d, pc.entry.z + z);
+                let solid = false;
+                for (const h of hits) if (h > y) solid = !solid;
+                if (solid) break;          // walked out of the void into the rib
+                w = z;
+            }
+            return w;
+        };
+        const D = 4;                                   // mid-depth, clear of both ends
+        const free = halfWidthAt(pocketTop - K.gripRiseMm - K.seatLandMm - 3, D);
+        const landBot = halfWidthAt(pocketTop - K.seatLandMm + 0.1, D);
+        const seat = halfWidthAt(pocketTop - 0.3, D);
+        expect(`closes by the seat: ${(free - landBot).toFixed(2)}`)
+            .toBe(`closes by the seat: ${K.seatGripMm.toFixed(2)}`);
+        // ...and then STOPS closing. The land is what lets the key be pushed
+        // the last of the way against a hard ceiling instead of stalling in a
+        // wedge that is still tightening — the ceiling is the joint's vertical
+        // register, so where the key stops is where the two decks meet.
+        expect(Math.abs(seat - landBot)).toBeLessThan(0.005);
+    });
+
+    test('the grip cannot spend the seat height', async () => {
+        // The decks meet flush at the seam only if the key seats hard against
+        // both pocket ceilings, so the seat is a HARD STOP and not an outcome.
+        // What this rules out is the arrangement that was here before: a wedge
+        // still tightening at the moment the key arrives, which converts
+        // process variation into seat height at a huge gain. At the old
+        // 0.3 mm over 10 mm of rise, 0.1 mm of process moved the seat 3.3 mm —
+        // a 33x amplification into a step across the walking surface.
         const { SPEC } = await import('../js/track.js');
         const K = SPEC.key;
-        const slope = K.gripTaperMm / K.gripRiseMm;      // mm of depth per mm of rise
-        // measured: a printed slot drifts 0.15 mm over its ~39 mm height, so
-        // the deliberate grip has to be much steeper than that or a print
-        // artefact would decide where the key stops
-        expect(slope).toBeGreaterThan(5 * (0.15 / 39));
-        const processMm = 0.1;
-        const seatShift = processMm / slope;
-        expect(seatShift).toBeLessThan(K.gripRiseMm);    // still inside the taper
-        // and the key is still fully captured that far down
         const keyH = K.height - 2 * SPEC.jointClearanceMm;
-        expect(K.gripRiseMm - seatShift).toBeGreaterThan(keyH * 0.5);
-        // the flanks are NOT the grip: they stay an easy slide
-        expect(K.fitClearanceMm).toBeGreaterThan(0.08);
+        // the last of the travel is at CONSTANT section: no wedge, so nothing
+        // in the geometry can stop the key short of the ceiling
+        expect(K.seatLandMm).toBeGreaterThan(1);
+        // the grip is a light interference, in the range the hex joint seats by
+        // hand at, not a wedge that has to be driven
+        expect(K.seatGripMm).toBeGreaterThan(0);
+        expect(K.seatGripMm).toBeLessThanOrEqual(0.04);
+        // it is fully engaged by the time the key seats — the ramp plus the
+        // land fit inside the key's own height, so the whole flank is bearing
+        expect(K.gripRiseMm + K.seatLandMm).toBeLessThanOrEqual(keyH);
+        // and the flanks still start as an easy slide up the throat
+        expect(K.fitClearanceMm - K.seatGripMm).toBeGreaterThan(0.08);
         expect(K.detentProud).toBe(0);                   // superseded, not forgotten
     });
 

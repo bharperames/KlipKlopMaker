@@ -610,6 +610,55 @@ export function bowtieKeyPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance
     return out;
 }
 
+/**
+ * A polygon offset INWARD by `d` — every edge moved `d` along its own inward
+ * normal, corners resolved by intersecting the moved edges.
+ *
+ * This exists because the obvious shortcut is wrong. The key's 0.5 mm chamfer
+ * band used to be drawn as `bowtieKeyPlan({..., clearance: -0.5})`, which
+ * subtracts 0.5 from the neck, the tip and the depth INDEPENDENTLY. On a
+ * bowtie the flanks are raked 24°, so that moves the two ends of a flank by
+ * different amounts: the inset flank is not parallel to the flank it is
+ * supposed to shadow. Every quad in the chamfer band is then non-planar, and
+ * a non-planar quad has no single normal — the triangulator picks a diagonal
+ * and you see it, as a crease running across a face that ought to be flat.
+ * (It is also a chamfer that varies around the perimeter, which is a fit
+ * problem as well as a rendering one.)
+ *
+ * Offsetting the polygon instead keeps corresponding edges parallel, so every
+ * band quad is planar by construction. Vertex count is preserved, which the
+ * sweep relies on.
+ */
+export function insetPolygon(poly, d) {
+    const n = poly.length;
+    const lines = poly.map((a, i) => {
+        const b = poly[(i + 1) % n];
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const L = Math.hypot(dx, dz) || 1;
+        // CCW polygons in this module have their interior on the left, so the
+        // inward normal is (-dz, dx)/L. Sign is checked against the signed area
+        // below rather than assumed.
+        return { px: a[0], pz: a[1], dx: dx / L, dz: dz / L, nx: -dz / L, nz: dx / L };
+    });
+    let area2 = 0;
+    for (let i = 0; i < n; i++) {
+        const a = poly[i], b = poly[(i + 1) % n];
+        area2 += a[0] * b[1] - b[0] * a[1];
+    }
+    const sgn = area2 >= 0 ? 1 : -1;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        const prev = lines[(i + n - 1) % n], cur = lines[i];
+        const p0x = prev.px + sgn * prev.nx * d, p0z = prev.pz + sgn * prev.nz * d;
+        const p1x = cur.px + sgn * cur.nx * d, p1z = cur.pz + sgn * cur.nz * d;
+        const cross = prev.dx * cur.dz - prev.dz * cur.dx;
+        if (Math.abs(cross) < 1e-9) { out.push([p1x, p1z]); continue; }   // collinear
+        const t = ((p1x - p0x) * cur.dz - (p1z - p0z) * cur.dx) / cross;
+        out.push([p0x + prev.dx * t, p0z + prev.dz * t]);
+    }
+    return out;
+}
+
 /** `dist` along the segment from `a` to `b`. */
 function towards(a, b, dist) {
     const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -676,14 +725,16 @@ export function bowtieFit({ neckHalf = 8, tipHalf = 12, depth = 9,
  * was a line at the tip rather than a bearing surface, so the wedging action the
  * joint is named for could not happen.
  */
-export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25, farCut = 0 }) {
+export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.25,
+                                   depthClearance = null }) {
     const flare = (tipHalf - neckHalf) / depth;
     const wall = (z) => neckHalf + clearance + flare * z;   // key flank, offset
-    // `farCut` pulls the FAR wall toward the face without touching the flanks:
-    // the pocket gets shallower while its rake stays exactly parallel to the
-    // key's. That is what lets the joint grip front-to-back up a taper while
-    // the flanks keep doing the wedging at an easy slide fit.
-    const zFar = depth + clearance - farCut;
+    // The FAR wall carries its OWN clearance, so that closing the flanks up
+    // the key's travel — which is how this joint grips, see SPEC.key.seatGripMm
+    // — never drags the far wall in with them. It must not move: the key
+    // reaches into two pockets at once, so a far wall pressing on its tips has
+    // nowhere to send that force except into driving the two pieces apart.
+    const zFar = depth + (depthClearance ?? clearance);
     return [
         [-wall(-0.5), -0.5], [wall(-0.5), -0.5],
         [wall(zFar), zFar],
@@ -692,17 +743,69 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
 }
 
 /**
- * How a printed feature differs from the model it was cut from, per side.
+ * How a printed feature differs from the model it was cut from — MEASURED.
  *
- * Positive means the printed surface sits PROUD of the model — so a key comes
- * out fatter and a slot comes out narrower, both of which eat clearance. The
- * sign is not known for small features on this printer: a 48 mm channel
- * measured 47.68 (0.16/side proud), which would make every joint tight, while
- * the printed keys came out loose. Those cannot both be one bias, so the bias
- * is treated as UNKNOWN and swept. What the simulation reports is how robust a
- * clearance is across the range, not a single answer that depends on believing
- * one measurement over another.
+ * A drawn size and a printed size are different numbers, and the difference is
+ * not one number: it depends on whether the feature is made of material or
+ * made of air, and — this is the part that cost a print run — on how much
+ * plastic surrounds it.
+ *
+ * Everything here comes off one printed set with calipers. `devMm` is the
+ * printed size minus the drawn size, ACROSS the feature (not per side), so a
+ * negative deviation on a hole means the hole came out small.
+ *
+ *   class          feature measured            drawn    printed        dev
+ *   external       hex tenon AF (x2)            8.60     8.60, 8.6-8.7  0.00
+ *                  socket boss OD              19.00    18.90          -0.10
+ *                  key thickness                5.60     5.64-5.65     +0.05
+ *                  key front-to-back           18.00    18.07          +0.07
+ *   holeMassive    track socket AF (x3)         9.00     8.95/8.90/8.85 -0.10
+ *   holeSlender    riser socket AF (x2)         9.00     8.62, 8.65     -0.37
+ *
+ * The last two rows are the same drawn feature — hexSocketSolid at AF 9 — and
+ * they print a quarter of a millimetre apart. That is not noise: it is the
+ * only thing that explains why the pillar-to-pillar joint feels right while
+ * the same joint into a track piece falls apart. A socket in a slender hex
+ * tube is surrounded by two perimeters and a few seconds of layer time; a
+ * socket buried in a track piece's boss has a big cool body around it. The
+ * hot, thin one closes in on itself; the massive one barely moves.
+ *
+ * So a socket that must PRINT at one size has to be DRAWN at two — see
+ * SPEC.socket.trackShrinkAF, which is exactly the difference between these
+ * two rows.
+ *
+ * Corner rounding is tracked separately (cornerRadiusMm): it is not a size
+ * error, it is a shape error, and on a 66° bowtie tip it dwarfs everything
+ * here. Two of the "measurements" that look wildly off — a key waist reading
+ * 16.4 where 16.0 was drawn, its slot reading 16.85 where 16.4 was — are
+ * neither: a caliper jaw is flat and cannot enter a CONCAVE vertex, so it
+ * rides up the flanks and reads a bowtie waist wide. Both parts read wide by
+ * the same amount, which is why the pair still fits and why pre-shrinking the
+ * key on the strength of that number was a mistake.
  */
+export const PRINT_DEVIATION = {
+    /** material — outer surfaces of tenons, keys, walls */
+    external: { devMm: 0.00, sigmaMm: 0.07, n: 4 },
+    /** air, in a body with thermal mass around it — track sockets, pockets */
+    holeMassive: { devMm: -0.10, sigmaMm: 0.05, n: 3 },
+    /** air, in a slender part — riser/foot sockets, thin hex tubes */
+    holeSlender: { devMm: -0.37, sigmaMm: 0.05, n: 2 }
+};
+
+/**
+ * What a drawn dimension is expected to measure once printed, and the band it
+ * lands in (±2σ ≈ 95%). `klass` is a key of PRINT_DEVIATION.
+ *
+ * σ for holeSlender is borrowed from holeMassive: two samples 0.03 apart
+ * cannot establish a spread, and pretending they can would publish a
+ * confidence the data does not support.
+ */
+export function printedSize(drawnMm, klass = 'external') {
+    const d = PRINT_DEVIATION[klass] ?? PRINT_DEVIATION.external;
+    const nominal = drawnMm + d.devMm;
+    return { nominal, sigmaMm: d.sigmaMm, lo: nominal - 2 * d.sigmaMm, hi: nominal + 2 * d.sigmaMm, n: d.n };
+}
+
 export const PROCESS = {
     biasMm: 0,          // systematic; swept over ±0.1 rather than trusted
     sigmaMm: 0.05,      // run to run, per side
@@ -751,7 +854,7 @@ function mulberry32(seed) {
  */
 export function bowtieFitTrials({
     neckHalf = 8, tipHalf = 12, depth = 9, clearance = 0.1, tipChamfer = 0,
-    process = PROCESS, bias = null, trials = 4000, seed = 12345
+    process = PROCESS, bias = null, measured = false, trials = 4000, seed = 12345
 } = {}) {
     const rnd = mulberry32(seed);
     const normal = () => {
@@ -759,11 +862,21 @@ export function bowtieFitTrials({
         return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     };
     const b = bias ?? process.biasMm;
+    // `measured` draws the two parts from their own populations instead of one
+    // swept bias: the key is an external feature (PRINT_DEVIATION.external,
+    // 0.00 across) and its pocket is a hole in a track piece (holeMassive,
+    // −0.10 across, so each wall stands 0.05 proud and eats that much
+    // clearance). The swept form is still the honest default while nothing has
+    // measured a POCKET directly — the classes are calibrated on hex sockets,
+    // and a bowtie slot is a different shape in the same body.
+    const K = PRINT_DEVIATION.external, P = PRINT_DEVIATION.holeMassive;
     let assembles = 0, snug = 0, good = 0;
     const gaps = [];
     for (let i = 0; i < trials; i++) {
         // key proud by one draw, pocket wall proud by another: both eat clearance
-        const eaten = (b + normal() * process.sigmaMm) + (b + normal() * process.sigmaMm);
+        const eaten = measured
+            ? (K.devMm + normal() * K.sigmaMm) / 2 + (-P.devMm + normal() * P.sigmaMm) / 2
+            : (b + normal() * process.sigmaMm) + (b + normal() * process.sigmaMm);
         const r = Math.max(0, process.cornerRadiusMm + normal() * process.cornerSigmaMm);
         const f = bowtieFit({ neckHalf, tipHalf, depth, clearance: clearance - eaten, tipChamfer, cornerRadius: r });
         gaps.push(f.flankGapMm);
@@ -777,6 +890,87 @@ export function bowtieFitTrials({
     return {
         pAssembles: assembles / trials, pSnug: snug / trials, pGood: good / trials,
         medianFlankGapMm: gaps[gaps.length >> 1]
+    };
+}
+
+/**
+ * What "snug" means on the hex joint, in millimetres per side.
+ *
+ * These are not preferences. They are read off two printed joints that were
+ * assembled by hand and judged by hand: a riser tenon in a riser socket
+ * (8.60 in 8.62-8.65 → 0.010-0.025/side) is "snug but not too tight", and the
+ * same tenon in a track socket (8.60 in 8.85-8.95 → 0.125-0.175/side) "falls
+ * out too easily". The band between them is where the joint has to land, and
+ * everything below sits inside it rather than straddling either report.
+ */
+export const HEX_FIT = {
+    targetClearMm: 0.02,   // the joint that works, measured
+    maxPressMm: 0.04,      // interference a hand can still seat
+    looseMm: 0.09          // above this it drops apart; 0.125 demonstrably does
+};
+
+/**
+ * Hex tenon in hex socket. The FLATS decide it.
+ *
+ * A hex corner is 120°, and both parts have one there: the socket's internal
+ * corner fills in by r·(1/sin60° − 1) = 0.155r, and the tenon's external
+ * corner is pulled back by 0.155 of ITS radius. At equal radii those cancel
+ * exactly, so the corners drop out and the fit is just the flats. That
+ * cancellation is the whole reason this joint has never bound the way the
+ * bowtie did: a 66° tip has a factor of 0.836 — five times as sensitive — and
+ * nothing on the other side to cancel against.
+ *
+ * All returns are per side. Negative clearance is interference.
+ */
+export function hexFit({ socketAF, tenonAF, socketCornerR = 0, tenonCornerR = 0 }) {
+    const clearPerSideMm = (socketAF - tenonAF) / 2;
+    // along a corner bisector the flat clearance opens up by 1/cos30°
+    const cornerClear = clearPerSideMm / Math.cos(Math.PI / 6)
+        + 0.1547 * (tenonCornerR - socketCornerR);
+    return {
+        clearPerSideMm,
+        cornerBindMm: Math.max(0, -cornerClear),
+        seats: clearPerSideMm >= -HEX_FIT.maxPressMm && cornerClear >= -HEX_FIT.maxPressMm
+    };
+}
+
+/**
+ * Monte Carlo over the hex joint, drawing the socket and the tenon from their
+ * own MEASURED populations (PRINT_DEVIATION) rather than from one shared
+ * guess. That separation is the point: the socket's class is what makes a
+ * track socket and a riser socket different joints from the same drawing.
+ */
+export function hexFitTrials({
+    socketAF = 9, tenonAF = 8.6, socketClass = 'holeMassive', tenonClass = 'external',
+    process = PROCESS, trials = 8000, seed = 60606
+} = {}) {
+    const rnd = mulberry32(seed);
+    const normal = () => {
+        const u = Math.max(1e-9, rnd()), v = rnd();
+        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    };
+    const S = PRINT_DEVIATION[socketClass], T = PRINT_DEVIATION[tenonClass];
+    let seats = 0, snug = 0, good = 0;
+    const clears = [];
+    for (let i = 0; i < trials; i++) {
+        const s = socketAF + S.devMm + normal() * S.sigmaMm;
+        const t = tenonAF + T.devMm + normal() * T.sigmaMm;
+        const f = hexFit({
+            socketAF: s, tenonAF: t,
+            socketCornerR: Math.max(0, process.cornerRadiusMm + normal() * process.cornerSigmaMm),
+            tenonCornerR: Math.max(0, process.cornerRadiusMm + normal() * process.cornerSigmaMm)
+        });
+        clears.push(f.clearPerSideMm);
+        const isSnug = f.clearPerSideMm <= HEX_FIT.looseMm;
+        if (f.seats) seats++;
+        if (isSnug) snug++;
+        if (f.seats && isSnug) good++;
+    }
+    clears.sort((a, b) => a - b);
+    const q = (p) => clears[Math.min(clears.length - 1, Math.floor(p * clears.length))];
+    return {
+        pSeats: seats / trials, pSnug: snug / trials, pGood: good / trials,
+        medianClearMm: q(0.5), p05ClearMm: q(0.05), p95ClearMm: q(0.95)
     };
 }
 

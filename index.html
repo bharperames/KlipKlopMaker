@@ -737,7 +737,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <ul style="color:var(--ink-2); font-size:12px; line-height:1.4; margin-left: 16px; margin-top: 4px; padding: 0;">
                 <li><b>Zero Overhangs:</b> Support-free printing for track pieces &amp; keys.</li>
                 <li><b>Tension Lock:</b> The tip is wider than the mouth it would have to pass back through, so the seam cannot pull apart.</li>
-                <li><b>Snap Retention:</b> A ledge below the key stops it dropping back out of the pocket.</li>
+                <li><b>Seat Register:</b> The key's top face lands on the pocket ceiling in <i>both</i> pieces, and both ceilings sit 3 mm under their own deck — so seating the key is what makes the two walking surfaces coplanar.</li>
+                <li><b>Flank Grip:</b> The pocket flanks close 0.03 mm over the last 4 mm of travel, then hold that section for a 1.5 mm land. Tightening the flanks pulls the seam <i>shut</i>, and the land lets the key be pushed home against the ceiling instead of stalling in a wedge.</li>
             </ul>
         </div>
         
@@ -751,7 +752,7 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
                     <b>2. Insertion:</b> Align the bowtie key underneath the seam.
                 </div>
                 <div id="timeline-step-3" style="padding: 6px 8px; border-radius: 6px; margin-bottom: 5px; border: 1px solid var(--line); background: var(--panel-2);">
-                    <b>3. Snap &amp; Lock:</b> Push the key up past the detent. Butt the faces; the taper then holds them together.
+                    <b>3. Seat &amp; Lock:</b> Push the key all the way up until it stops against the pocket ceiling. The flanks grip over the last of the travel and hold the faces butted.
                 </div>
             </div>
         </div>
@@ -781,20 +782,29 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
                 <tbody>
                     <tr style="border-bottom:1px solid var(--line);">
                         <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Bowtie Key</td>
-                        <td style="padding:6px 0; font-size:11px;">Height: 6.0 mm<br>Lateral: +0.20 mm</td>
-                        <td style="padding:6px 0; font-size:11px;">Height: 5.6 mm<br>Chamfer: 0.5 mm</td>
-                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.20 mm</td>
+                        <td style="padding:6px 0; font-size:11px;">Pocket flank: +0.12 mm<br>closing to +0.09 at the seat</td>
+                        <td style="padding:6px 0; font-size:11px;">Height: 5.6 mm<br>Tip chamfer: 1.8 mm</td>
+                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.12 → 0.09 mm</td>
                     </tr>
                     <tr>
-                        <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Pillar Hex</td>
-                        <td style="padding:6px 0; font-size:11px;">AF: 9.0 mm<br>Depth: 10.0 mm</td>
+                        <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Hex, into a riser</td>
+                        <td style="padding:6px 0; font-size:11px;">AF: 9.00 drawn<br>prints ≈8.63</td>
                         <td style="padding:6px 0; font-size:11px;">AF: 8.6 mm<br>Length: 9.0 mm</td>
-                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.20 mm</td>
+                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.02 mm</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0; font-weight:600; color:var(--ink); font-size:11px;">Hex, into a track piece</td>
+                        <td style="padding:6px 0; font-size:11px;">AF: 8.75 drawn<br>prints ≈8.65</td>
+                        <td style="padding:6px 0; font-size:11px;">AF: 8.6 mm<br>Length: 9.0 mm</td>
+                        <td style="padding:6px 0; text-align:right; font-weight:bold; color:var(--accent); font-size:11px;">0.02 mm</td>
                     </tr>
                 </tbody>
             </table>
             <div style="font-size:10px; color:var(--ink-3); margin-top:8px; line-height:1.25;">
-                * <i>AF: Across-Flats width of the hex shape. Tolerances are calibrated for standard FDM printing using PLA.</i>
+                * <i>AF: across-flats width of the hex. The same socket is drawn at two
+                sizes on purpose: measured on printed parts, a socket in a slender riser
+                comes out 0.37 mm under and one buried in a track piece's boss only
+                0.10 mm under, so they have to be drawn 0.25 apart to print alike.</i>
             </div>
         </div>
 

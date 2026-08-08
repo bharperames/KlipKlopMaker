@@ -23,10 +23,10 @@ import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
-    planPosAt, deckYAt, stackHeightMm, supportBossPos
+    planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
-import { checkChannelFit, walkerFootprint } from './clearance.js';
+import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
 import { partCode } from './engrave.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
@@ -43,7 +43,7 @@ import {
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
-    bowtieKeyPlan, bowtiePocketPlan
+    bowtieKeyPlan, bowtiePocketPlan, printedSize
 } from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML, placeForPlate } from './export_3mf.js';
@@ -230,6 +230,9 @@ sun.shadow.camera.far = 3000;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 1.3;
 scene.add(sun);
+// a DirectionalLight aims at its target, which has to be in the scene for its
+// world matrix to update — see fitSunShadow, which re-aims both at the track
+scene.add(sun.target);
 
 const ground = new THREE.Mesh(
     new THREE.CircleGeometry(2000, 64).rotateX(-Math.PI / 2),
@@ -456,6 +459,7 @@ function rebuild() {
         openEnds.length > 1 ? `· building on end ${endKeys.indexOf(state.activeEndKey) + 1}/${endKeys.length}` : '';
 
     rebuildScenery();
+    fitSunShadow();
     refreshSelectionHighlight();
     refreshPieceList();
     refreshPhysicsPanel();
@@ -521,6 +525,41 @@ function buildSupportObject(heightMm, x, z) {
     }
     g.position.set(x, 0, z);
     return g;
+}
+
+/**
+ * Fit the sun's shadow frustum to what is actually built.
+ *
+ * It was fixed at ±900 mm, which is 1800 mm across 2048 texels — 0.88 mm per
+ * texel, on a part whose thinnest walls are 2.4. A recess like the key slot
+ * then has its facing wall and its far wall inside one depth sample and
+ * shadows itself, which shows up as diagonal hatching along the top inside
+ * edge of the slot: not geometry, and not a material, just the depth map
+ * running out of resolution. A four-piece track lives inside ~400 mm, so
+ * fitting the frustum buys back 4x of texel density for free, and the bias
+ * numbers below stop having to paper over it.
+ */
+function fitSunShadow() {
+    const pieces = state.layout?.pieces ?? [];
+    let r = 200, cx = 0, cz = 0;
+    if (pieces.length) {
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const pc of pieces) {
+            for (const p of [pc.entry, pc.exit]) {
+                x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
+                z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z);
+            }
+        }
+        cx = (x0 + x1) / 2; cz = (z0 + z1) / 2;
+        r = Math.max(150, Math.max(x1 - x0, z1 - z0) / 2 + 120);
+    }
+    const cam = sun.shadow.camera;
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.updateProjectionMatrix();
+    // keep the light's own direction, just re-aim it at the built track
+    sun.position.set(cx + 500, 900, cz + 300);
+    sun.target.position.set(cx, 0, cz);
+    sun.target.updateMatrixWorld();
 }
 
 function refreshSelectionHighlight() {
@@ -1728,6 +1767,38 @@ for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => setTab(t));
 
 const jointGuideState = { active: false, group: null, leftTrack: null, rightTrack: null, bowtieKey: null, seamGapIndicator: null, t: 0, seamX: 0, seamZ: 0, seamDeckY: 0 };
 
+/**
+ * A piece's export geometry, put back where the piece actually sits.
+ *
+ * `buildPieceExportGeometry` builds in the piece's OWN frame — entry at the
+ * origin, heading +X, rim at y = 0 — because running the booleans out at
+ * x≈400 in a spiral costs float precision. Everything that EXPORTS a part
+ * wants it there. The joint guide and its section views do not: they were
+ * written against world coordinates and reason about the seam by its world
+ * address, so when the frame moved they quietly lost their track pieces —
+ * geometry built, no error, sitting 150 mm from where the seam maths looked
+ * for it. Undoing the frame is a proper rotation about Y and a translation;
+ * never an axis swap, which would mirror the bowtie flare.
+ */
+function pieceExportRawInWorld(piece, opts) {
+    const f = pieceFrame(piece);
+    const raw = buildPieceExportGeometry(piece, opts);
+    const p = Float32Array.from(raw.positions);
+    const c = Math.cos(f.h), s = Math.sin(f.h);
+    for (let i = 0; i < p.length; i += 3) {
+        const x = p[i], z = p[i + 2];
+        p[i] = f.x + x * c - z * s;
+        p[i + 1] += f.y;
+        p[i + 2] = f.z + x * s + z * c;
+    }
+    return { positions: p, indices: raw.indices };
+}
+
+/** The same, as a BufferGeometry, for the meshes and edge sets. */
+function pieceExportGeometryInWorld(piece, opts) {
+    return toBufferGeometry(pieceExportRawInWorld(piece, opts));
+}
+
 function initJointGuide() {
     if (jointGuideState.group) return;
     
@@ -1775,8 +1846,8 @@ function initJointGuide() {
         clearcoat: 0.4
     });
 
-    const leftGeo = toBufferGeometry(buildPieceExportGeometry(pieces[1]));
-    const rightGeo = toBufferGeometry(buildPieceExportGeometry(pieces[2]));
+    const leftGeo = pieceExportGeometryInWorld(pieces[1]);
+    const rightGeo = pieceExportGeometryInWorld(pieces[2]);
     const keyGeo = toBufferGeometry(buildKeyGeometry(SPEC));
     
     const leftMesh = new THREE.Mesh(leftGeo, trackMaterial);
@@ -2034,8 +2105,10 @@ function initJointVignettes(pieces, seamX, seamZ, seamDeckY) {
             sc.add(lines);
         };
 
-        add(buildPieceExportGeometry(pieces[1]), shellMat());
-        add(buildPieceExportGeometry(pieces[2]), shellMat());
+        // World space: the stub crops and the cut planes below are all
+        // expressed as offsets from the seam's world address.
+        add(pieceExportRawInWorld(pieces[1]), shellMat());
+        add(pieceExportRawInWorld(pieces[2]), shellMat());
 
         // The key is modelled at the origin with its own +Z along the track, so
         // it has to be rotated and translated onto the seam. Bake that into the
@@ -3100,7 +3173,7 @@ function assembleParts() {
     const note = {
         piece: 'End ribs carry the bowtie pockets; hex socket under the boss; washboard floor.',
         switch: 'Two routes merged with an open frog, three bowtie pockets, gate-pin bore at the mouth.',
-        key: 'Drops into the pockets of two mating pieces — Hot-Wheels-style seam connector.',
+        key: 'Slots up into the pockets of two mating pieces and pulls the seam closed.',
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
         pillar: 'Hex tenon (8.6 AF) plugs into any track/scenery socket (9 AF × 10).',
         jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
@@ -3177,11 +3250,33 @@ function assembleParts() {
         return '';
     };
 
+    /**
+     * A part is named for its SHAPE, not for where it happens to sit.
+     *
+     * The names used to carry the piece's index in the build sequence —
+     * `04_straight`. After deduplication that number meant "the first place
+     * this shape occurred", so it moved when you edited an earlier piece, it
+     * said nothing about the part in your hand, and it made the track parts
+     * look like a different species from the stock parts (which have no
+     * position and so never had one). The list is a shopping list: `straight
+     * ×6` is what you print and what you reach into the bin for.
+     *
+     * `_boss` marks the one variant that genuinely differs: a piece carrying
+     * the hex socket for a support column. Anything else that splits a
+     * signature — only custom parameters can, at the Standard — falls through
+     * to a `_2`, `_3` suffix rather than silently colliding.
+     */
+    const nameUse = new Map();
+    const uniqueName = (base) => {
+        const n = (nameUse.get(base) ?? 0) + 1;
+        nameUse.set(base, n);
+        return n === 1 ? base : `${base}_${n}`;
+    };
     for (const [sig, item] of uniqueParts.entries()) {
         const { pc, support, count } = item;
-        const baseName = (pc.role === 'main' ? pc.name.replace('switchMain', 'switch') : pc.name)
-            + seamRole(pc)
-;
+        const shape = pc.role === 'main' ? (pc.switchType ?? 'switch') : pc.type;
+        const baseName = uniqueName(shape + seamRole(pc)
+            + (support && support.mode !== 'none' ? '_boss' : ''));
         if (pc.role === 'main') {
             const pair = switchPairs.get(pc.switchKey);
             parts.push({
@@ -3208,9 +3303,9 @@ function assembleParts() {
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: 'gate_paddle_print', count: switchPairs.size, sig: 'gate_paddle_print', kind: 'gate', note: note.gate, build: () => buildGateGeometry() });
+        parts.push({ name: 'gate_paddle', count: switchPairs.size, sig: 'gate_paddle', kind: 'gate', note: note.gate, build: () => buildGateGeometry() });
     }
-    parts.push({ name: 'connector_key_print', count: joints, sig: 'connector_key_print', kind: 'key', note: note.key, build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) });
+    parts.push({ name: 'bowtie_key', count: joints, sig: 'bowtie_key', kind: 'key', note: note.key, build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -3227,10 +3322,10 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (jogs) parts.push({ name: 'support_jog_print', count: jogs, sig: 'support_jog_print', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) });
-        if (feet) parts.push({ name: 'support_foot_print', count: feet, sig: 'support_foot_print', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
+        if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) });
+        if (feet) parts.push({ name: 'support_foot', count: feet, sig: 'support_foot', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm_print`, count, sig: `support_riser_${r}mm_print`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
+            parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
         }
     } else {
         for (const sup of supList) {
@@ -3242,11 +3337,11 @@ function assembleParts() {
     const kinds = [...new Set(state.scenery.map(s => s.kind))];
     for (const kind of kinds) {
         const count = state.scenery.filter(s => s.kind === kind).length;
-        if (kind === 'tower') parts.push({ name: 'scenery_tower_print', count, sig: 'scenery_tower_print', kind: 'scenery', note: note.scenery, build: () => buildTowerGeometry(100) });
-        if (kind === 'patio') parts.push({ name: 'scenery_patio_print', count, sig: 'scenery_patio_print', kind: 'scenery', note: note.scenery, build: () => buildPatioGeometry() });
+        if (kind === 'tower') parts.push({ name: 'scenery_tower', count, sig: 'scenery_tower', kind: 'scenery', note: note.scenery, build: () => buildTowerGeometry(100) });
+        if (kind === 'patio') parts.push({ name: 'scenery_patio', count, sig: 'scenery_patio', kind: 'scenery', note: note.scenery, build: () => buildPatioGeometry() });
         if (kind === 'palm') {
-            parts.push({ name: 'scenery_palm_island_print', count, sig: 'scenery_palm_island_print', kind: 'scenery', note: note.scenery, build: () => buildPalmIslandGeometries().island });
-            parts.push({ name: 'scenery_palm_tree_print_crown_down', count, sig: 'scenery_palm_tree_print_crown_down', kind: 'scenery', note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
+            parts.push({ name: 'scenery_palm_island', count, sig: 'scenery_palm_island', kind: 'scenery', note: note.scenery, build: () => buildPalmIslandGeometries().island });
+            parts.push({ name: 'scenery_palm_tree_crown_down', count, sig: 'scenery_palm_tree_crown_down', kind: 'scenery', note: note.scenery, build: () => rotFlip(buildPalmIslandGeometries().palm) });
         }
     }
 
@@ -3274,7 +3369,13 @@ const GALLERY_MATS = {
     // describes the shape instead.
     // polygonOffset pushes the surface a hair back so the edge overlay sits on
     // top of it instead of z-fighting the faces it traces.
-    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.38, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3, envMapIntensity: 0.32, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    // A clearcoat has its own Fresnel term on top of the base layer's, so at
+    // grazing angles it goes almost fully reflective — which is why the same
+    // part read as matte from above and as polished metal from underneath,
+    // where every face is seen edge-on. Half the clearcoat and a rougher one
+    // keeps the sheen without the flip, and the part looks like the same
+    // plastic from both sides.
+    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.45, metalness: 0, clearcoat: 0.22, clearcoatRoughness: 0.5, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
     pla: () => new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.85, metalness: 0, envMapIntensity: 0.25, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
     clay: () => new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
     normals: () => new THREE.MeshNormalMaterial()
@@ -3395,7 +3496,9 @@ function initGallery() {
     gallery.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 4000);
     gallery.controls = new OrbitControls(gallery.camera, gallery.renderer.domElement);
     gallery.controls.enableDamping = true;
-    gallery.controls.autoRotate = true;
+    // Follow the checkbox, which starts unchecked. Hardcoding `true` here left
+    // the viewer spinning with the box off until you toggled it twice.
+    gallery.controls.autoRotate = !!$('print-part-rotate')?.checked;
     gallery.controls.autoRotateSpeed = 1.6;
     gallery.controls.zoomSpeed = 3;
     lightPartViewer(gallery);
@@ -3409,268 +3512,350 @@ function initGallery() {
 }
 
 /**
- * Engineering-style dimensions: witness (extension) lines run FROM the part's
- * bounding corners out to the dimension line, so callouts visually attach to
- * the part instead of floating in space. Small fixed offset regardless of size.
+ * Engineering dimensions, drawn the way a drawing draws them.
+ *
+ * Every callout is ONE measurement with a stated pair of attachment points:
+ * witness lines leave the two measured points (starting a small gap off the
+ * surface, so the line belongs to the part rather than growing out of it), a
+ * dimension line runs between them carrying arrowheads, and the value sits on
+ * that line. Nothing is placed by eye and nothing is grouped — a stack of six
+ * numbers in one pill cannot say which surface any of them came from, which is
+ * the entire job of a dimension.
+ *
+ * The text lives IN THE SCENE, on the dimension's own plane, not on a
+ * screen-facing billboard: it scales with the part, it sits on the line it
+ * belongs to, and it never floats off into the middle distance. The one thing
+ * in-scene text gets wrong is reading backwards or upside down from the far
+ * side, and that is what orientDimText fixes each frame — the same convention
+ * a CAD viewer uses.
+ *
+ * Sizes all come off the part. A 22 mm key and a 300 mm ramp both want the
+ * dimension line to clear the material without flying into the next grid
+ * square, so the stand-off, the arrowheads and the text are fractions of the
+ * bounding diagonal rather than constants.
+ *
+ * Where a feature is one the joints depend on, the callout carries a second
+ * line: what it should MEASURE once printed. Those come from PRINT_DEVIATION,
+ * which is calipers on a printed set, not a model of a printer.
  */
+const DIM_INK = '#2fd8f5';         // not the grid's white, not the part's gold
+
 function makeDimGroup(box, part) {
     const g = new THREE.Group();
-    const mat = new THREE.LineBasicMaterial({ color: 0x9ec5ff });
+    const faceables = [];          // text planes that re-orient to the camera
+    g.userData.dimText = faceables;
     const size = box.getSize(new THREE.Vector3());
-    const off = 7;               // dimension line sits this far off the part
-    const ext = off + 3;         // witness lines overshoot it slightly
-    const mkLine = (a, b) => {
-        const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
-        g.add(new THREE.Line(geo, mat));
-    };
-    /**
-     * Dimension callout.
-     *
-     * Two things used to make these unreadable. The canvas was a fixed 256×64,
-     * so anything longer than ~7 characters at 36px was silently clipped — that
-     * is where "Pocket depth 9.25" became "ocket depth 9.2". And the sprite was
-     * scaled in WORLD units, so a label's on-screen size depended on how far it
-     * happened to sit from the camera; near ones were huge, far ones tiny.
-     *
-     * Now: the canvas is measured to fit the string, and sizeAttenuation:false
-     * makes the sprite a constant fraction of viewport height regardless of
-     * depth. A dark pill keeps the text legible over the part as well as over
-     * the background.
-     */
-    const LABEL_PX = 30, PAD_X = 12, PAD_Y = 7, LINE_H = LABEL_PX * 1.25;
-    // `text` may be an array — a multi-line block keeps a cluster of related
-    // callouts as ONE pill instead of six that collide at any zoom.
-    const mkLabel = (text, pos) => {
-        const lines = Array.isArray(text) ? text : [text];
-        const font = `600 ${LABEL_PX}px system-ui, -apple-system, sans-serif`;
-        const probe = document.createElement('canvas').getContext('2d');
-        probe.font = font;
-        const tw = Math.ceil(Math.max(...lines.map(l => probe.measureText(l).width)));
-        const w = tw + PAD_X * 2, h = lines.length * LINE_H + PAD_Y * 2;
+    const { min, max } = box;
+    const diag = size.length();
+    const S = Math.min(Math.max(diag * 0.026, 0.7), 2.6);    // arrowhead length
+    const OFF = Math.min(Math.max(diag * 0.055, 4), 13);     // dim line stand-off
+    const GAP = S * 0.7;                                     // witness line gap
+    const OVER = S * 1.2;                                    // witness overshoot
+    // Text is sized so a value block is about a 25th of the part's diagonal —
+    // the proportion a drawing uses. The floor is deliberately low: clamping
+    // it up "so small parts stay readable" is what made the key's callouts
+    // bigger than the key.
+    const TXT = Math.min(Math.max(diag * 0.030, 0.6), 7);    // text cap height
 
-        const dpr = Math.min(devicePixelRatio || 1, 2);
+    const lineMat = new THREE.LineBasicMaterial({
+        color: DIM_INK, depthTest: false, transparent: true, opacity: 0.95
+    });
+    const inkMat = new THREE.MeshBasicMaterial({
+        color: DIM_INK, depthTest: false, transparent: true, opacity: 0.95
+    });
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    const seg = (a, b) => {
+        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lineMat);
+        l.renderOrder = 24;
+        g.add(l);
+    };
+    /** Solid arrowhead: apex AT `tip`, pointing along `dir`. */
+    const arrow = (tip, dir) => {
+        const geo = new THREE.ConeGeometry(S * 0.26, S, 8);
+        geo.translate(0, -S / 2, 0);           // apex to the origin
+        const m = new THREE.Mesh(geo, inkMat);
+        m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.clone().normalize());
+        m.position.copy(tip);
+        m.renderOrder = 25;
+        g.add(m);
+    };
+
+    /**
+     * A value, lying on the dimension's plane. `dir` is the reading direction
+     * (along the dimension line) and `up` points away from the part.
+     */
+    const PX = 64;
+    const text = (lines, pos, dir, up, capMm = TXT) => {
+        const rows = lines.filter(Boolean);
+        const fonts = rows.map((_, i) => i === 0
+            ? `600 ${PX}px system-ui, -apple-system, sans-serif`
+            : `500 ${Math.round(PX * 0.76)}px system-ui, -apple-system, sans-serif`);
+        const probe = document.createElement('canvas').getContext('2d');
+        const tw = Math.ceil(Math.max(...rows.map((l, i) => {
+            probe.font = fonts[i];
+            return probe.measureText(l).width;
+        }))) + PX * 0.5;
+        const rowH = rows.map((_, i) => PX * (i === 0 ? 1.24 : 1.0));
+        const th = rowH.reduce((a, b) => a + b, 0);
+
         const c = document.createElement('canvas');
-        c.width = Math.ceil(w * dpr);
-        c.height = Math.ceil(h * dpr);
+        c.width = tw; c.height = Math.ceil(th);
         const ctx = c.getContext('2d');
-        ctx.scale(dpr, dpr);
-        ctx.fillStyle = 'rgba(10,16,26,0.74)';
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(0, 0, w, h, 7); ctx.fill(); }
-        else ctx.fillRect(0, 0, w, h);
-        ctx.font = font;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        lines.forEach((line, i) => {
-            ctx.fillStyle = (lines.length > 1 && i === 0) ? '#ffd79a' : '#dceaff';
-            ctx.fillText(line, w / 2, PAD_Y + LINE_H * (i + 0.5) + 1);
+        let y = 0;
+        rows.forEach((line, i) => {
+            ctx.font = fonts[i];
+            // dark outline, not a filled pill: the value reads over the part
+            // and over the plate without boxing off the geometry behind it
+            ctx.lineWidth = PX * 0.10;
+            ctx.strokeStyle = 'rgba(6,12,20,0.85)';
+            ctx.lineJoin = 'round';
+            ctx.strokeText(line, tw / 2, y + rowH[i] / 2);
+            ctx.fillStyle = i === 0 ? '#eafcff' : DIM_INK;
+            ctx.fillText(line, tw / 2, y + rowH[i] / 2);
+            y += rowH[i];
         });
 
         const tex = new THREE.CanvasTexture(c);
         tex.minFilter = THREE.LinearFilter;
         tex.generateMipmaps = false;
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-            map: tex, depthTest: false, transparent: true, sizeAttenuation: false
-        }));
-        sp.position.copy(pos);
-        // with sizeAttenuation off, scale.y ≈ fraction of viewport height / 1.2.
-        // Scales with line count so each ROW stays the same size as a one-line
-        // label — a fixed total height would shrink a 4-line block to 1/4 text.
-        const hFrac = 0.024 * lines.length;
-        sp.scale.set(hFrac * (w / h), hFrac, 1);
-        sp.renderOrder = 30;
-        g.add(sp);
+        const hMm = capMm * (th / PX);
+        const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(hMm * (tw / th), hMm),
+            new THREE.MeshBasicMaterial({
+                map: tex, transparent: true, depthTest: false, side: THREE.DoubleSide
+            })
+        );
+        plane.position.copy(pos);
+        plane.renderOrder = 31;
+        plane.userData = { dir: dir.clone().normalize(), up: up.clone().normalize() };
+        faceables.push(plane);
+        g.add(plane);
     };
-    const { min, max } = box;
-    const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
-    // X (length): witness lines from the front-bottom corners, dim line between
-    mkLine(V(min.x, min.y, max.z), V(min.x, min.y, max.z + ext));
-    mkLine(V(max.x, min.y, max.z), V(max.x, min.y, max.z + ext));
-    mkLine(V(min.x, min.y, max.z + off), V(max.x, min.y, max.z + off));
-    mkLabel(`${size.x.toFixed(1)} mm`, V((min.x + max.x) / 2, min.y + 3, max.z + off + 5));
+    /**
+     * As-printed line for a fit-critical feature. `klass` names the measured
+     * population; nothing gets a tolerance there is no data for.
+     */
+    const printedNote = (drawnMm, klass) => {
+        if (!klass) return null;
+        const p = printedSize(drawnMm, klass);
+        return `prints ${p.nominal.toFixed(2)} ±${(2 * p.sigmaMm).toFixed(2)}`;
+    };
 
-    // Z (depth): witness from the right-bottom corners
-    mkLine(V(max.x, min.y, min.z), V(max.x + ext, min.y, min.z));
-    mkLine(V(max.x, min.y, max.z), V(max.x + ext, min.y, max.z));
-    mkLine(V(max.x + off, min.y, min.z), V(max.x + off, min.y, max.z));
-    mkLabel(`${size.z.toFixed(1)} mm`, V(max.x + off + 5, min.y + 3, (min.z + max.z) / 2));
-
-    // Y (height): witness from the front-right edge, vertical dim beside it
-    mkLine(V(max.x, min.y, max.z), V(max.x + ext, min.y, max.z + ext));
-    mkLine(V(max.x, max.y, max.z), V(max.x + ext, max.y, max.z + ext));
-    mkLine(V(max.x + off, min.y, max.z + off), V(max.x + off, max.y, max.z + off));
-    mkLabel(`${size.y.toFixed(1)} mm`, V(max.x + off + 4, (min.y + max.y) / 2, max.z + off + 4));
-
-    // Custom connective dimension annotations
-    if (part) {
-        const name = part.name || '';
-        
-        if (name === 'connector_key_print') {
-            // Derived from SPEC, not hardcoded: the thickness callout used to
-            // read "7.5 mm" for a key that is height(6) − 2×clearance(0.2) =
-            // 5.6 mm, which is the kind of drift that gets a part printed wrong.
-            const K = SPEC.key;
-            const thk = K.height - 2 * SPEC.jointClearanceMm;
-            mkLine(V(-K.neckHalf, max.y + 1, 0), V(K.neckHalf, max.y + 1, 0));
-            mkLabel(`Neck ${(2 * K.neckHalf).toFixed(1)} mm`, V(0, max.y + 6, 0));
-
-            mkLine(V(-K.tipHalf, max.y + 1, K.depth), V(K.tipHalf, max.y + 1, K.depth));
-            mkLabel(`Tip ${(2 * K.tipHalf).toFixed(1)} mm`, V(0, max.y + 6, K.depth));
-
-            mkLine(V(min.x - 4, min.y, 0), V(min.x - 4, max.y, 0));
-            mkLabel(`Thk ${thk.toFixed(1)} mm`, V(min.x - 12, (min.y + max.y) / 2, 0));
+    /** One linear dimension between two points on the part, offset along `out`. */
+    const dim = (a, b, out, main, opts = {}) => {
+        const o = out.clone().normalize();
+        const off = opts.offMm ?? OFF;
+        const A = a.clone().addScaledVector(o, off);
+        const B = b.clone().addScaledVector(o, off);
+        seg(a.clone().addScaledVector(o, GAP), A.clone().addScaledVector(o, OVER));
+        seg(b.clone().addScaledVector(o, GAP), B.clone().addScaledVector(o, OVER));
+        const span = B.clone().sub(A);
+        const len = span.length();
+        if (len < 1e-6) return;
+        const dir = span.clone().normalize();
+        // A callout is sized by WHAT IT MEASURES, capped by the part. Sizing
+        // everything off the part's diagonal instead put 5 mm lettering on a
+        // 9 mm pocket depth, and the seven joint dimensions — all of which
+        // live inside 30 mm at one end of a 150 mm ramp — piled into an
+        // unreadable heap.
+        const txt = Math.min(TXT, Math.max(0.5, len * 0.13));
+        if (len > 5 * S) {
+            seg(A, B);                                   // arrows inside, pointing out
+            arrow(A, dir.clone().negate());
+            arrow(B, dir);
+        } else {
+            seg(A.clone().addScaledVector(dir, -3 * S),  // too short: arrows outside
+                B.clone().addScaledVector(dir, 3 * S));
+            arrow(A, dir);
+            arrow(B, dir.clone().negate());
         }
-        else if (name.startsWith('support_riser') || name.startsWith('support_foot')) {
-            // Support columns tenon details
-            const bodyY = max.y - 9.0;
-            
-            // Tenon height: 9.0 mm
-            mkLine(V(5, bodyY, 5), V(12, bodyY, 5));
-            mkLine(V(5, max.y, 5), V(12, max.y, 5));
-            mkLine(V(10, bodyY, 5), V(10, max.y, 5));
-            mkLabel('Tenon 9.0 mm', V(18, (bodyY + max.y) / 2, 5));
-            
-            // Tenon across-flats size: 8.6 mm
-            mkLine(V(-4.3, max.y + 1, 0), V(4.3, max.y + 1, 0));
-            mkLabel('Tenon AF 8.6 mm', V(0, max.y + 5, 0));
-        }
-        else if (part.piece) {
-            // Track Piece detailed dimensions
-            const pc = part.piece;
-            const support = part.support;
-            const spec = SPEC;
+        const sub = opts.sub ?? printedNote(opts.drawnMm, opts.klass);
+        const mid = A.clone().add(B).multiplyScalar(0.5)
+            .addScaledVector(o, txt * (sub ? 1.15 : 0.85));
+        text([main, sub], mid, dir, o, txt);
+    };
 
-            // If it has a support, draw socket dimensions at y = 0
-            if (support && support.mode !== 'none') {
-                const h = pc.entry.h;
-                const cos = Math.cos(-h);
-                const sin = Math.sin(-h);
-                
-                const tx = support.x - pc.entry.x;
-                const tz = support.z - pc.entry.z;
-                const lx = tx * cos - tz * sin;
-                const lz = tx * sin + tz * cos;
-                
-                const stations = stationsForPiece(pc, 5);
-                let minLx = Infinity, maxLx = -Infinity, minLz = Infinity, maxLz = -Infinity;
-                stations.forEach(st => {
-                    const stx = st.origin[0] - pc.entry.x;
-                    const stz = st.origin[2] - pc.entry.z;
-                    const slx = stx * cos - stz * sin;
-                    const slz = stx * sin + stz * cos;
-                    const W = pc.innerWidth / 2 + spec.wall;
-                    minLx = Math.min(minLx, slx - W);
-                    maxLx = Math.max(maxLx, slx + W);
-                    minLz = Math.min(minLz, slz - W);
-                    maxLz = Math.max(maxLz, slz + W);
-                });
-                const cx = (minLx + maxLx) / 2;
-                const cz = (minLz + maxLz) / 2;
+    const X = V(1, 0, 0), Y = V(0, 1, 0), Z = V(0, 0, 1);
+    const mmText = (v) => `${v.toFixed(v < 10 ? 2 : 1)} mm`;
 
-                const socketX = lx - cx;
-                const socketZ = lz - cz;
-                
-                // Socket AF
-                mkLine(V(socketX - 4.5, 0.2, socketZ), V(socketX + 4.5, 0.2, socketZ));
-                mkLabel('Socket AF 9.0 mm', V(socketX, -4, socketZ));
+    const name = part?.name ?? '';
+    const K = SPEC.key;
+    // A part that dimensions its own features does not also want the bounding
+    // box: on the key every box dimension is a feature dimension already, and
+    // drawing both is how a legible drawing turns into a thicket.
+    if (name !== 'bowtie_key') {
+        dim(V(min.x, min.y, max.z), V(max.x, min.y, max.z), Z, mmText(size.x));
+        dim(V(max.x, min.y, min.z), V(max.x, min.y, max.z), X, mmText(size.z));
+        dim(V(max.x, min.y, max.z), V(max.x, max.y, max.z), X, mmText(size.y));
+    }
 
-                // Socket Depth
-                mkLine(V(socketX + 6, 0, socketZ), V(socketX + 11, 0, socketZ));
-                mkLine(V(socketX + 6, 10, socketZ), V(socketX + 11, 10, socketZ));
-                mkLine(V(socketX + 9, 0, socketZ), V(socketX + 9, 10, socketZ));
-                mkLabel('Depth 10.0 mm', V(socketX + 15, 5, socketZ));
+    if (!part) return g;
 
-                // Boss OD — from the spec, not typed in. It read 20.0 while the
-                // boss has always been 2 x socket.bossR = 19.0.
-                const bossOD = 2 * SPEC.socket.bossR;
-                mkLine(V(socketX - bossOD / 2, -0.2, socketZ + 8), V(socketX + bossOD / 2, -0.2, socketZ + 8));
-                mkLabel(`Boss Ø ${bossOD.toFixed(1)} mm`, V(socketX, -8, socketZ + 12));
-            }
-
-            // Bowtie Pocket dimensions at exit face
-            if (pc.type !== 'end') {
-                const h = pc.entry.h;
-                const cos = Math.cos(-h);
-                const sin = Math.sin(-h);
-
-                const tx = pc.exit.x - pc.entry.x;
-                const tz = pc.exit.z - pc.entry.z;
-                const exitLx = tx * cos - tz * sin;
-                const exitLz = tx * sin + tz * cos;
-                const exitLy = pc.exitDeck - pc.entryDeck;
-
-                const stations = stationsForPiece(pc, 5);
-                let minLx = Infinity, maxLx = -Infinity, minLz = Infinity, maxLz = -Infinity;
-                stations.forEach(st => {
-                    const stx = st.origin[0] - pc.entry.x;
-                    const stz = st.origin[2] - pc.entry.z;
-                    const slx = stx * cos - stz * sin;
-                    const slz = stx * sin + stz * cos;
-                    const W = pc.innerWidth / 2 + spec.wall;
-                    minLx = Math.min(minLx, slx - W);
-                    maxLx = Math.max(maxLx, slx + W);
-                    minLz = Math.min(minLz, slz - W);
-                    maxLz = Math.max(maxLz, slz + W);
-                });
-                const cx = (minLx + maxLx) / 2;
-                const cz = (minLz + maxLz) / 2;
-
-                const exX = exitLx - cx;
-                const exZ = exitLz - cz;
-                const exY = pc.exitDeck - pc.rimY;
-
-                // Derived from the same plan polygon the CSG cuts, so these can
-                // never drift from the geometry the way hardcoded values did.
-                const K = spec.key;
-                const poc = bowtiePocketPlan({
-                    neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-                    clearance: K.fitClearanceMm
-                });
-                const mouthHalf = poc[1][0];                          // at z = -0.5
-                const tipHalf = poc[2][0];                            // at z = depth+clr
-                const pocDepth = poc[2][1];
-                const keyH = K.height - 2 * spec.jointClearanceMm;
-                const ceilY = exY - 3;                                // 3 mm of rib+floor cap
-                const bandY = ceilY - keyH;
-
-                // The mesh is recentred but NOT de-rotated (see recenter()):
-                // world +X runs along the track, world Z is lateral, y = 0 is
-                // the rim. Pocket widths are therefore Z spans and the pocket
-                // depth is an X span running INWARD from the face.
-                const inward = exX >= 0 ? -1 : 1;
-                const lat = tipHalf + 6;          // park vertical callouts clear of the part
-
-                // lateral widths: at the mouth, and at the deep end
-                // The three vertical bands (cap / key band / throat) span only
-                // ~12 mm between them, so at constant on-screen label size they
-                // stack on top of each other. Fan them out along Z — 20 mm
-                // apart — and give each a leader back to its dimension line.
-                // Dimension lines still mark each measured feature on the part…
-                mkLine(V(exX, bandY, exZ - mouthHalf), V(exX, bandY, exZ + mouthHalf));
-                mkLine(V(exX + inward * pocDepth, ceilY + 4, exZ - tipHalf), V(exX + inward * pocDepth, ceilY + 4, exZ + tipHalf));
-                mkLine(V(exX, ceilY, exZ + lat), V(exX + inward * pocDepth, ceilY, exZ + lat));
-                mkLine(V(exX, exY, exZ - lat), V(exX, ceilY, exZ - lat));
-                mkLine(V(exX, ceilY, exZ - lat), V(exX, bandY, exZ - lat));
-                mkLine(V(exX, bandY, exZ - lat), V(exX, 0, exZ - lat));
-
-                // …but the VALUES go in one block with a single leader. Six
-                // separate pills in a 25 mm span overlapped at every camera
-                // angle; a legend can't collide with itself.
-                const anchor = V(exX, (ceilY + bandY) / 2, exZ - lat);
-                // kept close to the part: pushed further out it fell outside the
-                // viewport at the default framing
-                const block = V(exX - 26, ceilY + 20, exZ - lat + 4);
-                mkLine(anchor, block);
-                mkLabel([
-                    'Bowtie pocket',
-                    `mouth ${(2 * mouthHalf).toFixed(2)}  ·  tip ${(2 * tipHalf).toFixed(2)} mm`,
-                    `depth ${pocDepth.toFixed(2)} mm  ·  cap 3.0 mm`,
-                    `key band ${keyH.toFixed(1)} mm  ·  throat ${bandY.toFixed(1)} mm`
-                ], block);
-            }
+    if (name === 'bowtie_key') {
+        // The key is recentred: +X is tip to tip, +Z runs into the two pockets,
+        // y = 0 is the first layer off the plate.
+        const halfDepth = K.depth;
+        dim(V(-K.neckHalf, max.y, 0), V(K.neckHalf, max.y, 0), Y,
+            `waist ${(2 * K.neckHalf).toFixed(1)} mm`,
+            { drawnMm: 2 * K.neckHalf, klass: 'external' });
+        dim(V(min.x, min.y, -halfDepth), V(max.x, min.y, -halfDepth), Z.clone().negate(),
+            `tip ${size.x.toFixed(2)} mm`, { drawnMm: size.x, klass: 'external' });
+        // the full thickness, off the same corner the land is measured from
+        dim(V(max.x, min.y, -halfDepth), V(max.x, max.y, -halfDepth), Z.clone().negate(),
+            `${size.y.toFixed(1)} mm thick`, { offMm: OFF * 1.7 });
+        // engagement into ONE pocket, taken at the tip so the callout sits
+        // clear of the part rather than across it
+        dim(V(min.x, min.y, 0), V(min.x, min.y, halfDepth), X.clone().negate(),
+            `${halfDepth.toFixed(1)} mm engaged`);
+        // The land between the two 0.5 mm chamfers — what actually bears on the
+        // pocket ceiling, and NOT the overall height.
+        dim(V(max.x, min.y + 0.5, halfDepth), V(max.x, max.y - 0.5, halfDepth),
+            X, `land ${(size.y - 1).toFixed(1)} mm`, { offMm: OFF * 1.7 });
+    }
+    else if (/^support_(riser|foot|jog)/.test(name)) {
+        const tenonAF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm;   // 8.6
+        dim(V(-tenonAF / 2, max.y, 0), V(tenonAF / 2, max.y, 0), Y,
+            `tenon AF ${tenonAF.toFixed(1)} mm`, { drawnMm: tenonAF, klass: 'external' });
+        dim(V(tenonAF / 2, max.y - 9, 0), V(tenonAF / 2, max.y, 0), X, 'tenon 9.0 mm');
+        if (!/^support_foot/.test(name)) {
+            // the socket that measured RIGHT — the reference for every other one
+            const af = SPEC.socket.hexAF;
+            dim(V(-af / 2, min.y, 0), V(af / 2, min.y, 0), Y.clone().negate(),
+                `socket AF ${af.toFixed(1)} mm`, { drawnMm: af, klass: 'holeSlender' });
+            dim(V(af / 2, min.y, 0), V(af / 2, min.y + SPEC.socket.depth, 0),
+                X.clone().negate(), `${SPEC.socket.depth.toFixed(1)} mm deep`);
         }
     }
+    else if (part.piece) {
+        trackPieceDims();
+    }
     return g;
+
+    /**
+     * The features a track piece is judged on: the channel the figure walks
+     * in, the socket a column plugs into, the pocket the key rises into. Each
+     * is dimensioned where it is, in the piece's recentred export frame —
+     * along +X with +Z lateral and y = 0 at the rim (see recenter).
+     */
+    function trackPieceDims() {
+        const pc = part.piece;
+        const support = part.support;
+        const spec = SPEC;
+
+        const hd = pc.entry.h;
+        const cos = Math.cos(-hd), sin = Math.sin(-hd);
+        const toLocal = (wx, wz) => {
+            const tx = wx - pc.entry.x, tz = wz - pc.entry.z;
+            return [tx * cos - tz * sin, tx * sin + tz * cos];
+        };
+        let minLx = Infinity, maxLx = -Infinity, minLz = Infinity, maxLz = -Infinity;
+        for (const st of stationsForPiece(pc, 5)) {
+            const [slx, slz] = toLocal(st.origin[0], st.origin[2]);
+            const W = pc.innerWidth / 2 + spec.wall;
+            minLx = Math.min(minLx, slx - W); maxLx = Math.max(maxLx, slx + W);
+            minLz = Math.min(minLz, slz - W); maxLz = Math.max(maxLz, slz + W);
+        }
+        const cx = (minLx + maxLx) / 2, cz = (minLz + maxLz) / 2;
+        const at = (wx, wz) => {
+            const [lx, lz] = toLocal(wx, wz);
+            return [lx - cx, lz - cz];
+        };
+
+        // ---- the channel, across the entry face at deck height ------------
+        const [eX, eZ] = at(pc.entry.x, pc.entry.z);
+        const entryY = pc.entryDeck - pc.rimY;
+        const Wi = pc.innerWidth / 2;
+        dim(V(eX, entryY, eZ - Wi), V(eX, entryY, eZ + Wi), X.clone().negate(),
+            `channel ${pc.innerWidth.toFixed(1)} mm`,
+            { sub: `prints ≈${(pc.innerWidth - CLEARANCE.printNarrowingMm).toFixed(2)} (measured)` });
+
+        // ---- the support socket ------------------------------------------
+        if (support && support.mode !== 'none') {
+            const [sx, sz] = at(support.x, support.z);
+            const af = spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0);
+            dim(V(sx - af / 2, 0, sz), V(sx + af / 2, 0, sz), Y.clone().negate(),
+                `socket AF ${af.toFixed(2)} mm`, { drawnMm: af, klass: 'holeMassive' });
+            dim(V(sx, 0, sz + spec.socket.bossR), V(sx, spec.socket.depth, sz + spec.socket.bossR),
+                Z, `${spec.socket.depth.toFixed(1)} mm deep`);
+            const bossOD = 2 * spec.socket.bossR;
+            dim(V(sx - spec.socket.bossR, 0, sz), V(sx + spec.socket.bossR, 0, sz),
+                Y.clone().negate(), `boss Ø ${bossOD.toFixed(1)} mm`,
+                { drawnMm: bossOD, klass: 'external', offMm: OFF * 2.2 });
+        }
+
+        // ---- the bowtie pocket at the exit face ---------------------------
+        if (pc.type === 'end') return;
+        const [exX, exZ] = at(pc.exit.x, pc.exit.z);
+        const exY = pc.exitDeck - pc.rimY;
+        const poc = bowtiePocketPlan({
+            neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
+            clearance: K.fitClearanceMm
+        });
+        const mouthHalf = poc[1][0], tipHalf = poc[2][0], pocDepth = poc[2][1];
+        const keyH = K.height - 2 * spec.jointClearanceMm;
+        const ceilY = exY - 3;                 // the key's vertical stop
+        const bandY = ceilY - keyH;
+        const inward = exX >= 0 ? -1 : 1;
+        const outward = X.clone().multiplyScalar(-inward);
+
+        dim(V(exX, bandY, exZ - mouthHalf), V(exX, bandY, exZ + mouthHalf),
+            Y.clone().negate(), `mouth ${(2 * mouthHalf).toFixed(2)} mm`,
+            { drawnMm: 2 * mouthHalf, klass: 'holeMassive', offMm: bandY + OFF });
+        dim(V(exX + inward * pocDepth, ceilY, exZ - tipHalf),
+            V(exX + inward * pocDepth, ceilY, exZ + tipHalf), Y,
+            `tip ${(2 * tipHalf).toFixed(2)} mm`,
+            { drawnMm: 2 * tipHalf, klass: 'holeMassive' });
+        dim(V(exX, ceilY, exZ + tipHalf), V(exX + inward * pocDepth, ceilY, exZ + tipHalf),
+            Z, `${pocDepth.toFixed(2)} mm deep`);
+        // the band the key occupies and the cap of material above it: the two
+        // numbers that decide whether the decks meet flush at the seam
+        dim(V(exX, bandY, exZ - tipHalf), V(exX, ceilY, exZ - tipHalf),
+            outward, `key band ${keyH.toFixed(1)} mm`);
+        dim(V(exX, ceilY, exZ - tipHalf), V(exX, exY, exZ - tipHalf),
+            outward, 'cap 3.0 mm', { offMm: OFF * 2.4 });
+    }
+}
+
+/**
+ * Keep in-scene dimension text readable.
+ *
+ * The text is placed in the world, on its dimension line — that is what makes
+ * it read as part of the drawing rather than as a floating tag. A plane fixed
+ * rigidly in the world, though, is mirrored from behind, upside down from
+ * below, and edge-on to nothing from directly above.
+ *
+ * So only ONE axis is pinned: the reading direction stays along the dimension
+ * line, which is the thing that says which measurement the number belongs to.
+ * The plane then rotates about that axis until it faces the camera. Position
+ * never changes, the number always sits on its own line, and all three failure
+ * modes go away at once.
+ */
+function orientDimText(group, camera) {
+    const planes = group?.userData?.dimText;
+    if (!planes) return;
+    const toCam = new THREE.Vector3(), dir = new THREE.Vector3();
+    const up = new THREE.Vector3(), nrm = new THREE.Vector3(), camRight = new THREE.Vector3();
+    const m = new THREE.Matrix4();
+    camRight.setFromMatrixColumn(camera.matrixWorld, 0);
+    for (const p of planes) {
+        dir.copy(p.userData.dir);
+        // read left to right on screen, whichever side you have walked round to
+        if (dir.dot(camRight) < 0) dir.negate();
+        toCam.copy(camera.position).sub(p.position);
+        // the normal is the part of the view direction perpendicular to the
+        // reading direction: the text spins about its own dimension line until
+        // it faces you, so it is never mirrored, never upside down, and never
+        // foreshortened to a sliver — but it still belongs to its dimension.
+        nrm.copy(toCam).addScaledVector(dir, -toCam.dot(dir));
+        if (nrm.lengthSq() < 1e-9) continue;         // looking straight down it
+        nrm.normalize();
+        up.crossVectors(nrm, dir).normalize();
+        m.makeBasis(dir, up, nrm);
+        p.quaternion.setFromRotationMatrix(m);
+    }
 }
 
 /** (Re)builds the displayed mesh + overlays from gallery.geo and view options. */
@@ -3690,13 +3875,13 @@ function makeDimGroup(box, part) {
  * The part mesh is opaque and already writes depth, so no prepass is needed
  * here — only the polygonOffset on GALLERY_MATS so edges win the depth test.
  */
-function makePartEdges(geo, res, withHidden) {
+function makePartEdges(geo, res, withHidden, thresholdDeg = EDGE_ANGLE.washboard) {
     const g = new THREE.Group();
     // LineMaterial.resolution is a COPY-ON-SET accessor (it does
     // uniforms.resolution.value.copy(v)), so handing it a shared Vector2 and
     // mutating that later never reaches the shader. The materials themselves
     // have to be updated — see updateLineRes().
-    const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, 45));
+    const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, thresholdDeg));
     const hidden = new LineSegments2(fat, new LineMaterial({
         color: 0x2b3138, linewidth: 1.5, resolution: res,
         transparent: true, opacity: 0.5, depthTest: false,
@@ -3715,6 +3900,19 @@ function makePartEdges(geo, res, withHidden) {
         : [visible.material];
     return g;
 }
+
+/**
+ * Facet angles above which an edge is drawn.
+ *
+ * The high threshold exists for exactly ONE feature: the washboard. Its ridges
+ * are sampled 6x per 2.5 mm, so at the crests facet-to-facet reaches ~38°, and
+ * anything lower emits a comb of ~120 lines across the floor that buries the
+ * part. Nothing else on any part needs it — and it costs real information: a
+ * chamfer on a 66° bowtie tip meets its flanks at 33°, so at 45° the key's
+ * chamfered corners simply had no outline, which is what made them look like a
+ * shading artefact. Parts without a washboard get the low threshold.
+ */
+const EDGE_ANGLE = { washboard: 45, plain: 22 };
 
 /** Push a real viewport size into Line2 materials (see makePartEdges). */
 function updateLineRes(mats, w, h) {
@@ -3813,7 +4011,9 @@ function applyViewerStyle(target, resizeFn) {
 
     if (showEdges) {
         target.lineRes = target.lineRes ?? new THREE.Vector2(1, 1);
-        target.edges = makePartEdges(target.geo, target.lineRes, mode === 'hlr');
+        const kind = target.parts?.[target.selectedIndex]?.kind;
+        target.edges = makePartEdges(target.geo, target.lineRes, mode === 'hlr',
+            kind === 'track' ? EDGE_ANGLE.washboard : EDGE_ANGLE.plain);
         target.lineMats = target.edges.userData.lineMats;
         target.scene.add(target.edges);
         settleResize(resizeFn);      // seed the Line2 resolution
@@ -3822,9 +4022,12 @@ function applyViewerStyle(target, resizeFn) {
     }
 
     if (mode === 'wire') {
+        // Bright green on the denim plate: a wireframe's job is to show the
+        // tessellation, and dark navy lines on a mid-blue background hid the
+        // very triangles you switch to this mode to look at.
         target.wire = new THREE.LineSegments(
             new THREE.WireframeGeometry(target.geo),
-            new THREE.LineBasicMaterial({ color: 0x24384f, transparent: true, opacity: 0.55 })
+            new THREE.LineBasicMaterial({ color: 0x5dff9b, transparent: true, opacity: 0.7 })
         );
         target.scene.add(target.wire);
     }
@@ -3920,7 +4123,7 @@ function selectGalleryPart(i) {
             `<b>${part.name}${countLabel}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
             `${report.isManifold && report.isConsistent && report.windsOutward
                 ? '<span class="ok">✔ watertight</span>' : '<span class="bad">✖ CHECK</span>'}<br>` +
-            `<span style="opacity:.8">${part.note ?? ''} Drag in inspector to rotate.</span>`;
+            `<span style="opacity:.8">${part.note ?? ''}</span>`;
     }, 30);
 }
 
@@ -4460,20 +4663,20 @@ function shopVariantLabel(part) {
 function shopKitsFor(kind) {
     const has = (n) => shop.items.some(i => i.name === n);
     const out = [];
-    if (kind === 'figure' && has('figure_body_print_on_side')) out.push({
+    if (kind === 'figure' && has('figure_body_on_side')) out.push({
         label: 'complete walker',
-        parts: { figure_body_print_on_side: 1, figure_pendulum_print_on_side: 1, figure_plugs_print: 1 }
+        parts: { figure_body_on_side: 1, figure_pendulum_on_side: 1, figure_plugs: 1 }
     });
-    if (kind === 'support' && has('support_foot_print')) out.push({
+    if (kind === 'support' && has('support_foot')) out.push({
         label: 'pier — foot + 15/30/60 ladder',
-        parts: { support_foot_print: 1, support_riser_15mm_print: 1,
-                 support_riser_30mm_print: 1, support_riser_60mm_print: 1 }
+        parts: { support_foot: 1, support_riser_15mm: 1,
+                 support_riser_30mm: 1, support_riser_60mm: 1 }
     });
     // A switch without its gate paddle cannot route anything, and the switch's
     // own name depends on the design, so this pair is found rather than named.
-    if (kind === 'track' && has('gate_paddle_print')) {
+    if (kind === 'track' && has('gate_paddle')) {
         for (const sw of shop.items.filter(i => /switch/.test(i.name))) {
-            out.push({ label: `${sw.name} + gate`, parts: { [sw.name]: 1, gate_paddle_print: 1 } });
+            out.push({ label: `${sw.name} + gate`, parts: { [sw.name]: 1, gate_paddle: 1 } });
         }
     }
     return out.filter(k => Object.keys(k.parts).every(has));
@@ -4640,19 +4843,19 @@ async function openPrintShop() {
             }
 
             const catalogue = [
-                { name: 'connector_key_print', kind: 'key', build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) },
-                { name: 'gate_paddle_print', kind: 'gate', build: () => buildGateGeometry() },
-                { name: 'support_foot_print', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
+                { name: 'bowtie_key', kind: 'key', build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) },
+                { name: 'gate_paddle', kind: 'gate', build: () => buildGateGeometry() },
+                { name: 'support_foot', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
                 ...[120, 60, 30, 15].map(r => ({
-                    name: `support_riser_${r}mm_print`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
-                { name: 'support_jog_print', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
-                { name: 'scenery_tower_print', kind: 'scenery', build: () => buildTowerGeometry(100) },
-                { name: 'scenery_patio_print', kind: 'scenery', build: () => buildPatioGeometry() },
-                { name: 'scenery_palm_island_print', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
-                { name: 'scenery_palm_tree_print_crown_down', kind: 'scenery', build: () => rotFlip(buildPalmIslandGeometries().palm) },
-                { name: 'figure_body_print_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) },
-                { name: 'figure_pendulum_print_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) },
-                { name: 'figure_plugs_print', kind: 'figure', build: () => buildFigureGeometries(state.innerWidth).plugSet }
+                    name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
+                { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
+                { name: 'scenery_tower', kind: 'scenery', build: () => buildTowerGeometry(100) },
+                { name: 'scenery_patio', kind: 'scenery', build: () => buildPatioGeometry() },
+                { name: 'scenery_palm_island', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
+                { name: 'scenery_palm_tree_crown_down', kind: 'scenery', build: () => rotFlip(buildPalmIslandGeometries().palm) },
+                { name: 'figure_body_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).body) },
+                { name: 'figure_pendulum_on_side', kind: 'figure', build: () => rotForSide(buildFigureGeometries(state.innerWidth).pendulum) },
+                { name: 'figure_plugs', kind: 'figure', build: () => buildFigureGeometries(state.innerWidth).plugSet }
             ].filter(c => !have.has(c.name)).map(c => ({ ...c, count: 0 }));
 
             shop.items = [];
@@ -4726,6 +4929,11 @@ async function shopExport() {
 }
 
 window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verification
+// Headless verification needs to see what actually made it into the scene, not
+// just that no exception was thrown — the joint guide's tracks went missing
+// once with a clean console (see initJointGuide).
+window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideState; },
+                 get gallery() { return gallery; } };
 $('btn-print-shop').addEventListener('click', () => openPrintShop());
 $('shop-close').addEventListener('click', () => closePrintShop());
 $('shop-export').addEventListener('click', () => shopExport());
@@ -4886,6 +5094,8 @@ function animate(now) {
     if (jointGuideState.active) renderJointVignettes();
     if (gallery.open) {
         gallery.controls.update();
+        // in-scene dimension text is only readable if it turns to face you
+        orientDimText(gallery.dims, gallery.camera);
         gallery.renderer.render(gallery.scene, gallery.camera);
     }
 }

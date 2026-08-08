@@ -131,25 +131,34 @@ export const SPEC = {
     socket: {
         hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7,
         /**
-         * The track socket is drawn 0.1 AF small, and this time the number
-         * comes from the joint rather than from a theory about it.
+         * The track socket is drawn 0.25 AF SMALL, and the number is the gap
+         * between two printed copies of the same drawing.
          *
-         * Three sockets measured uniform on all three flat pairs — 8.95, 8.90,
-         * 8.85 against 9.00 drawn — and the tenon dead on 8.60. That gives an
-         * achieved clearance of 0.125-0.175 mm/side with only 0.05 of spread,
-         * where a located hex joint in PLA wants nearer 0.10. Drawing 0.1 AF
-         * out lands it at 0.075-0.125.
+         * One hex socket, one AF 9 drawing, two places it gets used:
          *
-         * Three explanations for WHY it prints under have all died — oversize,
-         * oval, and "the hole is the problem" (the boss outer is 18.90 against
-         * Ø19.00, and 18.90/19.00 matches 8.95/9.00 to four decimals, so the
-         * whole boss simply shrank 0.53%, thermally). None of that matters now:
-         * the clearance is measured, the target is known, and the correction is
-         * the difference. The tenon printing exactly to size is the tell — an
-         * external feature gets +nozzle and −shrink and they cancel; an
-         * internal one gets both inward.
+         *     riser / foot   drawn 9.00 -> printed 8.62, 8.65   ("snug, good")
+         *     track piece    drawn 9.00 -> printed 8.85 - 8.95  ("falls out")
+         *
+         * with the tenon dead on 8.60 in both cases. So the joint that works
+         * runs 0.010-0.025 mm/side and the joint that fails runs 0.125-0.175 —
+         * and NEITHER is a design decision, because both came off the same
+         * number. The difference is thermal: a socket in a slender hex tube is
+         * two perimeters and a few seconds of layer time and closes in on
+         * itself; a socket buried in a track piece's boss has a cool body
+         * around it and barely moves. PRINT_DEVIATION carries both populations.
+         *
+         * 0.25 is what makes the track socket print like the riser socket:
+         * 8.75 drawn, ~8.65 printed, 0.025 mm/side. hexFitTrials scores that at
+         * 84% good against the reference joint's own 82% — the target is not
+         * perfection, it is the joint you already said feels right.
+         *
+         * Earlier attempts to explain the track socket as oversize, oval, or
+         * "the hole is the problem" all died against measurement. The tenon
+         * printing exactly to size was the standing clue: an external feature
+         * gets +nozzle and −shrink and they cancel, an internal one gets both
+         * inward, and how much depends on what is around it.
          */
-        trackShrinkAF: 0.1,
+        trackShrinkAF: 0.25,
         /**
          * NO grip taper here, unlike the key — and the reason is worth keeping,
          * because the key's answer looks like it should transfer and does not.
@@ -249,38 +258,45 @@ export const SPEC = {
         // then rests on them. Kept short so it is a snap, not a press fit down
         // the whole throat, and shallow enough to print as a 0.35 mm step.
         /**
-         * THE GRIP IS FRONT TO BACK, UP A TAPER — not side to side.
+         * THE KEY'S SEAT HEIGHT IS NOT FREE, AND THE GRIP MUST NOT SPEND IT.
          *
-         * The flanks were being asked to do two jobs at once: wedge the seam
-         * shut AND hold the key in. They cannot. The clearance that lets a key
-         * slide 33 mm up a throat is the same clearance that lets it rattle,
-         * and every measurement so far says the process moves more than the
-         * window between those two.
+         * This replaces a front-to-back taper on the pocket's FAR WALL, and
+         * both halves of that idea were wrong.
          *
-         * So the jobs are split. The flanks keep the wedging at an easy slide
-         * fit, where clearance is harmless — they only bear when something
-         * tries to pull the seam open. Retention comes from the pocket getting
-         * `gripTaperMm` SHALLOWER over the last `gripRiseMm` of travel, so the
-         * key wedges front-to-back as it rises.
+         * Wrong about the seat: the key's top face against the pocket ceiling
+         * is the joint's VERTICAL REGISTER. Both pockets are cut 3 mm below
+         * their own deck, so a key held hard against both ceilings is what
+         * makes the two walking surfaces coplanar at the seam — and a piece
+         * whose uphill end has no pier under it hangs on that face. A grip
+         * that stops the key "wherever it wedges" therefore does not absorb
+         * variation, it AMPLIFIES it into the one dimension that has to be
+         * exact: at 0.3 mm over 10 mm of rise, 0.1 mm of process moves the
+         * seat 3.3 mm. Thirty-three times, into a step across the walking
+         * surface. The old test asserted that amplification as a feature.
          *
-         * The point of a taper is that it does not have to hit a dimension. A
-         * key that prints 0.1 mm over just stops 3 mm lower; one that prints
-         * under goes 3 mm higher. At 0.3 mm over 10 mm it is 8x steeper than
-         * the 0.15 mm of drift the slot shows over its whole 39 mm height, so
-         * the grip is the thing doing the gripping and not a print artefact.
+         * Wrong about the direction: a far-wall taper pushes the key's tips
+         * inward from both pockets at once. The key cannot move — so the
+         * reaction drives the two PIECES APART, opening the seam it exists to
+         * close, by up to the taper itself. The bowtie's flanks are the only
+         * surfaces whose tightening pulls the seam SHUT: squeeze them and the
+         * key rides shallower, and both pieces come toward it, 2.25 mm of
+         * closure per mm of flank interference at this flare.
          *
-         * It also moves the fit onto the axis this printer is actually good
-         * at. Measured per side: Z +0.022 (the key is 5.645 tall against 5.60
-         * drawn, 28 exact layers), XY flat faces +0.035, and the XY features
-         * that were being asked to hold the joint — the concave waist and the
-         * slot — +0.20 to +0.30. Z is an order of magnitude better controlled,
-         * and a taper spends XY error as Z position, which is free. Variation becomes seat height instead of
-         * rattle or jam, and there is 30 mm of throat to absorb it. That is
-         * the compliance both the key's Monte Carlo and the hex socket's
-         * 0.2 mm of ovality have been asking for.
+         * So: the flanks close by `seatGripMm` per side over `gripRiseMm`, and
+         * then HOLD THAT CLEARANCE, unchanged, for the last `seatLandMm` of
+         * travel. The key wedges progressively as it rises, arrives at a
+         * defined light interference, and covers the final stretch at constant
+         * section — sliding friction, no wedge — so it can be pushed until the
+         * ceiling stops it. Grip and register end up on different axes, which
+         * is the only way to have both.
+         *
+         * 0.03/side is the same order as the hex joint's proven 0.02-0.04, on
+         * 4.6 mm of land per flank per pocket. The far wall does not move at
+         * all — see bowtiePocketPlan's separate depthClearance.
          */
-        gripTaperMm: 0.3,
-        gripRiseMm: 10,
+        seatGripMm: 0.03,
+        gripRiseMm: 4,
+        seatLandMm: 1.5,
         // The detent is off: the taper does its job and does it better. It was
         // a step, and a step is what stopped the first printed keys dead.
         // The pocket is drawn 0.2 mm/side clear of the key, but a printed slot
