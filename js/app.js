@@ -23,7 +23,7 @@ import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
-    planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame
+    planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame, innerWidthAt
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
@@ -3175,7 +3175,7 @@ function assembleParts() {
         switch: 'Two routes merged with an open frog, three bowtie pockets, gate-pin bore at the mouth.',
         key: 'Slots up into the pockets of two mating pieces and pulls the seam closed.',
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
-        pillar: 'Hex tenon (8.6 AF) plugs into any track/scenery socket (9 AF × 10).',
+        pillar: 'Hex tenon, 8.6 mm across the flats, plugs into any track or scenery socket (9 mm across flats × 10 deep).',
         jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
         scenery: 'Shares the same hex tenon/socket interlock standard.',
         figure: 'Print on its side; hoof cams must be smooth arcs.'
@@ -3727,13 +3727,13 @@ function makeDimGroup(box, part) {
     else if (/^support_(riser|foot|jog)/.test(name)) {
         const tenonAF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm;   // 8.6
         dim(V(-tenonAF / 2, max.y, 0), V(tenonAF / 2, max.y, 0), Y,
-            `tenon AF ${tenonAF.toFixed(1)} mm`, { drawnMm: tenonAF, klass: 'external' });
+            `tenon ${tenonAF.toFixed(1)} mm across flats`, { drawnMm: tenonAF, klass: 'external' });
         dim(V(tenonAF / 2, max.y - 9, 0), V(tenonAF / 2, max.y, 0), X, 'tenon 9.0 mm');
         if (!/^support_foot/.test(name)) {
             // the socket that measured RIGHT — the reference for every other one
             const af = SPEC.socket.hexAF;
             dim(V(-af / 2, min.y, 0), V(af / 2, min.y, 0), Y.clone().negate(),
-                `socket AF ${af.toFixed(1)} mm`, { drawnMm: af, klass: 'holeSlender' });
+                `socket ${af.toFixed(1)} mm across flats`, { drawnMm: af, klass: 'holeSlender' });
             dim(V(af / 2, min.y, 0), V(af / 2, min.y + SPEC.socket.depth, 0),
                 X.clone().negate(), `${SPEC.socket.depth.toFixed(1)} mm deep`);
         }
@@ -3773,20 +3773,31 @@ function makeDimGroup(box, part) {
             return [lx - cx, lz - cz];
         };
 
-        // ---- the channel, across the entry face at deck height ------------
-        const [eX, eZ] = at(pc.entry.x, pc.entry.z);
-        const entryY = pc.entryDeck - pc.rimY;
-        const Wi = pc.innerWidth / 2;
-        dim(V(eX, entryY, eZ - Wi), V(eX, entryY, eZ + Wi), X.clone().negate(),
+        // ---- the channel, across the open middle --------------------------
+        // Taken at MID-PIECE and carried up over the rails, not at an end
+        // face: the ends are closed by ribs, so a callout there attaches to
+        // two points buried behind material and hangs in space next to a
+        // surface that is not the one being measured. Mid-piece the channel
+        // is open to the sky, which is exactly where you would put a caliper.
+        const half = pc.planLen / 2;
+        const mid = planPosAt(pc, half);
+        const [mX, mZ] = at(mid.x, mid.z);
+        const hl = mid.h - pc.entry.h;                    // heading in the local frame
+        const rt = [-Math.sin(hl), Math.cos(hl)];         // lateral unit vector
+        const midY = deckYAt(pc, half) - pc.rimY;
+        const Wi = innerWidthAt(pc, half) / 2;
+        dim(V(mX - rt[0] * Wi, midY, mZ - rt[1] * Wi),
+            V(mX + rt[0] * Wi, midY, mZ + rt[1] * Wi), Y,
             `channel ${pc.innerWidth.toFixed(1)} mm`,
-            { sub: `prints ≈${(pc.innerWidth - CLEARANCE.printNarrowingMm).toFixed(2)} (measured)` });
+            { offMm: spec.railHeight + OFF,
+              sub: `prints ≈${(pc.innerWidth - CLEARANCE.printNarrowingMm).toFixed(2)} (measured)` });
 
         // ---- the support socket ------------------------------------------
         if (support && support.mode !== 'none') {
             const [sx, sz] = at(support.x, support.z);
             const af = spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0);
             dim(V(sx - af / 2, 0, sz), V(sx + af / 2, 0, sz), Y.clone().negate(),
-                `socket AF ${af.toFixed(2)} mm`, { drawnMm: af, klass: 'holeMassive' });
+                `socket ${af.toFixed(2)} mm across flats`, { drawnMm: af, klass: 'holeMassive' });
             dim(V(sx, 0, sz + spec.socket.bossR), V(sx, spec.socket.depth, sz + spec.socket.bossR),
                 Z, `${spec.socket.depth.toFixed(1)} mm deep`);
             const bossOD = 2 * spec.socket.bossR;
