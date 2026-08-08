@@ -242,7 +242,7 @@ raising the arch crowns, or accepting supports on curves.
 | Channel | 48.00 | 47.68 | −0.080 (walls encroach) |
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
 | Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
-| Track hex socket | 9.00 | 8.9–9.1 | at nominal, ±0.1 **within one socket** |
+| Track hex socket | 9.00 | 8.95 on all three flat pairs | −0.05, and round |
 | Key SLOT neck, at the top | 16.40 | 16.85 | +0.225 |
 | Key SLOT neck, low down | 16.40 | 16.94 | +0.270 |
 | Key SLOT neck, at the bed | 16.40 | 17.00 | +0.300 |
@@ -279,21 +279,18 @@ convex tips, so it prints with a different RAKE. That is the whole "tight and
 loose at once", and the key is now drawn pre-distorted at the waist to correct
 it.
 
-**The loose track socket is a compliance problem, not a size one.** The
-hypothesis was that it printed oversize, since riser-into-riser is snug at the
-same nominal and the same tenon is loose in the track. Measured, both are at
-nominal: socket 8.9–9.1 against 9.0, tenon 8.6–8.7 against 8.6, giving
-0.10–0.25 mm/side — which brackets what the riser joint gets. What the numbers
-do show is a socket varying **0.2 mm within itself**. A hex tenon in something
-that irregular bears on the tightest flat pair and rocks on the rest: it
-measures correct and feels loose. `trackShrinkAF` is 0.1 rather than 0.2
-because 0.2 drives the tight end to zero, where it stops assembling at all.
+**The loose track socket is still unexplained, and two hypotheses have died.**
+First: it prints oversize. Measured 8.95 against 9.00 drawn — slightly UNDER.
+Second: it prints oval, so a tenon bears on the tight flat pair and rocks on
+the others. Measured across all three pairs it reads 8.95 on every one: round
+and true. Achieved clearance is 0.125–0.175 mm/side against a tenon at
+8.6–8.7, which is not obviously loose on paper while the hand says it is.
 
-This is the same conclusion the key's Monte Carlo reached from the other
-direction: **the process variation is wider than these fit windows, so
-dimensioning alone cannot close either joint.** Both want a compliant feature —
-something that takes up 0.2 mm without either rattling or jamming. That is the
-next real design step, and it is one design serving both joints.
+So either the RISER socket is smaller than this one, or the difference is not a
+size at all — and the riser socket has not been measured. `trackShrinkAF` is
+0.1 as a hedge: tighter than measured, still assembling at the tight end, and
+it leaves the riser-to-riser joint that already works alone. It is labelled
+provisional in the code.
 
 **Z is an order of magnitude better than XY, which is the real argument for the
 taper.** Per side, measured on the same parts: Z +0.022 (the key is 5.645 tall

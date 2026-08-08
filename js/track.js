@@ -131,28 +131,27 @@ export const SPEC = {
     socket: {
         hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7,
         /**
-         * The track's socket is cut slightly smaller than everything else's.
+         * The track's socket is cut slightly smaller than everything else's,
+         * and this is PROVISIONAL — the measurement that would justify it
+         * properly has not been taken.
          *
-         * The first version of this comment said the track socket must be
-         * printing oversize, because riser-into-riser is snug at nominal and
-         * the SAME tenon in the track's boss is loose. Measured, that is wrong:
-         * the track socket comes off the plate at 8.9-9.1 against 9.0 drawn,
-         * and the tenon at 8.6-8.7 against 8.6. Both are at nominal. The
-         * achieved clearance is 0.10-0.25 mm/side, which brackets what the
-         * riser joint gets, and yet one feels right and the other does not.
+         * Two hypotheses have already died here. The first was that the track
+         * socket prints oversize, since riser-into-riser is snug at the same
+         * nominal and the same tenon is loose in the track: measured, it comes
+         * out 8.95 against 9.00 drawn, slightly UNDER. The second was that it
+         * prints oval, so a tenon would bear on the tight flat pair and rock
+         * on the rest: measured across all three pairs, it reads 8.95 on every
+         * one. The socket is round, true, and very slightly small.
          *
-         * What the numbers do show is a socket that varies 0.2 mm WITHIN
-         * ITSELF. A hex tenon in a socket that irregular bears on the tightest
-         * flat pair and rocks on the rest — it measures correct and feels
-         * loose, which is what was reported. That is a compliance problem, not
-         * a size one, and shrinking cannot really solve it.
+         * Which leaves the achieved clearance at 0.125-0.175 mm/side — not
+         * obviously loose on paper — while the hand says it is. So either the
+         * RISER socket is smaller than this one, or the difference is not a
+         * size at all, and nobody has measured the riser socket yet.
          *
-         * So this is 0.1 and not the 0.2 it was: enough to take the loose end
-         * from 0.25 to 0.20 mm/side without driving the tight end to zero,
-         * where it would stop assembling. The proper fix is a compliant
-         * feature in the socket, and the measurement that would justify one is
-         * the riser socket read across all three flat pairs — if that is
-         * uniform where this one spans 0.2, the diagnosis is settled.
+         * 0.1 AF is a hedge, not an answer: it takes the track joint to
+         * 0.075-0.125 mm/side, tighter than measured and still assembling at
+         * the tight end, without touching the riser-to-riser joint that
+         * already works. One number settles it.
          */
         trackShrinkAF: 0.1
     },
