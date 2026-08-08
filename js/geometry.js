@@ -702,8 +702,22 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
 export const PROCESS = {
     biasMm: 0,          // systematic; swept over ±0.1 rather than trusted
     sigmaMm: 0.05,      // run to run, per side
-    cornerRadiusMm: 0.30,
-    cornerSigmaMm: 0.08,
+    /**
+     * MEASURED, and by the one dimension that reads it directly. The key's
+     * two diagonals run tip to opposite tip, drawn 30.00 exactly, and came off
+     * the plate at 29.28 and 29.16. That diagonal lies almost along the tip's
+     * own bisector, so the deficit is twice the amount a fillet pulls the
+     * vertex in — 0.43 and 0.50 mm of radius. The tip-to-tip width implies
+     * 0.39 independently. A tip is a 66° corner; a nozzle simply cannot hold
+     * one that sharp.
+     *
+     * The old 0.30 was a guess, and it was low enough to size the chamfer
+     * wrong. The POCKET's internal corners are what actually bind and nothing
+     * has measured those — an inside corner collects material rather than
+     * losing it, so if anything 0.45 is the optimistic end.
+     */
+    cornerRadiusMm: 0.45,
+    cornerSigmaMm: 0.06,
     /** interference a hand can push a key past, per side */
     maxPressMm: 0.05,
     /** gap above which the joint rattles, per side */

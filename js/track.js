@@ -207,13 +207,13 @@ export const SPEC = {
         // are supposed to do the wedging — at the old clearance the corner
         // interference was 0.20 mm while the flank gap was 0.18. Chamfering
         // the key's four tips takes the corners out of the fit entirely.
-        // 1.2 mm, chosen by `bowtieFitTrials` rather than by eye. The corner
-        // is the binding constraint, not the clearance: at 0.8 the joint only
-        // tolerates a pocket corner radius up to 0.37 mm, and a 0.4 nozzle
-        // leaves ~0.30 ± 0.08, so a fifth of printed keys still stood on their
-        // tips. Past 1.2 the corner stops being the limiter at all — it
-        // tolerates 0.58 mm, past three sigma of it — and more buys nothing.
-        tipChamfer: 1.4,
+        // 1.8 mm, sized by `bowtieFitTrials` against a MEASURED corner radius
+        // rather than a guessed one. The corner is the binding constraint, not
+        // the clearance — and the key's own diagonals put the radius at
+        // 0.43-0.50 mm, not the 0.30 first assumed. At 0.8 the joint tolerates
+        // 0.46 mm and at 1.4 only 0.60, against the 0.63 needed at three
+        // sigma; 1.8 tolerates 0.74 and is where P(good) stops improving.
+        tipChamfer: 1.8,
         // Retention. The pocket is a through-slot open to the rim, so a seated
         // key had nothing under it and simply fell back out — the joint has
         // never actually held itself together. These bumps narrow the pocket in

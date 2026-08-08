@@ -241,8 +241,17 @@ raising the arch crowns, or accepting supports on curves.
 | Skirt wall | 1.60 | 1.76 | +0.080 |
 | Channel | 48.00 | 47.68 | −0.080 (walls encroach) |
 | Hex tenon | 8.60 | 8.6–8.7 | 0 to +0.05 |
+| Key, diagonals (tip to opposite tip) | 30.00 | 29.28 / 29.16 | corner radius **0.43 / 0.50** |
 
-Two things fall out. The wall and the channel agree exactly and independently —
+The diagonals are the most useful of these, because they read the corner
+radius directly: a tip is a 66° corner, the diagonal lies almost along its
+bisector, and the deficit is twice what a fillet pulls the vertex in. 0.43 and
+0.50 mm, with the tip-to-tip width implying 0.39 independently. The model had
+assumed 0.30 — low enough that `tipChamfer` was sized wrong twice before this
+number existed (0.8 tolerates 0.46, 1.4 tolerates 0.60, and 0.63 is needed at
+three sigma). It is 1.8 now.
+
+Two more things fall out. The wall and the channel agree exactly and independently —
 every printed surface sits ~0.08 mm proud — and the tenon is true, so the track
 socket printing loose is the SOCKET's error, not the tenon's. And a bowtie does
 not print as a scaled bowtie: the nozzle fills the concave waist and rounds the
