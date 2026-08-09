@@ -47,7 +47,7 @@ import {
 } from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML, placeForPlate } from './export_3mf.js';
-import { analyzeMesh } from './mesh_utils.js';
+import { analyzeMesh, bedStability } from './mesh_utils.js';
 import { packPlates, describePlates, PLATE } from './plate_pack.js';
 import { EXPORT_SETS, getExportSet, describeExportSet } from './export_sets.js';
 
@@ -4440,6 +4440,9 @@ function mergePlacedMeshes(items, byName) {
     return [positions, indices];
 }
 
+/** Below this much first-layer area a part is standing on a point, not sitting. */
+const MIN_BED_MM2 = 25;
+
 async function doExport(format) {
     const btns = [$('btn-export-stl'), $('btn-export-3mf')];
     btns.forEach(b => b.disabled = true);
@@ -4453,16 +4456,28 @@ async function doExport(format) {
         const { parts, joints, switchCount } = assembleParts();
         const files = {};
         const built = [];
+        const unstable = [];
         for (let i = 0; i < parts.length; i++) {
             const part = parts[i];
             await new Promise(res => setTimeout(res));
             const mesh = recenter(part.build());
             const report = analyzeMesh(mesh.positions, mesh.indices);
             const ok = report.isManifold && report.isConsistent && report.windsOutward;
+            // Watertight is not the same as printable. A part can be a perfect
+            // solid and still be standing on a spike — see bedStability.
+            const bed = bedStability(mesh.positions, mesh.indices);
+            // Absolute area, not a fraction of the bounding box: a curve fills
+            // 3% of its box and is perfectly stable on 929 mm² of piers. The
+            // gate on its pin had 3.4; the smallest honest part in the library
+            // is a riser at 117. MIN_BED_MM2 sits between those, and it is a
+            // threshold, not a measurement.
+            const onASpike = bed.contactMm2 < MIN_BED_MM2;
+            if (onASpike) unstable.push({ name: part.name, bed });
             const fileName = part.count > 1 ? `${part.name}_${part.count}x` : part.name;
             log.innerHTML += `<div class="row"><span>${fileName}</span>` +
-                `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span></span></div>`;
-            built.push({ name: part.name, count: part.count, mesh, fileName, vol: report.volumeMm3 });
+                `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span>` +
+                `${onASpike ? ` <span class="bad">✖ ${bed.contactMm2.toFixed(1)} mm² on the bed</span>` : ''}</span></div>`;
+            built.push({ name: part.name, count: part.count, mesh, fileName, vol: report.volumeMm3, bed });
             prog.value = (i + 1) / parts.length;
         }
 
@@ -4480,7 +4495,7 @@ async function doExport(format) {
         const laid = packed ? writePlateFiles(files, built, format) : null;
         const label = packed ? `${laid.plates.length}plates` : `${parts.length}parts`;
         files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount,
-            packed ? describePlates(laid.plates, laid.oversized) : undefined));
+            packed ? describePlates(laid.plates, laid.oversized) : undefined, unstable));
         const zipped = fflate.zipSync(files);
         const blob = new Blob([zipped], { type: 'application/zip' });
         const a = document.createElement('a');
@@ -5073,7 +5088,7 @@ function toArraysFromBG(g) {
     return { positions, indices };
 }
 
-function exportReadme(joints, switchCount, plateManifest = null) {
+function exportReadme(joints, switchCount, plateManifest = null, unstable = []) {
     const sceneryLines = state.scenery.length
         ? state.scenery.map(s => `  - ${s.kind} at (${s.x}, ${s.z}) mm`).join('\n')
         : '  (none placed)';
@@ -5159,7 +5174,13 @@ PRINTING
   pre-rotated onto their sides so the hoof cams print as smooth arcs —
   NEVER print the figure upright.
 
-ASSEMBLY (in order)
+${unstable.length ? `BED CONTACT — CHECK THESE BEFORE SLICING
+${unstable.map(u => `! ${u.name}: only ${u.bed.contactMm2.toFixed(1)} mm² touches the bed, under a part
+  ${u.bed.widthMm.toFixed(0)} x ${u.bed.depthMm.toFixed(0)} x ${u.bed.heightMm.toFixed(0)} mm. It is standing on a point with the rest of it
+  in mid-air. That is an orientation bug, not a slicer setting — do not try
+  to print it.`).join('\n')}
+
+` : ''}ASSEMBLY (in order)
 ${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}
 
 SCENERY PLACEMENT (from your design)

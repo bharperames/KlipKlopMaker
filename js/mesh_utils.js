@@ -154,6 +154,53 @@ export function computeMeshSurfaceAreaMm2(positions, indices) {
  * Full watertightness report for an export candidate mesh: welds vertices,
  * then checks edge-manifoldness, winding consistency, and signed volume.
  */
+/**
+ * How a part meets the build plate, in the orientation it is about to be
+ * exported in.
+ *
+ * The plate packer only ever asked two questions — does the footprint fit,
+ * and is the part shorter than the machine. Neither notices a part that is
+ * the right size and simply cannot be printed, and one got out: the gate
+ * paddle went to the slicer resting on the TIP OF ITS PIN, 3.4 mm² of
+ * contact under a blade cantilevered in mid-air, because the exporter drops
+ * a part's lowest point to the bed and its lowest point was a spike.
+ *
+ * `contactMm2` is the area of the triangles lying within `tolMm` of the
+ * lowest point — the first layer, near enough — and it is the ABSOLUTE
+ * number that matters. Comparing it to the part's bounding footprint seems
+ * more principled and is not: a curve's bounding box is mostly empty air, so
+ * it scores 3% while sitting on 929 mm² of piers and end pads. The gate on
+ * its pin had 3.4 mm². Across the whole library the smallest honest part is a
+ * riser at 117, so anything in single figures is a different kind of thing.
+ *
+ * `contactFraction` and `slenderness` are reported for context, not judged.
+ * A 120 mm riser is 8:1 slender by design.
+ */
+export function bedStability(positions, indices, tolMm = 0.15) {
+    let lo = Infinity, minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, hi = -Infinity;
+    for (let i = 0; i < positions.length; i += 3) {
+        lo = Math.min(lo, positions[i + 1]); hi = Math.max(hi, positions[i + 1]);
+        minX = Math.min(minX, positions[i]); maxX = Math.max(maxX, positions[i]);
+        minZ = Math.min(minZ, positions[i + 2]); maxZ = Math.max(maxZ, positions[i + 2]);
+    }
+    let contactMm2 = 0;
+    for (let t = 0; t < indices.length; t += 3) {
+        const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3;
+        if (Math.max(positions[a + 1], positions[b + 1], positions[c + 1]) > lo + tolMm) continue;
+        // area of the triangle projected onto the bed
+        contactMm2 += Math.abs(
+            (positions[b] - positions[a]) * (positions[c + 2] - positions[a + 2]) -
+            (positions[c] - positions[a]) * (positions[b + 2] - positions[a + 2])) / 2;
+    }
+    const widthMm = maxX - minX, depthMm = maxZ - minZ, heightMm = hi - lo;
+    const footprintMm2 = widthMm * depthMm;
+    return {
+        contactMm2, footprintMm2, widthMm, depthMm, heightMm,
+        contactFraction: footprintMm2 > 0 ? contactMm2 / footprintMm2 : 0,
+        slenderness: Math.min(widthMm, depthMm) > 0 ? heightMm / Math.min(widthMm, depthMm) : Infinity
+    };
+}
+
 export function analyzeMesh(positions, indices) {
     const { uniqueVertices, remappedIndices } = deduplicateGeometry(positions, indices);
     const triangles = buildTopologyFromIndices(remappedIndices);

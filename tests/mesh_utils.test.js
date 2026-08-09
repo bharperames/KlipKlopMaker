@@ -1,6 +1,6 @@
 import {
     deduplicateGeometry, buildTopologyFromIndices, verifyManifold,
-    verifyOrientation, signedMeshVolumeMm3, analyzeMesh
+    verifyOrientation, signedMeshVolumeMm3, analyzeMesh, bedStability
 } from '../js/mesh_utils.js';
 import { generate3MFXML, generateBinarySTL } from '../js/export_3mf.js';
 
@@ -80,5 +80,55 @@ describe('exporters', () => {
         expect(v(1, 2, 0)).toBeCloseTo(0, 6);
         expect(v(1, 2, 1)).toBeCloseTo(-1, 6);
         expect(v(1, 2, 2)).toBeCloseTo(0, 6);
+    });
+});
+
+describe('bedStability', () => {
+    /** A box w x h x d sitting on the bed, plus an optional spike under it. */
+    const box = (w, h, d, y0 = 0) => {
+        const P = [], I = [];
+        const c = [[0,0,0],[w,0,0],[w,0,d],[0,0,d],[0,h,0],[w,h,0],[w,h,d],[0,h,d]];
+        for (const [x, y, z] of c) P.push(x - w / 2, y + y0, z - d / 2);
+        const F = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],
+                   [1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+        for (const f of F) I.push(...f);
+        return { positions: Float32Array.from(P), indices: Uint32Array.from(I) };
+    };
+    const merge = (a, b) => ({
+        positions: Float32Array.from([...a.positions, ...b.positions]),
+        indices: Uint32Array.from([...a.indices,
+            ...Array.from(b.indices, i => i + a.positions.length / 3)])
+    });
+
+    test('a flat-bottomed part reports its true first-layer area', () => {
+        const s = bedStability(box(10, 4, 6).positions, box(10, 4, 6).indices);
+        expect(s.contactMm2).toBeCloseTo(60, 3);
+        expect(s.heightMm).toBeCloseTo(4, 6);
+        expect(s.contactFraction).toBeCloseTo(1, 3);
+    });
+
+    test('a part balanced on a spike reports the SPIKE, not the body', () => {
+        // this is the gate paddle's failure in miniature: a big body sitting
+        // 8 mm up in the air on a small stub
+        const part = merge(box(2, 8, 2), box(50, 12, 10, 8));
+        const s = bedStability(part.positions, part.indices);
+        expect(s.contactMm2).toBeCloseTo(4, 3);          // the stub alone
+        expect(s.heightMm).toBeCloseTo(20, 6);
+        expect(s.contactMm2).toBeLessThan(25);           // caught by MIN_BED_MM2
+    });
+
+    test('a bounding-box fraction would flag a curve, absolute area does not', () => {
+        // A curve's box is mostly empty air. Two pads at opposite corners of a
+        // 150 mm box carry 900 mm2 between them and are perfectly stable, but
+        // they fill only a few percent of the box — which is why the export
+        // check reads the absolute number.
+        const part = merge(box(30, 40, 30), box(30, 40, 30));
+        for (let i = 0; i < part.positions.length; i += 3) {
+            if (i >= part.positions.length / 2) { part.positions[i] += 120; part.positions[i + 2] += 120; }
+        }
+        const s = bedStability(part.positions, part.indices);
+        expect(s.contactMm2).toBeCloseTo(1800, 3);
+        expect(s.contactFraction).toBeLessThan(0.1);     // the fraction lies
+        expect(s.contactMm2).toBeGreaterThan(25);        // the area does not
     });
 });
