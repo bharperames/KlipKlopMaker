@@ -4671,6 +4671,13 @@ function shopRepack() {
         const bed = shopBedGroup();
         bed.position.x = ((i % cols) - (cols - 1) / 2) * pitch;
         bed.position.z = (Math.floor(i / cols) - (rows - 1) / 2) * pitch;
+        // Name each bed. With nine of them on screen the plate you are looking
+        // at is otherwise anonymous, and the group matters: a plate that says
+        // "curveL only" explains why it is half empty instead of looking like
+        // a packing failure.
+        bed.add(shopPlateTag(`Plate ${p.index}${p.group ? ` · ${p.group} only` : ''}` +
+            ` · ${p.items.length} part${p.items.length === 1 ? '' : 's'}` +
+            ` · ${(p.utilisation * 100).toFixed(0)}%`));
         for (const it of p.items) {
             const src = byName.get(it.name);
             const m = new THREE.Mesh(src.geo, MAT_SHOP);
@@ -4706,6 +4713,37 @@ function shopRepack() {
 }
 
 const MAT_SHOP = new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.5, metalness: 0 });
+
+/** A plate's caption, standing at the back edge of its bed. */
+function shopPlateTag(text) {
+    const PX = 40;
+    const probe = document.createElement('canvas').getContext('2d');
+    const font = `600 ${PX}px system-ui, -apple-system, sans-serif`;
+    probe.font = font;
+    const w = Math.ceil(probe.measureText(text).width) + PX;
+    const h = Math.ceil(PX * 1.5);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = PX * 0.14;
+    ctx.strokeStyle = 'rgba(8,14,22,0.85)';
+    ctx.lineJoin = 'round';
+    ctx.strokeText(text, w / 2, h / 2);
+    ctx.fillStyle = '#f2f7ff';
+    ctx.fillText(text, w / 2, h / 2);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    const hMm = 20;
+    sp.scale.set(hMm * (w / h), hMm, 1);
+    sp.position.set(0, 12, -(PLATE.depth / 2 + 16));
+    sp.renderOrder = 20;
+    return sp;
+}
 
 /**
  * Fit every plate in view. The previous version scaled the camera distance off
@@ -4906,7 +4944,21 @@ function shopBuildList() {
     }
 }
 
-async function openPrintShop() {
+/**
+ * Preview and shop are the SAME thing, which is the point.
+ *
+ * A design's parts list is an order: N of this curve, M of that riser. The
+ * print shop already takes an order and lays it on plates, and it already
+ * opens with every quantity seeded from the design. So "preview the plates I
+ * am about to export" does not want a second plate viewer that would have to
+ * be kept in step with the packer, the grouping rule and the bed size — it
+ * wants this one, with the design's own quantities selected.
+ *
+ * `opts.preset` forces the preset back to the full design, because the shop
+ * remembers what you last did in it and a preview of "everything" is what the
+ * export buttons beside it are about to produce.
+ */
+async function openPrintShop(opts = {}) {
     $('shop-overlay').style.display = '';
     shop.open = true;
     initShop();
@@ -5005,6 +5057,11 @@ async function openPrintShop() {
             return;
         }
     }
+    if (opts.preset) {
+        const sel = $('shop-preset');
+        if (sel) sel.value = opts.preset;
+        shopApplyPreset(opts.preset);
+    }
     shopRepack();
 }
 
@@ -5058,6 +5115,9 @@ window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verificat
 window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideState; },
                  get gallery() { return gallery; } };
 $('btn-print-shop').addEventListener('click', () => openPrintShop());
+// Same door, but this one is "show me the job the buttons above will produce",
+// so it forces the preset back to the whole design.
+$('btn-preview-plates').addEventListener('click', () => openPrintShop({ preset: 'all' }));
 $('shop-close').addEventListener('click', () => closePrintShop());
 $('shop-export').addEventListener('click', () => shopExport());
 (() => {
