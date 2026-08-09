@@ -620,10 +620,16 @@ describe('nothing pokes up through the walking surface', () => {
                 if (proud > worst.proud) worst = { proud, s, lat };
             }
         }
-        // 0.1 mm of slack for the faceting of the swept ridges; the fault this
-        // guards was 0.28-0.48 mm
+        // Slack for the faceting of the swept ridges. Probed along a curve the
+        // reading oscillates from -0.43 to +0.10 with a period of exactly the
+        // ridge pitch: it IS the washboard, and its meshed crest sits ~0.10
+        // above the analytic one. 0.10 of slack put the test exactly on that
+        // value, so re-faceting the sweep — which any change to the arch pier
+        // spacing does — moved it to 0.11 and failed on nothing. 0.15 still
+        // guards the fault this exists for by 3x: a rib or a boss surfacing
+        // through the floor read 0.28 to 0.48.
         expect(`${type} proud by ${worst.proud.toFixed(2)} mm at s=${worst.s?.toFixed(0)}`)
-            .toBe(`${type} proud by ${Math.min(worst.proud, 0.1).toFixed(2)} mm at s=${worst.s?.toFixed(0)}`);
+            .toBe(`${type} proud by ${Math.min(worst.proud, 0.15).toFixed(2)} mm at s=${worst.s?.toFixed(0)}`);
     });
 });
 

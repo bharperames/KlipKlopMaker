@@ -709,7 +709,42 @@ export function layoutTrack(sequence, params = {}) {
     const active = pieces.filter(pc => pc.active);
     const totalDropMm = active.length ? active[0].entryDeck - active[active.length - 1].exitDeck : 0;
     issues.push(...checkClearances(pieces, p));
+    issues.push(...checkStrandedEnds(pieces, p));
     return { pieces, issues, totalDropMm, params: p, openEnds, switches, isCircuit };
+}
+
+/**
+ * A leg that can never reach the ground.
+ *
+ * Running tiles drop in whole grid units and only two sizes exist: 2 units
+ * for a straight or a lift, 3 for a curve. Any remaining height is therefore
+ * reachable as 2a + 3b — EXCEPT one. From exactly one grid unit up, there is
+ * no combination at all: the smallest drop available is two units, which puts
+ * the next seam below the ground.
+ *
+ * So a run that lands on 15 mm is stranded. It is legal, it sits on a foot,
+ * and it can never be brought down — the fix is always upstream, swapping a
+ * straight (2) for a curve (3) somewhere earlier so the parity changes. This
+ * is what a Y with straights down one leg and a curve down the other runs
+ * into: one side reaches the ground and the other stops one unit short.
+ */
+function checkStrandedEnds(pieces, p) {
+    const out = [];
+    const G = STANDARD.gridMm;
+    for (const pc of pieces) {
+        if (pc.type !== 'end') continue;
+        const units = Math.round(pc.rimY / G);
+        if (Math.abs(pc.rimY - units * G) > 0.1 || units !== 1) continue;
+        out.push({
+            level: 'warn',
+            code: 'stranded-end',
+            msg: `${pc.name} finishes ${G} mm up and cannot come down: tiles drop 2 grid ` +
+                 `units (straight, lift) or 3 (curve), so from one unit the smallest step ` +
+                 `available goes underground. Swap a straight for a curve earlier in this ` +
+                 `leg — that changes the parity and lands it flat.`
+        });
+    }
+    return out;
 }
 
 /**
@@ -986,7 +1021,7 @@ export function planPillarPositions(pieces, params = {}) {
                 ? pieces.filter(q => q.switchKey === pc.switchKey).map(q => q.index)
                 : [pc.index]
         );
-        const s = pc.planLen / 2;
+        const s = massCentreS(pc);          // under the weight, not the middle
         const pos = planPosAt(pc, s);
         let placed = null;
         if (!columnBlocked(pos.x, pos.z, pc.rimY, ignore)) {
@@ -1011,9 +1046,42 @@ export function planPillarPositions(pieces, params = {}) {
     return supports;
 }
 
-/** Where a jogged support's boss sits: always mid-piece, never moved. */
+/**
+ * Where along a piece its MASS actually is.
+ *
+ * The boss used to sit at mid arc-length, which is the middle of the piece
+ * and not the middle of its weight. The rim is anchored at the piece's LOW
+ * end, so the skirt is as deep as the drop at the top and only `skirtDepth`
+ * at the bottom — 56.75 mm against 12 on a standard curve. The walls are
+ * ~75% of the plastic, so mass per unit length falls off linearly and the
+ * centroid sits at 39% of a curve and 41% of a straight, not 50%.
+ *
+ * A single pier under mid-length is therefore 25 mm downhill of the weight it
+ * is carrying, and the piece tips UPHILL — toward the start, which is exactly
+ * where they were falling. Moving the boss to the centroid costs nothing: it
+ * is a constant per piece type, so a curve is still one shape.
+ *
+ * Centroid of a linear taper from h1 at s=0 to h2 at s=L:
+ *     s_c = L (h1 + 2 h2) / (3 (h1 + h2))
+ * which returns L/2 whenever h1 = h2, so platforms and powered tiles do not
+ * move at all.
+ *
+ * What this does NOT fix is the LATERAL offset on a curve: the deck band's
+ * centroid is ~10 mm inboard of the arc (the outer wall is longer, which
+ * pulls some of it back), and the boss stays on the centreline. That is the
+ * smaller of the two and moving it sideways would put the socket within
+ * 2 mm of the inner skirt wall.
+ */
+export function massCentreS(piece) {
+    const L = piece.planLen;
+    const h1 = Math.max(0.1, piece.entryDeck - piece.rimY);
+    const h2 = Math.max(0.1, piece.exitDeck - piece.rimY);
+    return L * (h1 + 2 * h2) / (3 * (h1 + h2));
+}
+
+/** Where a jogged support's boss sits: at the piece's centre of mass. */
 export function supportBossPos(piece, support) {
-    const s = support?.s ?? piece.planLen / 2;
+    const s = support?.s ?? massCentreS(piece);
     const p = planPosAt(piece, s);
     return { x: p.x, z: p.z, h: p.h, s };
 }

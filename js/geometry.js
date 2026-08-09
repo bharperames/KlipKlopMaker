@@ -476,7 +476,30 @@ function boundsSolve(piece, spec, supportStations, forced) {
         hi - (k === n - 1 ? MARGIN : PIER / 2)
     ];
 
-    const stops = [s0, ...(forced != null && forced > s0 + PIER && forced < s1 - PIER ? [forced] : []), s1];
+    /**
+     * A support station is a STOP, not a hint.
+     *
+     * This used to divide the skirt into even bays, pick the bay count that
+     * kept every arch inside the bridge limit, and only then slide a boundary
+     * sideways onto a nearby boss — without re-checking. That is fine while
+     * the boss sits at mid-length, because the even boundary is already there
+     * and the snap moves nothing. Once the boss moved to the piece's centre of
+     * mass the snap started dragging a pier 14 mm uphill and leaving a 62 mm
+     * arch behind it, past the 48 mm this skirt can bridge.
+     *
+     * Taking the stations as stops instead makes each side of a pier its own
+     * span with its own bay count, which is both correct and simpler: a pier
+     * lands under the boss because that is where the load is, and the arches
+     * either side are sized for the gaps that actually result.
+     */
+    const inside = (s) => s > s0 + PIER && s < s1 - PIER;
+    const stops = [...new Set([
+        s0,
+        ...(forced != null && inside(forced) ? [forced] : []),
+        ...supportStations.filter(inside),
+        s1
+    ])].sort((x, y) => x - y);
+
     const bounds = [s0];
     for (let i = 0; i + 1 < stops.length; i++) {
         const a = stops[i], b = stops[i + 1];
@@ -491,11 +514,7 @@ function boundsSolve(piece, spec, supportStations, forced) {
             if (worst <= ARCH.maxBridge) break;
         }
         const unit = (b - a) / n;
-        for (let k = 1; k <= n; k++) {
-            const even = a + k * unit;
-            const near = k < n ? supportStations.filter(c => Math.abs(c - even) < unit / 3) : [];
-            bounds.push(near.length ? near[0] : even);
-        }
+        for (let k = 1; k <= n; k++) bounds.push(a + k * unit);
     }
     return bounds;
 }

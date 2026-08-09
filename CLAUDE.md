@@ -120,8 +120,13 @@ building, gait physics simulation, and watertight STL/3MF export.
   an opt-in `{ code }` so rebuilds stay cheap. A code placed inside solid
   material becomes a sealed void and a second shell: `tests/pieces.test.js`
   catches that, and it is why `marginMm` clears the start platform's bumper.
-- **The socket never moves.** Every track piece has ONE hex socket, at
-  mid-piece. When the column under it would spear the tier below,
+- **The socket never moves.** Every track piece has ONE hex socket, at the
+  piece's CENTRE OF MASS (`massCentreS`) — not mid-length. The rim anchors at
+  the piece's low end, so the skirt is as deep as the drop at the top and
+  `skirtDepth` at the bottom, putting the weight at ~39% of a curve; a pier at
+  50% is downhill of it and the piece tips toward the start. It is a constant
+  per piece type, so this does not make variants. When the column under it
+  would spear the tier below,
   `planPillarPositions` returns mode `'jog'` and the offset is carried by a
   separate part (`buildJogGeometry`) plugged into that same socket — not by
   moving the boss or growing an outrigger arm on the track, which is what used

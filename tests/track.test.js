@@ -225,7 +225,7 @@ describe('lift pieces', () => {
 // ---------------------------------------------------------------------------
 // collision-aware support planning (pillars must never spear a lower tier)
 // ---------------------------------------------------------------------------
-import { planPillarPositions, planPosAt, deckYAt } from '../js/track.js';
+import { planPillarPositions, planPosAt, deckYAt, massCentreS } from '../js/track.js';
 
 describe('planPillarPositions', () => {
     const columnHits = (pieces, sup) => {
@@ -257,17 +257,32 @@ describe('planPillarPositions', () => {
         expect(sups.some(s => s.mode === 'jog')).toBe(true);
     });
 
-    test('the BOSS never moves, whatever the column does', () => {
-        // this is what keeps a track piece one shape: the offset belongs to the
-        // support, so the socket is always at mid-piece
+    test('the BOSS sits under the weight, and depends on nothing else', () => {
+        // What keeps a track piece ONE shape is that the socket's position is
+        // a property of the piece and nothing else — not of which column ends
+        // up under it, not of where that column had to dodge to. It is not
+        // mid-LENGTH: the rim anchors at the piece's low end, so the skirt is
+        // as deep as the drop at the top and `skirtDepth` at the bottom, and
+        // the weight sits at ~39% of a curve. A pier at 50% is downhill of it
+        // and the piece tips toward the start, which is what they did.
         const seq = ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'straight'];
         const { pieces } = layoutTrack(seq, { slopeDeg: 11, curveRadius: 150 });
+        const byType = new Map();
         for (const sup of planPillarPositions(pieces)) {
             const pc = pieces.find(p => p.index === sup.pieceIndex);
-            expect(sup.s).toBeCloseTo(pc.planLen / 2, 9);
+            expect(sup.s).toBeCloseTo(massCentreS(pc), 9);
             const boss = supportBossPos(pc, sup);
-            expect(boss.x).toBeCloseTo(planPosAt(pc, pc.planLen / 2).x, 9);
+            expect(boss.x).toBeCloseTo(planPosAt(pc, massCentreS(pc)).x, 9);
+            // every piece of a type puts it in the same place, whatever mode
+            // the column ended up in — that is the one-shape rule
+            const frac = sup.s / pc.planLen;
+            if (byType.has(pc.type)) expect(frac).toBeCloseTo(byType.get(pc.type), 9);
+            else byType.set(pc.type, frac);
         }
+        // and it is genuinely uphill of centre, not a rounding difference
+        const curve = pieces.find(p => p.type === 'curveL');
+        expect(massCentreS(curve) / curve.planLen).toBeLessThan(0.45);
+        expect(massCentreS(curve) / curve.planLen).toBeGreaterThan(0.33);
     });
 
     test('a jog costs the stack exactly one grid unit, so it still decomposes', () => {

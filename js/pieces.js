@@ -1286,11 +1286,24 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
     ]);
 }
 
+/**
+ * The foot's flare is 36 AF, up from 26.
+ *
+ * A column is a 15 mm hex shaft standing up to 600 mm; at 26 across the flats
+ * the base gave it a 13 mm lever against its own height, and they went over
+ * in use. 36 takes that to 18 and the bed contact from 533 mm² to 1022, for
+ * 4 mm of extra flare height and no change to anything it mates with — the
+ * tenon, the shaft and the 15 mm grid are all untouched.
+ *
+ * It is not made larger still because feet sit on the ground under adjacent
+ * columns, and planPillarPositions only keeps columns 9 mm clear of the
+ * SHAFT; two feet 40 mm apart would foul each other before the app noticed.
+ */
 export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
     const body = toBufferGeometry(stackedHex([
-        { y: 0, af: 24.8 },                                  // elephant-foot chamfer
-        { y: 0.6, af: 26 },
-        { y: 4, af: 26 },
+        { y: 0, af: 34.8 },                                  // elephant-foot chamfer
+        { y: 0.6, af: 36 },
+        { y: 4, af: 36 },
         { y: 4, af: 15 },
         { y: STANDARD.footHeight, af: 15 },
         { y: STANDARD.footHeight, af: TENON_AF },
