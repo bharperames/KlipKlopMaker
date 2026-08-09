@@ -264,8 +264,14 @@ const MAT = {
     curve: new THREE.MeshLambertMaterial({ color: TRACK_GOLD }),
     switch: new THREE.MeshLambertMaterial({ color: TRACK_GOLD }),
     lift: new THREE.MeshLambertMaterial({ color: 0xc95a3c }),
-    start: new THREE.MeshLambertMaterial({ color: 0x74b06c, transparent: true, opacity: 0.6 }),
-    end: new THREE.MeshLambertMaterial({ color: 0xb9b3a4, transparent: true, opacity: 0.6 }),
+    // Opaque, like everything else. These were half-transparent from when the
+    // platforms were a UI affordance — a hint that the app added them for you
+    // rather than something you placed. They are printed parts with codes
+    // engraved on them and plates reserved for them, so drawing them as
+    // ghosts said the opposite of the truth. Their own colours still mark
+    // which end is which.
+    start: new THREE.MeshLambertMaterial({ color: 0x74b06c }),
+    end: new THREE.MeshLambertMaterial({ color: 0xb9b3a4 }),
     pillar: new THREE.MeshLambertMaterial({ color: 0x7a5230 }),
     issue: new THREE.MeshLambertMaterial({ color: 0xd03b3b }),
     ghost: new THREE.MeshLambertMaterial({ color: 0x4a90d9, transparent: true, opacity: 0.45, depthWrite: false }),
@@ -433,6 +439,12 @@ function rebuild() {
         const yaw = sw.gate === 'branch' ? pin.yawDiverting : pin.yawParked;
         paddle.position.set(pin.x, pin.deckY, pin.z);
         paddle.rotation.y = Math.PI / 2 - yaw;
+        // `isGate` is what the hit test looks for, NOT switchKey — the switch
+        // piece's own mesh carries switchKey too (it needs it to know which
+        // pair it belongs to), so a paddle test written against that key
+        // matched every click anywhere on the Y and toggled the gate instead
+        // of selecting the piece. The paddle is the only thing that is a gate.
+        paddle.userData.isGate = true;
         paddle.userData.switchKey = sw.key;
         paddle.userData.pieceIndex = pair.main.index;
         addOutline(paddle, 20);
@@ -1536,7 +1548,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
             return;
         }
         const paddleHit = raycaster.intersectObjects(trackGroup.children, true)
-            .find(h => h.object.userData.switchKey !== undefined);
+            .find(h => h.object.userData.isGate);
         if (paddleHit) {
             const idx = paddleHit.object.userData.pieceIndex;
             const pc = state.layout.pieces[idx];
