@@ -33,6 +33,55 @@ On a two-tier tower (1117 g of track parts out of a 1672 g job) that is
 **roughly 330 g** — a third of a spool, in material that exists only so the
 part can meet a flat bed.
 
+### Option B′ — the one to build: a deck-parallel underside (Brett's sketch)
+
+Not a horizontal plane pushed up into the part — a surface **parallel to the
+deck**, held a constant `D` below it, with the material below it deleted. That
+distinction matters: a horizontal cut takes everything at the high end and
+nothing at the low end, which is the ragged taper again. A deck-parallel cut
+takes the same amount everywhere.
+
+**It fixes the seams for free.** The deck is continuous across a joint (to
+within the 0.25 mm waterfall), so a constant-depth underside is continuous
+across a joint too. Today's rim is the discontinuous thing — it steps 30 or
+45 mm at every seam, which is why the bottom edge reads as separate pieces.
+
+**How deep it has to be**, from the features that must survive:
+
+| feature | reaches to |
+|---|---|
+| bowtie pocket ceiling | deck − 3.0 |
+| key band (5.6 tall) | deck − 8.6 |
+| ...plus throat to insert the key | deck − 14.2 |
+| hex socket (10 deep) + 2 mm floor | deck − 12.0 |
+
+So **D ≈ 15 mm**, and the binding constraint is the key's throat, not the
+socket.
+
+**The socket still needs a pad.** `decomposeSupport` only works because every
+socket mouth is a whole number of 15 mm units off the ground. On a
+constant-depth underside the mouth would land wherever the deck happens to be,
+so one local pad under the boss makes up the remaining 0–15 mm. That pad is
+today's skirt — kept only where it does a job.
+
+**And it probably prints BETTER, not worse.** Lay the deck-parallel underside
+on the bed and the deck is horizontal in print:
+
+| | print height, curve |
+|---|---|
+| now (rim-down, deck sloped 11.2°) | 57 + 14 = **71 mm** |
+| D = 15, underside-down | 15 + 14 = **29 mm** |
+
+The washboard currently prints on an 11.2° slope, so every ridge is stepped
+across the layers; flat on the bed each ridge becomes a constant-Z feature.
+What tilts instead is everything vertical-in-use — socket bore, key pocket,
+end faces — by 11.2°, which is a mild lean on features that are all holes or
+slots rather than show surfaces.
+
+**What it costs:** the arcade. At 15 mm deep there is no room for piers and
+three-centred arches, so the viaduct look goes with it. That is the real price
+and it is an aesthetic one, not a structural one.
+
 ### Option A — treat the skirt as a breakaway print support
 
 Print as now; snap the skirt off afterwards.
@@ -40,39 +89,16 @@ Print as now; snap the skirt off afterwards.
 **For:** no geometry change, no change to how it prints, and it is opt-in per
 part. Nothing else in the system has to move.
 
-**Against, and this is probably fatal:** the skirt is not decoration, it is the
-**web of the beam**. The deck is a 2 mm floor and the only other depth is the
-14 mm rails. Bending stiffness goes with depth cubed, so dropping 57 mm of
-section to ~16 mm leaves about **2%** of the stiffness — on a piece that spans
-150–225 mm between piers. Also: the filament is still printed and then binned,
-PLA does not break cleanly without a designed weakening line (which would be a
-stress riser exactly where the moment is highest), and the rim carries the
-first-layer chamfer, so what is left after snapping is a rough edge on a face
-you can see.
+**Against:** the filament is still printed and then binned — this saves
+nothing but appearance. PLA does not break cleanly without a designed
+weakening line, and the rim carries the first-layer chamfer, so what is left
+after snapping is a rough edge on a face you can see. Option B′ gets the same
+appearance AND the material AND a shorter print, so this is only worth
+revisiting if B′ turns out to be unprintable.
 
-### Option B — a "short" piece: deck, rails, end ribs, socket, and nothing else
-
-**For:** removes the 26–31% outright, in print time as well as filament, and
-the underside becomes a clean constant-depth line instead of an arcade remnant.
-
-**Against:** the flat rim is what buys the two properties the whole system
-rests on.
-
-1. *It prints with no supports.* A constant-depth beam has a sloped underside
-   and cannot sit on the bed. The alternatives are printing on the slope (needs
-   supports — against the print contract in CLAUDE.md), deck-down (the washboard
-   and the show surface go against the plate), or on its side (every surface
-   becomes a layer-line surface, and the bowtie pockets become horizontal
-   slots).
-2. *It puts the support interface on the 15 mm grid.* `decomposeSupport` works
-   because every rim is a whole number of grid units. A sloped underside has no
-   single rim height, so either the boss keeps a local flat pad at a grid
-   height — which is most of the skirt back again, locally — or the riser
-   ladder stops composing.
-
-Worth exploring anyway, because "a local flat pad at the boss plus a shallow
-beam elsewhere" may be a real shape: it is the current part with the skirt
-removed *between* the piers rather than everywhere.
+Stiffness was the objection I expected to be decisive and it is not: Brett's
+printed parts are rigid and the load is a 45 g toy. Recorded so it is not
+re-raised.
 
 ### Option C — leave the part alone and fix the rhythm
 
@@ -81,10 +107,16 @@ plastic. Phase-lock the bay layout to the global grid instead of solving each
 piece independently, and shrink or share `ARCH.pad` at seams so two adjacent
 pieces read as one arcade rather than two. Does nothing for the 30%.
 
-### What to measure before choosing
+### What is still unproven about B′
 
-- Deflection of a real piece spanning two piers, skirt on and skirt cut away.
-  Option A lives or dies on this and the stiffness estimate above is a
-  calculation, not a measurement.
-- Whether a shallow-beam piece can be printed at all in an orientation that
-  keeps the washboard and the channel walls off the bed.
+- **The print orientation is a claim, not a result.** Laying the underside on
+  the bed puts the socket bore, the key pocket and both end faces 11.2° off
+  vertical. Nothing says that fails, but nothing has printed it either.
+- **The pad under the boss has to be sized per piece type** and its own
+  underside is horizontal in use, so it is 11.2° off the bed in print — a
+  small sloped pad, but it is where the column seats.
+- **The grounded case.** A piece with `rimY = 0` currently rests on its whole
+  skirt. With B′ it rests on the pad and the rib ends, like every other piece.
+  Probably fine, worth checking against `needsPier`.
+- **The arcade goes away.** If that turns out to matter, Option C recovers the
+  look on whatever depth remains.
