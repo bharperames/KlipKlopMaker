@@ -383,7 +383,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     // wall keeps the nominal clearance at every height (see bowtiePocketPlan)
     const pocketAt = (c) => planToWorld(bowtiePocketPlan({
         neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-        clearance: c, depthClearance: pocketClearance
+        clearance: c, depthClearance: K.depthClearanceMm ?? pocketClearance
     }), face);
     const pocket = pocketAt(pocketClearance);
 

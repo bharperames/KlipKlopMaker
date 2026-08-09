@@ -875,6 +875,25 @@ describe('the key can actually be fitted', () => {
             .toBeLessThan(Math.abs(PRINT_DEVIATION.hole.devMm));
     });
 
+    test('the far wall clears the key under every hole reading in the set', async () => {
+        // Front-to-back was the dimension that actually jammed. The key half
+        // is a 9.00 external feature (prints 8.95-9.05 on the measured ±0.10)
+        // going into a pocket that is a hole in a track piece (the track
+        // sockets ran -0.05 to -0.15; the worst hole anywhere read -0.38).
+        // At the flank clearance of 0.12 the worst case is NEGATIVE.
+        const { SPEC } = await import('../js/track.js');
+        const K = SPEC.key;
+        const worstGap = (holeDev) =>
+            (K.depth + K.depthClearanceMm + holeDev / 2) - (K.depth + 0.10 / 2);
+        expect(`at the flank clearance ${K.fitClearanceMm}: ` +
+            `${((K.depth + K.fitClearanceMm - 0.15 / 2) - (K.depth + 0.05)).toFixed(3)}`)
+            .toBe('at the flank clearance 0.12: -0.005');
+        expect(worstGap(-0.15)).toBeGreaterThan(0);      // a track-piece hole
+        expect(worstGap(-0.38)).toBeGreaterThan(0);      // the worst on record
+        // and the rib still has material behind the pocket
+        expect(K.ribThk - (K.depth + K.depthClearanceMm)).toBeGreaterThan(2.5);
+    });
+
     test('the gate is exported standing on its blade, not on the pin tip', async () => {
         // The assembly frame hangs the pin 8 mm below everything else, and the
         // exporter drops a part's lowest point to the bed — so straight from

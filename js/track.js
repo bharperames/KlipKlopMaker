@@ -239,6 +239,33 @@ export const SPEC = {
         // gripping anywhere along it.
         fitClearanceMm: 0.12,
         /**
+         * The FAR WALL gets its own, much bigger clearance, and it is the one
+         * that was jamming the key.
+         *
+         * Front-to-back the key is a 9.00 mm external feature going into a
+         * 9.12 mm hole. Externals print -0.10 to +0.10 across, so a key half
+         * is 8.95-9.05; the pocket is a hole in a track piece and the holes
+         * measured in track pieces run -0.05 to -0.15, so it is 9.045-9.095.
+         * Worst against worst that is -0.005 mm/side — the key does not go in.
+         * Against the worst hole reading on record it is -0.12. Whichever way
+         * you take it, 0.12 was never enough front-to-back, and that is
+         * before the 0.3 mm far-wall taper that used to be in there on top.
+         *
+         * Spending clearance here costs NOTHING, which is the whole point.
+         * The far wall must not touch in service anyway: the key reaches into
+         * two pockets at once, so anything pressing on its tips has nowhere to
+         * send that force except into driving the two pieces apart. The
+         * flanks do the wedging and the flanks alone. So the far wall is
+         * pulled back until it clears under every hole reading in the set,
+         * with the rib still 2.6 mm thick behind the pocket.
+         *
+         * This is why the key does not need a compliant feature the way the
+         * gate pin does. Compliance is what you reach for when the binding
+         * dimension is load-bearing and you cannot spend clearance on it.
+         * Here the binding dimension carries no load at all.
+         */
+        depthClearanceMm: 0.40,
+        /**
          * NO drawn-vs-printed compensation, and the reason is worth keeping.
          *
          * Measured off the printed key, a bowtie does not print as a scaled

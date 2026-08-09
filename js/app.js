@@ -3841,7 +3841,7 @@ function makeDimGroup(box, part) {
         const exY = pc.exitDeck - pc.rimY;
         const poc = bowtiePocketPlan({
             neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-            clearance: K.fitClearanceMm
+            clearance: K.fitClearanceMm, depthClearance: K.depthClearanceMm
         });
         const mouthHalf = poc[1][0], tipHalf = poc[2][0], pocDepth = poc[2][1];
         const keyH = K.height - 2 * spec.jointClearanceMm;
