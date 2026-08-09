@@ -3141,26 +3141,16 @@ function toast(msg) {
 // ---------------------------------------------------------------------------
 
 /**
- * What the two format buttons do. "Packed plates" lays the whole design out on
- * full beds and writes one file per plate; "Single files" writes one file per
- * part and leaves the arranging to your slicer. The Print shop is the same
- * packing with the quantities set by hand — this is the shortcut for "all of
- * it", which is what most exports are.
+ * There is ONE export path, and it goes through the print shop.
+ *
+ * There used to be two: a pair of ZIP buttons on this pane that packed the
+ * whole design blind, and the shop, which packs whatever quantities you set
+ * and shows you the beds. They shared the packer but not the code around it,
+ * so the plate grouping, the bed-contact check and the README all had to be
+ * added to each — and the blind one is the one that let a part go out
+ * balanced on the tip of its pin. Exporting from the screen that draws the
+ * plates means you cannot download a layout you have not seen.
  */
-const exportMode = () => document.querySelector('input[name="export-mode"]:checked')?.value ?? 'plates';
-
-function refreshExportModeHint() {
-    $('export-mode-hint').textContent = exportMode() === 'plates'
-        ? `One file per ${PLATE.width} mm plate, parts laid out and rotated to fit. Curves and switches get plates of their own.`
-        : 'One file per part, unpacked.';
-}
-for (const r of document.querySelectorAll('input[name="export-mode"]')) {
-    r.addEventListener('change', refreshExportModeHint);
-}
-refreshExportModeHint();
-
-$('btn-export-stl').addEventListener('click', () => doExport('stl'));
-$('btn-export-3mf').addEventListener('click', () => doExport('3mf'));
 
 /**
  * The single source of truth for what gets printed: every unique part of the
@@ -3371,7 +3361,7 @@ function assembleParts() {
 const gallery = {
     open: false, renderer: null, scene: null, camera: null, controls: null,
     mesh: null, wire: null, dims: null, geo: null, report: null, parts: [],
-    style: 'plastic', mode: 1, showDims: true
+    style: 'plastic', mode: 1, showDims: 'all'
 };
 
 // material styles: how the same watertight mesh reads under different finishes
@@ -3486,8 +3476,11 @@ function framePartShadow(target, box, center, size) {
         target.plateExtent = extent;
         if (target.shadowCatcher) target.shadowCatcher.scale.set(extent / 1200, 1, extent / 1200);
     }
-    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.6, center.z);
-    target.grid.position.set(center.x, box.min.y - 0.45, center.z);
+    // 0.06, not 0.45: the plate is what tells you the part is SITTING on the
+    // bed, and at inspection zoom a 0.45 mm gap reads as the part hovering.
+    // The shadow catcher stays a little lower so it never z-fights the grid.
+    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.25, center.z);
+    target.grid.position.set(center.x, box.min.y - 0.06, center.z);
 }
 
 function initGallery() {
@@ -3526,7 +3519,7 @@ function initGallery() {
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
     paintModeButton('print-part-mode', gallery.mode);
     $('print-part-mode').addEventListener('click', () => cycleRenderMode(gallery, 'print-part-mode', applyGalleryStyle));
-    $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').checked; applyGalleryStyle(); });
+    $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').value; applyGalleryStyle(); });
 }
 
 /**
@@ -3556,9 +3549,17 @@ function initGallery() {
  * line: what it should MEASURE once printed. Those come from PRINT_DEVIATION,
  * which is calipers on a printed set, not a model of a printer.
  */
-const DIM_INK = '#2fd8f5';         // not the grid's white, not the part's gold
+/**
+ * Magenta, and it is not a taste call. The annotation has to separate from
+ * FOUR things at once: a gold part, a denim plate, a white grid and a
+ * near-black background. Cyan cleared the gold and the black and then
+ * disappeared into the plate, which is where the callouts actually spend most
+ * of their time. Magenta is the one hue that none of the others is near, and
+ * it is the drafting convention for construction geometry for that reason.
+ */
+const DIM_INK = '#ff49b0';
 
-function makeDimGroup(box, part) {
+function makeDimGroup(box, part, show = 'all') {
     const g = new THREE.Group();
     const faceables = [];          // text planes that re-orient to the camera
     g.userData.dimText = faceables;
@@ -3575,18 +3576,21 @@ function makeDimGroup(box, part) {
     // bigger than the key.
     const TXT = Math.min(Math.max(diag * 0.030, 0.6), 7);    // text cap height
 
-    const lineMat = new THREE.LineBasicMaterial({
-        color: DIM_INK, depthTest: false, transparent: true, opacity: 0.95
+    // WebGL ignores LineBasicMaterial.linewidth — it is always one pixel,
+    // which is why these read as hairlines over a busy plate. Line2 draws them
+    // as camera-facing quads, so they can actually be 2.5 px. Every segment
+    // shares one material and one geometry, built at the end.
+    const lineMat = new LineMaterial({
+        color: DIM_INK, linewidth: 2.5, resolution: new THREE.Vector2(1, 1),
+        depthTest: false, transparent: true, opacity: 0.98
     });
+    g.userData.lineMats = [lineMat];
+    const segPts = [];
     const inkMat = new THREE.MeshBasicMaterial({
-        color: DIM_INK, depthTest: false, transparent: true, opacity: 0.95
+        color: DIM_INK, depthTest: false, transparent: true, opacity: 0.98
     });
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
-    const seg = (a, b) => {
-        const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lineMat);
-        l.renderOrder = 24;
-        g.add(l);
-    };
+    const seg = (a, b) => { segPts.push(a.x, a.y, a.z, b.x, b.y, b.z); };
     /** Solid arrowhead: apex AT `tip`, pointing along `dir`. */
     const arrow = (tip, dir, s = S) => {
         const geo = new THREE.ConeGeometry(s * 0.26, s, 8);
@@ -3603,7 +3607,7 @@ function makeDimGroup(box, part) {
      * (along the dimension line) and `up` points away from the part.
      */
     const PX = 64;
-    const text = (lines, pos, dir, up, capMm = TXT) => {
+    const text = (lines, pos, dir, up) => {
         const rows = lines.filter(Boolean);
         const fonts = rows.map((_, i) => i === 0
             ? `600 ${PX}px system-ui, -apple-system, sans-serif`
@@ -3630,7 +3634,11 @@ function makeDimGroup(box, part) {
             ctx.strokeStyle = 'rgba(6,12,20,0.85)';
             ctx.lineJoin = 'round';
             ctx.strokeText(line, tw / 2, y + rowH[i] / 2);
-            ctx.fillStyle = i === 0 ? '#eafcff' : DIM_INK;
+            // Both rows white. The as-printed row used to take the ink colour
+            // to mark it as secondary, which read as a second kind of thing
+            // rather than a second line — and magenta text on a gold part is
+            // barely legible. Weight and size already say which is which.
+            ctx.fillStyle = i === 0 ? '#ffffff' : '#dfe8f2';
             ctx.fillText(line, tw / 2, y + rowH[i] / 2);
             y += rowH[i];
         });
@@ -3638,16 +3646,22 @@ function makeDimGroup(box, part) {
         const tex = new THREE.CanvasTexture(c);
         tex.minFilter = THREE.LinearFilter;
         tex.generateMipmaps = false;
-        const hMm = capMm * (th / PX);
+        // A UNIT quad: the real size is set every frame in orientDimText, so
+        // the geometry must not carry one of its own or the two multiply.
         const plane = new THREE.Mesh(
-            new THREE.PlaneGeometry(hMm * (tw / th), hMm),
+            new THREE.PlaneGeometry(1, 1),
             new THREE.MeshBasicMaterial({
                 map: tex, transparent: true, depthTest: false, side: THREE.DoubleSide
             })
         );
         plane.position.copy(pos);
         plane.renderOrder = 31;
-        plane.userData = { dir: dir.clone().normalize(), up: up.clone().normalize() };
+        // Aspect is fixed; the SIZE is set per frame so the value reads the
+        // same everywhere — see orientDimText.
+        plane.userData = {
+            dir: dir.clone().normalize(), up: up.clone().normalize(),
+            aspect: tw / th, rows: rows.length
+        };
         faceables.push(plane);
         g.add(plane);
     };
@@ -3679,10 +3693,11 @@ function makeDimGroup(box, part) {
         // 9 mm pocket depth, and the seven joint dimensions — all of which
         // live inside 30 mm at one end of a 150 mm ramp — piled into an
         // unreadable heap.
-        // Sized by what it measures, but only within a 2:1 band. Scaling text
-        // linearly with the dimension put a 3.2 mm label beside a 0.5 mm one
-        // on the same part — a 6x spread that reads as a bug, not a hierarchy.
-        const txt = Math.min(TXT, Math.max(TXT * 0.5, len * 0.13));
+        // Text size is no longer a world dimension at all — orientDimText
+        // sets it per frame so every value reads the same on screen. TXT is
+        // still what the label is OFFSET by, so a callout sits off its line
+        // by about its own height.
+        const txt = TXT;
         // The arrowhead is part of the callout, so it scales with the callout.
         // Sized off the part instead, a 2.6 mm head sat on a 3 mm dimension
         // whose text was 0.5 mm — five times the lettering it belonged to.
@@ -3700,7 +3715,19 @@ function makeDimGroup(box, part) {
         const sub = opts.sub ?? printedNote(opts.drawnMm, opts.klass);
         const mid = A.clone().add(B).multiplyScalar(0.5)
             .addScaledVector(o, txt * (sub ? 1.15 : 0.85));
-        text([main, sub], mid, dir, o, txt);
+        text([main, sub], mid, dir, o);
+    };
+
+    /** Emit the accumulated segments as ONE fat-line object and hand back g. */
+    const finish = () => {
+        if (segPts.length) {
+            const lg = new LineSegmentsGeometry();
+            lg.setPositions(segPts);
+            const lines = new LineSegments2(lg, lineMat);
+            lines.renderOrder = 24;
+            g.add(lines);
+        }
+        return g;
     };
 
     const X = V(1, 0, 0), Y = V(0, 1, 0), Z = V(0, 0, 1);
@@ -3711,13 +3738,13 @@ function makeDimGroup(box, part) {
     // A part that dimensions its own features does not also want the bounding
     // box: on the key every box dimension is a feature dimension already, and
     // drawing both is how a legible drawing turns into a thicket.
-    if (name !== 'bowtie_key') {
+    if (show !== 'features' && name !== 'bowtie_key') {
         dim(V(min.x, min.y, max.z), V(max.x, min.y, max.z), Z, mmText(size.x));
         dim(V(max.x, min.y, min.z), V(max.x, min.y, max.z), X, mmText(size.z));
         dim(V(max.x, min.y, max.z), V(max.x, max.y, max.z), X, mmText(size.y));
     }
 
-    if (!part) return g;
+    if (!part || show === 'overall') return finish();
 
     if (name === 'bowtie_key') {
         // The key is recentred: +X is tip to tip, +Z runs into the two pockets,
@@ -3757,7 +3784,7 @@ function makeDimGroup(box, part) {
     else if (part.piece) {
         trackPieceDims();
     }
-    return g;
+    return finish();
 
     /**
      * The features a track piece is judged on: the channel the figure walks
@@ -3894,7 +3921,17 @@ function orientDimText(group, camera) {
     const up = new THREE.Vector3(), nrm = new THREE.Vector3(), camRight = new THREE.Vector3();
     const m = new THREE.Matrix4();
     camRight.setFromMatrixColumn(camera.matrixWorld, 0);
+    // World-sized text made a 40 mm callout tower over an 8.75 mm one, and put
+    // the near ones twice the size of the far ones on the same part. A drawing
+    // letters every dimension the same, so size is set per frame from the
+    // distance to the camera: constant on screen, still positioned and
+    // oriented in the scene. TXT_FRAC is a fraction of viewport height.
+    const TXT_FRAC = 0.020;
+    const halfFov = Math.tan((camera.fov * Math.PI / 180) / 2);
     for (const p of planes) {
+        const dist = camera.position.distanceTo(p.position);
+        const h = 2 * dist * halfFov * TXT_FRAC * (p.userData.rows > 1 ? 1.7 : 1);
+        p.scale.set(h * p.userData.aspect, h, 1);
         dir.copy(p.userData.dir);
         /**
          * Which way the text reads.
@@ -4119,14 +4156,21 @@ function applyViewerStyle(target, resizeFn) {
         target.scene.add(target.wire);
     }
 
-    if (target.showDims) {
+    if (target.showDims && target.showDims !== 'none') {
         // from the geometry, not the mesh — there is no mesh in HLR/wire mode
         target.geo.computeBoundingBox();
         target.dims = makeDimGroup(
             target.geo.boundingBox.clone(),
-            target.parts[target.selectedIndex]
+            target.parts[target.selectedIndex],
+            target.showDims
         );
         target.scene.add(target.dims);
+        // Line2 needs a real viewport before it can compute pixel widths
+        updateLineRes(target.dims.userData.lineMats, ...(() => {
+            const el = target.renderer?.domElement;
+            return [el?.clientWidth ?? 1, el?.clientHeight ?? 1];
+        })());
+        settleResize(resizeFn);
     }
 }
 
@@ -4163,6 +4207,7 @@ function galleryResize() {
     gallery.camera.updateProjectionMatrix();
     if (gallery.lineRes) gallery.lineRes.set(w, h);
     updateLineRes(gallery.lineMats, w, h);
+    updateLineRes(gallery.dims?.userData?.lineMats, w, h);
 }
 
 function openGallery() {
@@ -4374,41 +4419,6 @@ function plateGroup(name) {
 }
 
 /**
- * Lays every built part out on full beds and writes one file per plate.
- *
- * 3MF carries each copy as its own build item referencing a shared mesh, which
- * is what keeps a 67-riser plate from being 67 copies of the same triangles.
- * STL has no such concept, so a plate is merged into one solid with each copy's
- * placement baked in — the slicer sees one object per plate either way, which
- * is the point of packing.
- */
-function writePlateFiles(files, built, format) {
-    const byName = new Map(built.map(b => [b.name, b]));
-    const { plates, oversized } = packPlates(built.map(b => {
-        const f = bedFootprint(b.mesh.positions);
-        return { name: b.name, w: f.w, d: f.d, h: f.h, count: b.count, group: plateGroup(b.name) };
-    }));
-    for (const plate of plates) {
-        const grams = plate.items.reduce((g, it) => g + printedWeightG(byName.get(it.name).vol, 'track'), 0);
-        const stem = `plate_${String(plate.index).padStart(2, '0')}` +
-            `${plate.group ? `_${plate.group}` : ''}_${plate.items.length}parts_${Math.round(grams)}g`;
-        if (format === '3mf') {
-            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(plate.items.map(it => {
-                const src = byName.get(it.name);
-                return {
-                    name: `${it.name}_${it.copy}`, meshKey: it.name,
-                    positions: src.mesh.positions, indices: src.mesh.indices,
-                    at: [it.x, it.y, 0], rot: it.rot
-                };
-            })));
-        } else {
-            files[`${stem}.stl`] = new Uint8Array(generateBinarySTL(...mergePlacedMeshes(plate.items, byName)));
-        }
-    }
-    return { plates, oversized };
-}
-
-/**
  * One mesh from a plate's copies, each rotated about the bed normal and moved
  * into place.
  *
@@ -4440,80 +4450,10 @@ function mergePlacedMeshes(items, byName) {
     return [positions, indices];
 }
 
+
+
 /** Below this much first-layer area a part is standing on a point, not sitting. */
 const MIN_BED_MM2 = 25;
-
-async function doExport(format) {
-    const btns = [$('btn-export-stl'), $('btn-export-3mf')];
-    btns.forEach(b => b.disabled = true);
-    const prog = $('export-progress');
-    const log = $('export-log');
-    prog.style.display = ''; prog.value = 0;
-    log.innerHTML = '';
-
-    try {
-        await initCSG();
-        const { parts, joints, switchCount } = assembleParts();
-        const files = {};
-        const built = [];
-        const unstable = [];
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            await new Promise(res => setTimeout(res));
-            const mesh = recenter(part.build());
-            const report = analyzeMesh(mesh.positions, mesh.indices);
-            const ok = report.isManifold && report.isConsistent && report.windsOutward;
-            // Watertight is not the same as printable. A part can be a perfect
-            // solid and still be standing on a spike — see bedStability.
-            const bed = bedStability(mesh.positions, mesh.indices);
-            // Absolute area, not a fraction of the bounding box: a curve fills
-            // 3% of its box and is perfectly stable on 929 mm² of piers. The
-            // gate on its pin had 3.4; the smallest honest part in the library
-            // is a riser at 117. MIN_BED_MM2 sits between those, and it is a
-            // threshold, not a measurement.
-            const onASpike = bed.contactMm2 < MIN_BED_MM2;
-            if (onASpike) unstable.push({ name: part.name, bed });
-            const fileName = part.count > 1 ? `${part.name}_${part.count}x` : part.name;
-            log.innerHTML += `<div class="row"><span>${fileName}</span>` +
-                `<span>${(report.volumeMm3 / 1000).toFixed(1)} cm³ <span class="${ok ? 'ok' : 'bad'}">${ok ? '✔ watertight' : '✖ CHECK'}</span>` +
-                `${onASpike ? ` <span class="bad">✖ ${bed.contactMm2.toFixed(1)} mm² on the bed</span>` : ''}</span></div>`;
-            built.push({ name: part.name, count: part.count, mesh, fileName, vol: report.volumeMm3, bed });
-            prog.value = (i + 1) / parts.length;
-        }
-
-        if (exportMode() !== 'plates') {
-            for (const b of built) {
-                if (format === 'stl') {
-                    files[`${b.fileName}.stl`] = new Uint8Array(generateBinarySTL(b.mesh.positions, b.mesh.indices));
-                } else {
-                    files[`${b.fileName}.3mf`] = wrap3MF(generate3MFXML(b.mesh.positions, b.mesh.indices));
-                }
-            }
-        }
-
-        const packed = exportMode() === 'plates';
-        const laid = packed ? writePlateFiles(files, built, format) : null;
-        const label = packed ? `${laid.plates.length}plates` : `${parts.length}parts`;
-        files['README.txt'] = fflate.strToU8(exportReadme(joints, switchCount,
-            packed ? describePlates(laid.plates, laid.oversized) : undefined, unstable));
-        const zipped = fflate.zipSync(files);
-        const blob = new Blob([zipped], { type: 'application/zip' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${label}_${format}.zip`;
-        a.click();
-        toast(packed
-            ? `⬇ Exported ${laid.plates.length} plate${laid.plates.length === 1 ? '' : 's'} (${format.toUpperCase()})`
-            : `⬇ Exported ${parts.length} watertight parts (${format.toUpperCase()})`);
-    } catch (err) {
-        console.error(err);
-        toast(`Export failed: ${err.message}`);
-    } finally {
-        btns.forEach(b => b.disabled = false);
-        prog.style.display = 'none';
-    }
-}
-
 
 // ---------------------------------------------------------------------------
 // Print shop: pick quantities of any part, watch the plates fill up
@@ -4967,7 +4907,9 @@ async function openPrintShop(opts = {}) {
         $('shop-summary').textContent = 'building part geometry…';
         try {
             await initCSG();
-            const { parts } = assembleParts();
+            const { parts, joints, switchCount } = assembleParts();
+            shop.joints = joints;
+            shop.switchCount = switchCount;
             // The design's own parts, PLUS everything that exists regardless of
             // what is on the canvas. A design with no curve still wants to be
             // able to order risers it is not using, a gate, a patio. Track
@@ -5043,6 +4985,8 @@ async function openPrintShop(opts = {}) {
                     name: part.name, kind: part.kind ?? 'track', ...fp,
                     variant: shopVariantLabel(part),
                     vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
+                    // watertight is not the same as printable — see bedStability
+                    bed: bedStability(mesh.positions, mesh.indices),
                     designCount: part.count ?? 0, thumb: ''
                 });
                 shop.counts.set(part.name, part.count ?? 0);
@@ -5071,9 +5015,9 @@ function closePrintShop() {
 }
 
 /** Export exactly what the preview shows. */
-async function shopExport() {
-    const btn = $('shop-export');
-    btn.disabled = true;
+async function shopExport(format = '3mf') {
+    const btns = [$('shop-export'), $('shop-export-stl')];
+    btns.forEach(b => b && (b.disabled = true));
     try {
         const byName = new Map(shop.items.map(it => [it.name, it]));
         const files = {};
@@ -5087,24 +5031,36 @@ async function shopExport() {
                 };
             });
             const grams = p.items.reduce((s, it) => s + printedWeightG(byName.get(it.name).vol, 'track'), 0);
-            files[`plate_${String(p.index).padStart(2, '0')}_${p.items.length}parts_${Math.round(grams)}g.3mf`] =
-                wrap3MF(generateMultiObject3MFXML(objs));
+            const stem = `plate_${String(p.index).padStart(2, '0')}` +
+                `${p.group ? `_${p.group}` : ''}_${p.items.length}parts_${Math.round(grams)}g`;
+            if (format === 'stl') {
+                files[`${stem}.stl`] = new Uint8Array(generateBinarySTL(...mergePlacedMeshes(p.items, byName)));
+            } else {
+                files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
+            }
         }
         const manifest = describePlates(shop.plates, []);
-        files['README.txt'] = fflate.strToU8(exportReadme(0, 0,
-            `Set: custom (Print shop) — quantities chosen by hand.\n\n${manifest}`));
+        // Only the parts actually ON a plate: warning about a part you ordered
+        // none of would just train you to ignore the warnings.
+        const onPlates = new Set(shop.plates.flatMap(p => p.items.map(it => it.name)));
+        const unstable = shop.items
+            .filter(it => onPlates.has(it.name) && it.bed && it.bed.contactMm2 < MIN_BED_MM2)
+            .map(it => ({ name: it.name, bed: it.bed }));
+        files['README.txt'] = fflate.strToU8(exportReadme(
+            shop.joints ?? 0, shop.switchCount ?? 0, manifest, unstable));
         const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
-            `_custom_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${shop.plates.length}plates.zip`;
+            `_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${shop.plates.length}plates_${format}.zip`;
         a.click();
         toast(`⬇ ${shop.plates.length} custom plate${shop.plates.length === 1 ? '' : 's'}`);
     } catch (err) {
         console.error(err);
         toast(`Plate export failed: ${err.message}`);
     } finally {
-        btn.disabled = false;
+        btns.forEach(b => b && (b.disabled = false));
+        shopRepack();      // re-disables them if nothing is selected
     }
 }
 
@@ -5114,12 +5070,12 @@ window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verificat
 // once with a clean console (see initJointGuide).
 window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideState; },
                  get gallery() { return gallery; } };
-$('btn-print-shop').addEventListener('click', () => openPrintShop());
+$('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all' }));
 // Same door, but this one is "show me the job the buttons above will produce",
 // so it forces the preset back to the whole design.
-$('btn-preview-plates').addEventListener('click', () => openPrintShop({ preset: 'all' }));
 $('shop-close').addEventListener('click', () => closePrintShop());
-$('shop-export').addEventListener('click', () => shopExport());
+$('shop-export').addEventListener('click', () => shopExport('3mf'));
+$('shop-export-stl').addEventListener('click', () => shopExport('stl'));
 (() => {
     const sel = $('shop-preset');
     for (const set of EXPORT_SETS) {

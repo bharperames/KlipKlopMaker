@@ -352,7 +352,18 @@ select {
 #print-parts-list li:hover { background: var(--panel-2); color: var(--accent); }
 #print-parts-list .wt { color: var(--ink-3); font-size: 11px; }
 #parts-heading .wt { color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
-.tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+/* The tab bar is how you get between panes, so it must never scroll away —
+   the panel below it is long enough that it always would. Sticky to the top of
+   the scrolling aside, with the aside's own padding pulled back so the
+   background covers the full width as content passes under it. */
+.tabs {
+    display: flex; gap: 4px; margin-bottom: 10px;
+    position: sticky; top: -12px; z-index: 5;
+    background: var(--panel);
+    margin-left: -12px; margin-right: -12px;
+    padding: 12px 12px 0;
+    box-shadow: 0 6px 10px -6px rgba(0, 0, 0, .55);
+}
 .tabs button { flex: 1; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; background: var(--panel-2); white-space: nowrap; font-size: 12.5px; padding: 6px 4px; }
 .tabs button.active { border-bottom-color: var(--accent); font-weight: 700; background: var(--panel); }
 .card {
@@ -688,18 +699,13 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
 
     <div id="pane-export" style="display:none">
         <h2>Print/Parts</h2>
-        <button id="btn-print-shop" class="primary" style="width:100%">🛠 Go to Custom Print Shop</button>
-        <div style="height:12px"></div>
-        <div id="export-mode" role="radiogroup" aria-label="What to export">
-            <label><input type="radio" name="export-mode" value="plates" checked> Packed plates</label>
-            <label><input type="radio" name="export-mode" value="parts"> Single files</label>
+        <button id="btn-print-shop" class="primary" style="width:100%">🛠 Review &amp; export in the print shop</button>
+        <div class="hint" style="margin-top:6px">
+            Exporting goes through the shop so you see the plates before you
+            commit to them: what is on each bed, how full it is, and which
+            parts print alone. Adjust any quantity there and download from the
+            same screen.
         </div>
-        <button id="btn-export-stl" style="width:100%">⬇ Generate &amp; download ZIP (STL)</button>
-        <div style="height:6px"></div>
-        <button id="btn-export-3mf" style="width:100%">⬇ Generate &amp; download ZIP (3MF)</button>
-        <div style="height:6px"></div>
-        <button id="btn-preview-plates" style="width:100%">👁 Preview plates before exporting</button>
-        <div class="hint" id="export-mode-hint" style="margin-top:4px"></div>
         <div style="height:10px"></div>
         <progress id="export-progress" max="1" value="0" style="display:none"></progress>
         <div id="export-log"></div>
@@ -719,7 +725,12 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             </select>
             <div style="display: flex; gap: 8px; align-items: center;">
                 <button id="print-part-mode" type="button" title="Cycle render mode" style="font-size: 11px; padding: 3px 8px; border-radius: 6px;">Shaded + HLR</button>
-                <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2);"><input type="checkbox" id="print-part-dims" checked> dims</label>
+                <select id="print-part-dims" title="Which dimensions to show" style="font-size: 11px; padding: 3px 4px; border-radius: 4px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);">
+                    <option value="all">dims: all</option>
+                    <option value="overall">dims: overall</option>
+                    <option value="features">dims: features</option>
+                    <option value="none">dims: off</option>
+                </select>
                 <label style="font-size: 11px; display: inline-flex; align-items: center; gap: 2px; color: var(--ink-2);"><input type="checkbox" id="print-part-rotate"> spin</label>
             </div>
         </div>
@@ -913,7 +924,8 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <span id="shop-preset-hint" style="font-size:11px;color:var(--ink-2);max-width:300px"></span>
             <span id="shop-summary"></span>
             <button id="shop-zero" type="button">Clear all</button>
-            <button id="shop-export" class="primary" type="button">⬇ Export plates</button>
+            <button id="shop-export-stl" type="button">⬇ STL</button>
+            <button id="shop-export" class="primary" type="button">⬇ Export plates (3MF)</button>
             <button id="shop-close" type="button">✕ Close (Esc)</button>
         </div>
         <div id="shop-body">
