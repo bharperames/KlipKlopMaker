@@ -64,23 +64,35 @@ constant-depth underside the mouth would land wherever the deck happens to be,
 so one local pad under the boss makes up the remaining 0–15 mm. That pad is
 today's skirt — kept only where it does a job.
 
-**And it probably prints BETTER, not worse.** Lay the deck-parallel underside
-on the bed and the deck is horizontal in print:
+**Built, and two of the claims above were wrong.** `SPEC.skirt.style` now
+takes `viaduct` or `minimal`; measured on the built meshes:
 
-| | print height, curve |
-|---|---|
-| now (rim-down, deck sloped 11.2°) | 57 + 14 = **71 mm** |
-| D = 15, underside-down | 15 + 14 = **29 mm** |
+| | straight | curveL |
+|---|---|---|
+| viaduct | 60.2 cm³ | 86.2 cm³ |
+| minimal, D = 12 | 49.5 (−18%) | 69.0 (−20%) |
+| minimal, D = 15 | 52.7 (−12%) | 73.3 (−15%) |
 
-The washboard currently prints on an 11.2° slope, so every ridge is stepped
-across the layers; flat on the bed each ridge becomes a constant-Z feature.
-What tilts instead is everything vertical-in-use — socket bore, key pocket,
-end faces — by 11.2°, which is a mild lean on features that are all holes or
-slots rather than show surfaces.
+- **The saving is 18–20%, not 26–31%.** The Monte-Carlo estimate compared
+  against a bare beam. The real part keeps a full-depth pad under the socket
+  (which is what puts the mouth on the grid) and keeps its skirt over the last
+  stretch, where the deck is already within D of the rim.
+- **The print does not get shorter.** A piece still spans from the rim at its
+  low end to deck-plus-rails at its high end: 56 mm on a straight, 71 on a
+  curve, unchanged. Height only drops if the part is also tilted, and see
+  below for why a curve cannot be.
 
-**What it costs:** the arcade. At 15 mm deep there is no room for piers and
-three-centred arches, so the viaduct look goes with it. That is the real price
-and it is an aesthetic one, not a structural one.
+**D is not free to choose.** The underside meets the rim exactly when
+D = `skirtDepth`; anything else either cuts below the grid plane at the low
+end or leaves a step. So the grid-preserving depths are 12, 27, 42… and 12 is
+the one worth having. 15 is the default because the key's throat at D = 12 is
+9 mm against a 5.6 mm key — only 3.4 mm to present it — and that is untested.
+
+**What it costs:** the arcade, and unsupported printing on curves. A
+straight's constant-depth underside is planar, so it could be laid flat and
+printed tilted; **a curve's is a helicoid, measured 5.15 mm from the best-fit
+plane**, so no orientation puts it on the bed and a minimal curve needs print
+supports under it. That is why `viaduct` stays the default.
 
 ### Option A — treat the skirt as a breakaway print support
 

@@ -547,9 +547,39 @@ export function archStations(piece, spec, supportStations = [], forced = null, p
     return out.sort((a, b) => a - b);
 }
 
+/**
+ * The underside of a piece, at arc-length `s`.
+ *
+ * TWO SHAPES, and they answer different questions.
+ *
+ * `viaduct` (the default) puts the underside on a FLAT rim at a 15 mm grid
+ * height and carves an arcade into the wall between. The rim is flat because
+ * that is what lets the part sit on a bed and on a pier: a curve's deck is a
+ * helicoid, and the skirt is the transformation from that helicoid to a plane.
+ * The price is that the skirt is as deep as the piece's drop — 57 mm at the
+ * top of a curve — and 26-31% of the part's volume is below anything useful.
+ *
+ * `minimal` keeps a constant `SPEC.skirt.minimalDepthMm` under the deck and
+ * deletes the rest. The depth comes from the features that must survive: the
+ * bowtie pocket's ceiling is 3 mm under the deck, the key band is 5.6, and a
+ * throat to actually insert the key wants about that again — 14.2 mm — while
+ * the hex socket needs 12. The socket keeps its own pad down to the grid,
+ * because bossOps already builds the boss from `piece.rimY` upward.
+ *
+ * What `minimal` costs is the ability to print unsupported. A straight's
+ * underside is planar, so the part can be laid on it and printed tilted. A
+ * curve's is a helicoid — measured 5.15 mm from the best-fit plane — so no
+ * orientation puts it on the bed, and a minimal curve needs print supports
+ * under it. That is the trade, and it is why `viaduct` stays the default.
+ */
 export function archedRimY(piece, s, spec, supportStations = [], forced = null) {
     const { pad: PAD, margin: MARGIN, pier: PIER, maxRise: ARCH_MAX_RISE } = ARCH;
     const flat = piece.rimY;
+    if (piece.skirtStyle === 'minimal') {
+        const D = spec.skirt?.minimalDepthMm ?? 15;
+        const deck = piece.entryDeck - (piece.drop ?? 0) * (piece.planLen ? s / piece.planLen : 0);
+        return Math.max(flat, deck - D);
+    }
     const bounds = windowBounds(piece, spec, supportStations, forced);
     if (!bounds.length) return flat;
     if (s <= PAD || s >= piece.planLen - PAD) return flat;   // end pads

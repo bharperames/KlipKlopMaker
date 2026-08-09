@@ -140,6 +140,13 @@ export const SPEC = {
     floorThk: 2.0,
     filletR: 2.0,
     skirtDepth: 12,
+    /**
+     * The two underside shapes. `viaduct` is the default and the printable
+     * one; `minimal` keeps only what the joints and the socket need. See
+     * archedRimY for what each costs. 15 mm is set by the key's throat, not
+     * by the socket.
+     */
+    skirt: { style: 'viaduct', minimalDepthMm: 15 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -494,6 +501,7 @@ export function layoutTrack(sequence, params = {}) {
         skirtDepth: SPEC.skirtDepth,
         ridgeHeight: SPEC.ridge.height,
         ridgePitch: SPEC.ridge.pitch,
+        skirtStyle: SPEC.skirt.style,
         ...params
     };
 
@@ -560,6 +568,7 @@ export function layoutTrack(sequence, params = {}) {
             innerWidth, isLift,
             isElevator: kind === 'elevator',
             ridgePitch: ridge.pitch, ridgeCount: ridge.count,
+            skirtStyle: p.skirtStyle ?? SPEC.skirt.style,
             ...meta
         };
         pieces.push(piece);

@@ -272,14 +272,14 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     if (hasEntryJoint) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec,
+            piece.entryDeck + spec.waterfallStepMm, skirtBottom(piece, piece.entryDeck, spec), piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec,
+            piece.exitDeck, piece.exitDeck, skirtBottom(piece, piece.exitDeck, spec), piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
@@ -329,13 +329,13 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        mainPiece.entryDeck + spec.waterfallStepMm, skirtBottom(mainPiece, mainPiece.entryDeck, spec), mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec,
+            pc.exitDeck, pc.exitDeck, skirtBottom(pc, pc.exitDeck, spec), pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }
@@ -358,6 +358,20 @@ function fineShell(piece, spec, bossStations, forced) {
         archStations(piece, spec, pads, forced));
     const profiles = pieceProfiles(piece, stations, spec, true, pads, forced);
     return toBufferGeometry(sweepSolid(profiles, stations));
+}
+
+/**
+ * The underside height at a joint face — the same surface the shell uses.
+ *
+ * `minimal` pieces have no flat rim, so the end rib, its bowtie pocket and its
+ * lightening windows all have to stop where the shell stops or the piece grows
+ * a full-depth block at each end and undoes the point of the variant. See
+ * archedRimY.
+ */
+function skirtBottom(piece, deckHere, spec) {
+    return piece.skirtStyle === 'minimal'
+        ? Math.max(piece.rimY, deckHere - (spec.skirt?.minimalDepthMm ?? 15))
+        : piece.rimY;
 }
 
 /**
@@ -461,6 +475,8 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
      */
     function ribSolid() {
         const top = (d) => (deckAtDepth ? deckAtDepth(d) : deckY) - spec.floorThk + 0.5;
+        // the rib reaches the same underside the shell does, so a minimal
+        // piece does not sprout a full-depth block at each end
         const dir = [Math.cos(face.h), Math.sin(face.h)];
         const right = [Math.sin(face.h), -Math.cos(face.h)];
         const n = 5;
@@ -514,7 +530,10 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     const winOuter = Wi + 1 - WALL;
     // the windows are cut inside the rib, so they must clear its LOWEST top
     const ribTop = Math.min(deckY, deckAtDepth ? deckAtDepth(K.ribThk) : deckY) - spec.floorThk + 0.5;
-    const windows = winOuter - winInner > 3
+    // A minimal piece's rib is only ~15 mm deep; lightening it further leaves
+    // slivers around the pocket, and there is nothing left to save.
+    const ribDepth = ribTop - rimY;
+    const windows = (winOuter - winInner > 3 && ribDepth > 25)
         ? [-1, 1].map(sgn => ({
             op: SUBTRACTION,
             geometry: toBufferGeometry(extrudePolygonY(
@@ -904,14 +923,14 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         // seam's uphill deck = this entry + the waterfall step
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, piece.rimY, piece.entryWidth ?? piece.innerWidth, spec,
+            piece.entryDeck + spec.waterfallStepMm, skirtBottom(piece, piece.entryDeck, spec), piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, piece.rimY, piece.exitWidth ?? piece.innerWidth, spec,
+            piece.exitDeck, piece.exitDeck, skirtBottom(piece, piece.exitDeck, spec), piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
@@ -958,13 +977,13 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, mainPiece.rimY, mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        mainPiece.entryDeck + spec.waterfallStepMm, skirtBottom(mainPiece, mainPiece.entryDeck, spec), mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, pc.rimY, pc.exitWidth ?? pc.innerWidth, spec,
+            pc.exitDeck, pc.exitDeck, skirtBottom(pc, pc.exitDeck, spec), pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }

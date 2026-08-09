@@ -36,6 +36,10 @@ export function serializeScene(state, meta = {}) {
             innerWidth: STANDARD.innerWidth,
             curveRadius: +STANDARD.curveRadius.toFixed(2)
         },
+        // Which underside the pieces are built with. A scene saved with
+        // `minimal` must come back as `minimal` — it is a different printed
+        // part, not a view setting.
+        skirtStyle: state.skirtStyle === 'minimal' ? 'minimal' : 'viaduct',
         surface: state.muKey,
         walker: { ...state.walker },
         ...(meta.expect || state.expect ? { expect: meta.expect ?? state.expect } : {})
@@ -110,6 +114,7 @@ export function deserializeScene(obj) {
         slopeDeg: +STANDARD.slopeDeg.toFixed(4),
         innerWidth: STANDARD.innerWidth,
         curveRadius: +STANDARD.curveRadius.toFixed(2),
+        skirtStyle: obj.skirtStyle === 'minimal' ? 'minimal' : 'viaduct',
         geometryOfFile: obj.geometry ?? null,
         // Same MAJOR mates — that is the promise the export README makes, and
         // an exact-string check broke it the first time a MINOR shipped.

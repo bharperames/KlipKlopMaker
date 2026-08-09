@@ -66,6 +66,7 @@ const state = {
     innerWidth: STANDARD.innerWidth,
     curveRadius: +STANDARD.curveRadius.toFixed(2),
     muKey: 'washboard',
+    skirtStyle: 'viaduct',
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
     renderMode: localStorage.getItem('klipklop-render-mode') || 'solid',
@@ -121,6 +122,7 @@ function restoreSnapshot(s) {
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
     state.muKey = s.muKey;
+    state.skirtStyle = s.skirtStyle === 'minimal' ? 'minimal' : 'viaduct';
     state.walker = s.walker;
     state.name = s.name;
     state.activeEndKey = s.activeEndKey ?? '[]';
@@ -168,6 +170,7 @@ function applyScene(scene) {
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
     state.muKey = s.muKey;
+    state.skirtStyle = s.skirtStyle === 'minimal' ? 'minimal' : 'viaduct';
     state.walker = s.walker;
     state.name = s.name;
     state.activeEndKey = '[]';
@@ -317,6 +320,7 @@ function rebuild() {
     state.layout = layoutTrack(state.sequence, {
         slopeDeg: state.slopeDeg,
         innerWidth: state.innerWidth,
+        skirtStyle: state.skirtStyle,
         curveRadius: state.curveRadius
     });
     // The lateral half of the physics. It lives outside layoutTrack because
@@ -479,6 +483,7 @@ function rebuild() {
     refreshEditorCard();
     refreshIdleHorse();
     refreshParamsMode();
+    refreshSkirtMode();
     refreshPrintPartsList();
     $('btn-connect').disabled = state.layout.isCircuit || !state.sequence.length || state.sequence.some(n => typeof n !== 'string');
     applyRenderMode();
@@ -1073,6 +1078,18 @@ function bindSlider(id, outId, key, fmt, isWalker = false) {
     el.addEventListener('change', () => history.endGesture());
 }
 // Parameters are CONSTANT (canonical geometry, semver-stamped) — no sliders.
+function refreshSkirtMode() {
+    const sel = $('in-skirt');
+    if (!sel) return;
+    sel.value = state.skirtStyle;
+    $('skirt-hint').textContent = state.skirtStyle === 'minimal'
+        ? 'Saves ~18-20% of each piece and drops the arcade. The underside follows the '
+          + 'deck, so a straight can be laid flat and printed tilted — but a curve\u2019s '
+          + 'underside is a helicoid (5.2 mm off any plane) and needs print supports.'
+        : 'The skirt carries the deck down to a flat rim on the 15 mm grid, and the arcade '
+          + 'is cut out of it. Every piece prints rim-down with no supports.';
+}
+
 function refreshParamsMode() {
     $('params-mode').textContent = `STANDARD v${GEOMETRY_VERSION} 🔒`;
 }
@@ -5082,6 +5099,13 @@ window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verificat
 // once with a clean console (see initJointGuide).
 window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideState; },
                  get gallery() { return gallery; } };
+$('in-skirt').addEventListener('change', () => {
+    recordEdit('skirt');
+    state.skirtStyle = $('in-skirt').value === 'minimal' ? 'minimal' : 'viaduct';
+    shop.built = false;           // the parts themselves changed, so rebuild them
+    rebuild();
+});
+
 $('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all' }));
 // Same door, but this one is "show me the job the buttons above will produce",
 // so it forces the preset back to the whole design.

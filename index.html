@@ -631,6 +631,14 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             seam), curves <b>R 143.6 mm</b> (45 mm drop), channel <b>48 mm</b>,
             supports on a 15 mm riser grid. Designs loaded with other geometry
             are re-laid on this standard and flagged.
+            <div style="margin-top:8px; display:flex; align-items:center; gap:6px;">
+                <label for="in-skirt" style="font-size:12px">Underside</label>
+                <select id="in-skirt" style="font-size:11px; padding:3px 4px; border-radius:4px; border:1px solid var(--line); background:var(--bg); color:var(--ink); flex:1">
+                    <option value="viaduct">Viaduct — arched skirt to a flat rim (prints unsupported)</option>
+                    <option value="minimal">Minimal — 15 mm under the deck, joints and socket only</option>
+                </select>
+            </div>
+            <div class="hint" id="skirt-hint" style="margin-top:4px"></div>
             <div style="margin-top:6px; color:var(--ink-3); font-size:11px;">
                 Every exported part is engraved with its code and this version.
                 The version is a <i>compatibility claim</i>: parts with different
