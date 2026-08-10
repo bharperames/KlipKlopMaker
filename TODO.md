@@ -75,10 +75,10 @@ takes `viaduct` or `minimal`; measured on the built meshes:
 | viaduct | 60.2 cm³ | 86.2 cm³ |
 | minimal (D = 12), boss column to the rim | 49.5 (−18%) | 69.0 (−20%) |
 | minimal, boss as a recess, D = 12 | 46.3 (−23%) | 64.4 (−25%) |
-| **shipped: recess, D = 15** | **49.5 (−18%)** | **68.6 (−20%)** |
+| **shipped: recess + collar, D = 15.5** | **50.3 (−16%)** | **69.6 (−19%)** |
 
-D = 15 rather than 12 is what lets a straight lie on its own underside (§4
-step 4). The 5 points it gives back buy a part that needs no print supports.
+D = 15.5 rather than 12 is what lets a straight lie on its own underside (§4
+steps 4 and 6). The points it gives back buy a part that lands on the plate.
 
 On the demo tower the first of those was 1672 g → **1492 g**, an 11% job (only
 the track parts change; keys, risers and feet are untouched).
@@ -106,13 +106,14 @@ with the pocket fully engaged, after rising its own height to get there.
 *Overtaken, and by its own premise.* That whole argument rests on the boss
 keeping a pad down to the grid. The spacer carries the grid now, so D is free
 of the 15 mm family entirely — and the socket, which "does not constrain it at
-all" while it has a pad, constrains it completely once it is a recess: the
-mouth is level and the underside slopes, so **D ≥ 14.91** or the mouth
-protrudes. 15, and see §4 step 4. The key's throat wanted 14.2 anyway.
+all" while it has a pad, constrains it completely once it is a recess: the seat
+is level and the underside slopes, so **D ≥ 15.21** or the collar that takes
+the boss to the plane has nowhere to go. 15.5, and see §4 steps 4 and 6. The
+key's throat wanted 14.2 anyway.
 
 **What it costs:** the arcade, and unsupported printing on curves. A
 straight's constant-depth underside is planar, so it can be laid flat and
-printed tilted — it now is, `forPrint`, 524 mm² on the bed and half the
+printed tilted — it now is, `forPrint`, 629 mm² on the bed and half the
 height. **A curve's is a helicoid, measured 5.15 mm from the best-fit
 plane**, so no orientation puts it on the bed and a minimal curve still needs
 print supports under it. That is why `viaduct` stays the default.
@@ -146,7 +147,7 @@ pieces read as one arcade rather than two. Does nothing for the 30%.
 
 - **The print orientation is a claim, not a result** — still true, and the one
   that matters. Laying the underside on the bed puts the socket bore, the key
-  pocket and both end faces 11.2° off vertical. It measures 524 mm² of bed
+  pocket and both end faces 11.2° off vertical. It measures 629 mm² of bed
   contact and no overhang over 85% of the length; **nothing has printed it.**
   That is the next thing to do with a printer rather than a keyboard.
 - ~~The pad under the boss has to be sized per piece type~~ — there is no pad.
@@ -382,46 +383,62 @@ The changes are strictly ordered, because each one unblocks the next:
 
    | | rim-down | forPrint |
    |---|---|---|
-   | straight | 443 mm² contact, 56 mm tall | **524 mm², 28 mm** |
-   | lift | 446 mm², 56 mm tall | **523 mm², 28 mm** |
-   | curveL | 444 mm², 71 mm tall | refused |
+   | straight | 452 mm² contact, 56 mm tall | **629 mm², 29 mm** |
+   | lift | 455 mm², 56 mm tall | **626 mm², 29 mm** |
+   | curveL | 453 mm², 71 mm tall | refused |
 
-   **It cost D = 15.** The mouth is a LEVEL face inside a SLOPING underside,
-   so one has to be clear of the other, and the algebra says D ≥ 14.91 —
-   below that the mouth protrudes 2.91 mm and the piece balances on it, which
-   is exactly the 2 mm² failure that got the first version reverted. So the
-   part is 3.2 cm³ heavier on a straight and the saving against viaduct goes
-   from 23% back to 18%. Worth it: a straight that lies down needs no print
-   supports at all, against 44.66 g of support for 72.04 g of model.
+   **It cost D = 15.5.** The seat is a LEVEL face inside a SLOPING underside,
+   so the collar that carries the boss to the plane only fits when D ≥ 15.21
+   (step 6). Below that it protrudes and the piece balances on it, which is
+   exactly the 2 mm² failure that got the first version reverted. So the part
+   is 4 cm³ heavier on a straight and the saving against viaduct goes from 23%
+   back to 16%. Worth it: a straight that lies down needs almost no print
+   support, against 44.66 g of support for 72.04 g of model.
 
-   *Residual — TWO LEVEL FACES THE TILT TURNS INTO RAMPS.* "No supports at
-   all" was overstated. Probed along the wall, the underside is on the bed
-   from 5% to 90% of the length, and what is left is:
+   *Residual: the END RIB AT THE EXIT FACE.* "No supports at all" was
+   overstated. Probed along the wall, the underside is on the bed from 5% to
+   90% of the length; the last 15 mm rises to 2.6 mm, because `skirtBottom`
+   clamps at the rim and D exceeds `skirtDepth` by 3.5, so the piece steps up
+   off the plane just before its exit face. The end rib there — the 12 mm slab
+   across the joint that carries the bowtie pocket — therefore keeps the 78.8°
+   overhang the rest of the part no longer has.
 
-   - **The exit rib**, lifted to 2.6 mm. `skirtBottom` clamps at the rim and D
-     exceeds `skirtDepth` by 3, so the last 15 mm steps up off the plane.
-     Removing the clamp is NOT the fix: tried, and the rib's own level bottom
-     then protrudes below the plane and bed contact goes to **zero**.
-   - **The socket mouth**, the Ø19 annulus the spacer bears on. Measured, it
-     clears the plate by **0.15 mm at its uphill edge** and ~3.9 mm at its
-     downhill one — it very nearly grazes, but it is a level face inside an
-     11.2° plane, so it is a ramp like everything else was. ~220 mm².
+   Removing the clamp is NOT the fix: tried, and the rib's own level bottom
+   then protrudes below the plane and bed contact goes to **zero**. The rib
+   bottom has to FOLLOW the plane instead of being level, which is the same
+   change curves need in §6.
 
-   Both are the same fault and want the same fix: a face that is level IN USE
-   has to be cut parallel to the underside FOR PRINT. For the rib that is a
-   varying bottom in `ribSolid`. For the mouth it is worse than it looks — a
-   sloped mouth needs a sloped spacer shoulder to bear on, and the hex socket
-   only clocks six ways, so five of six insertions would be wrong. Leave the
-   mouth level until there is a reason not to; it is 220 mm² of support.
+6. **The collar.** DONE, and it is why the boss is not a floating island.
 
-   The mouth CANNOT simply be dropped to the plane, and this is worth knowing
-   before anyone tries: the boss stands over the open channel underside where
-   there is no material at all, so it can only reach the bed by becoming a
-   pier again. Its allowed window is 0.09 mm wide — no lower than
-   `deck − 13.03` (the floor over the socket) and no higher than
-   `deck + 1.88 − D` (or it protrudes below the plane and the part rests on
-   it). It is already at the top of that window.
-5. **Curves.** NOT BUILT. The underside has to be cut as a **tilted plane**
+   A minimal boss stands over the OPEN channel underside — there is no
+   material between the walls below the floor — so it is a free-standing tube
+   whatever else is true. Ending it at the seat left it starting in mid-air:
+   sliced, the boss's **first layer was 1.3 mm²**, which will not stick to a
+   plate. Its collar now takes it down to the underside plane, cut BY that
+   plane so it is coplanar with the wall bottoms:
+
+   | | before | after |
+   |---|---|---|
+   | boss, first layer | 1.3 mm² | **116.7 mm²** |
+   | whole part, bed contact | 524 mm² | **629 mm²** |
+
+   This is NOT a pier and the two should not be confused. A pier runs to a
+   flat rim on the 15 mm grid and carries the tower. The collar is ~2.5 mm of
+   ring that carries nothing; it exists so the tube starts on the bed.
+
+   **The bore is what keeps the seat level.** The spacer has to bear on a
+   horizontal face or the tower leans, and a horizontal face cut into a
+   sloping underside is the problem this whole section keeps circling. So the
+   collar is bored to clear the spacer's Ø18 body, the spacer tucks up inside
+   it, and the level face it seats on is the ledge at the top of that bore —
+   `socketMouthY`, unmoved, so no spacer height changed.
+
+   **It set the depth.** The ledge has to be above the plane everywhere under
+   the collar, so D ≥ `floorThk + socketDepth + grad·(rCorner + collarR)` =
+   15.21, and `minimalDepthMm` is 15.5. `bossOps` and `tiltOntoUnderside`
+   share one test for it (`collarFits`), so a shallower depth gets the old
+   plain boss and no tilt rather than a broken part.
+7. **Curves.** NOT BUILT. The underside has to be cut as a **tilted plane**
    rather than at constant depth under the deck, or the surface being laid on
    the bed is still a helicoid. See §6 — the D = 14 in the old note is wrong,
    and the reason it is wrong also makes the change simpler than it looked.

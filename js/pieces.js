@@ -591,18 +591,24 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 
  * a sliver rather than a point, since a zero-width profile has no cap to
  * triangulate.
  */
-function slantedCylinder(bx, bz, heading, r, yBottom, topAt, segs = 28) {
+function slantedCylinder(bx, bz, heading, r, bottomAt, topAt, segs = 28) {
     const dir = [Math.cos(heading), Math.sin(heading)];
     const right = [Math.sin(heading), -Math.cos(heading)];
+    // either end may be a level height or a function of the offset along the
+    // track: the boss's TOP follows the deck, the collar's BOTTOM follows the
+    // underside plane, and the ledge between them is level.
+    const bot = typeof bottomAt === 'function' ? bottomAt : () => bottomAt;
+    const top = typeof topAt === 'function' ? topAt : () => topAt;
     const profiles = [], stations = [];
     for (let i = 0; i <= segs; i++) {
         const a = (Math.PI * i) / segs;
         const ds = -r * Math.cos(a);
         const w = Math.max(0.15, r * Math.sin(a));
-        const h = Math.max(0.2, topAt(ds) - yBottom);
+        const y0 = bot(ds);
+        const h = Math.max(0.2, top(ds) - y0);
         profiles.push([[-w, 0], [w, 0], [w, h], [-w, h]]);
         stations.push({
-            origin: [bx + dir[0] * ds, yBottom, bz + dir[1] * ds],
+            origin: [bx + dir[0] * ds, y0, bz + dir[1] * ds],
             right: [right[0], 0, right[1]],
             up: [0, 1, 0]
         });
@@ -653,6 +659,34 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside, yStart) {
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
  * carrying the socket boss outboard of the tier below.
  */
+/**
+ * Is there room to take the boss down to the print plane?
+ *
+ * The collar's bottom IS that plane, so its top — the level ledge the spacer
+ * seats on — has to sit above the plane everywhere under it. The plane is
+ * highest at the collar's uphill edge, so:
+ *
+ *     ledge          deck - floorThk - grad·rCorner - socketDepth
+ *     plane, uphill  deck + grad·collarR - D
+ *
+ * i.e. D >= floorThk + socketDepth + grad·(rCorner + collarR) = 15.21 at the
+ * standard slope. Below that the collar would protrude past the plane and the
+ * piece laid on its underside would balance on it — so it is simply not built,
+ * and `tiltOntoUnderside` refuses on the same test. A shallower minimal piece
+ * is then exactly what it was: printed rim-down, with supports.
+ */
+function collarFits(piece, grad, spec) {
+    if (piece.skirtStyle !== 'minimal') return false;
+    if (!(spec.socket.collarR > 0)) return false;
+    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
+    const need = spec.floorThk + spec.socket.depth
+        + Math.abs(grad) * (rCorner + spec.socket.collarR);
+    return (spec.skirt?.minimalDepthMm ?? 15) >= need;
+}
+
+/** The gradient of the deck along the track, signed the way bossOps uses it. */
+const deckGrad = (piece) => piece.planLen > 0 ? piece.drop / piece.planLen : 0;
+
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
@@ -682,6 +716,21 @@ function bossOps(piece, spec, support) {
             geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
                 mouthY, (ds) => bossUnderside(ds) + 0.5)
         });
+        // and take it down to the print plane, if there is room for the collar
+        if (collarFits(piece, grad, spec)) {
+            const planeAt = (ds) => bossUnderside(ds) + spec.floorThk
+                - (spec.skirt?.minimalDepthMm ?? 15);
+            const { collarR, collarBoreR } = spec.socket;
+            ops.push({
+                op: ADDITION,
+                geometry: slantedCylinder(bx, bz, bossHeading, collarR, planeAt, mouthY)
+            });
+            ops.push({
+                op: SUBTRACTION,
+                geometry: slantedCylinder(bx, bz, bossHeading, collarBoreR,
+                    (ds) => planeAt(ds) - 0.5, mouthY)
+            });
+        }
     }
     ops.push({
         op: SUBTRACTION,
@@ -962,10 +1011,11 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  *  - NO RADIUS. A curve's constant-depth underside is a helicoid, measured
  *    5.15 mm from its own best-fit plane, and no rotation flattens it. A curve
  *    has to have its underside CUT as a plane first — see TODO §4 step 5.
- *  - The socket mouth has to be clear of the underside plane, which is
- *    `SPEC.skirt.minimalDepthMm >= 14.91`. Below that the mouth protrudes and
- *    the piece balances on it: the first version of this measured 2 mm² of bed
- *    contact against 618 rim-down, and was reverted for it.
+ *  - The boss has to reach the plane, which is `collarFits` — at the standard
+ *    slope, `SPEC.skirt.minimalDepthMm >= 15.21`. Below that the collar cannot
+ *    be built without protruding past the plane, and the piece laid down
+ *    balances on it: the first version of this measured 2 mm² of bed contact
+ *    against 618 rim-down, and was reverted for it.
  *
  * Modelled Y-up with the ramp descending along +X, so this is a rotation about
  * Z through the deck's own slope angle — a proper rotation, so a chiral part
@@ -974,7 +1024,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  */
 export function tiltOntoUnderside(solid, piece, spec = SPEC) {
     if (piece.skirtStyle !== 'minimal' || piece.radius || !piece.planLen) return solid;
-    if ((spec.skirt?.minimalDepthMm ?? 0) < MIN_DEPTH_FOR_TILT) return solid;
+    if (!collarFits(piece, deckGrad(piece), spec)) return solid;
     const th = Math.atan2(piece.drop ?? 0, piece.planLen);
     if (Math.abs(th) < 1e-6) return solid;
     const c = Math.cos(th), s = Math.sin(th);
@@ -988,11 +1038,12 @@ export function tiltOntoUnderside(solid, piece, spec = SPEC) {
 }
 
 /**
- * The depth at which the socket mouth stops protruding below the underside
- * plane — see `SPEC.skirt.minimalDepthMm`. Below it the tilt makes the part
- * WORSE than printing it rim-down, so it is refused rather than applied.
+ * Whether a piece is exported lying on its underside — the same test the
+ * collar is built on, exposed so a test can assert the two agree.
  */
-export const MIN_DEPTH_FOR_TILT = 14.91;
+export const printsLyingDown = (piece, spec = SPEC) =>
+    piece.skirtStyle === 'minimal' && !piece.radius && piece.planLen > 0
+    && collarFits(piece, deckGrad(piece), spec);
 
 /**
  * Where a switch's code goes: which rail, and how far along.

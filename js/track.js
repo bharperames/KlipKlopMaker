@@ -144,30 +144,32 @@ export const SPEC = {
      * The two underside shapes. `viaduct` is the default and the printable
      * one; `minimal` keeps only what the joints need. See archedRimY.
      *
-     * 15, AND 14.91 IS WHY. The number that has to clear is not a feature
-     * under the deck — it is the socket mouth. The mouth is a LEVEL face
-     * (a column has to bear on it) inside a SLOPING underside, so the two
-     * can only miss each other by one of them being clear of the other:
+     * 15.5, AND 15.21 IS WHY. The number that has to clear is not a feature
+     * under the deck — it is the SEAT the spacer bears on. That seat has to be
+     * level (or the tower leans) and the underside slopes, so the seat can only
+     * live at the top of a collar bored down to the plane, and the collar only
+     * works if the seat is above the plane everywhere under it:
      *
-     *     mouth, from the floor        deck - 2 - 1.03 - 10  = deck - 13.03
-     *     underside at the boss's
-     *       uphill edge (r = 9.5)      deck + 1.88 - D
+     *     seat, set by the floor        deck - 2 - 1.03 - 10   = deck - 13.03
+     *     underside at the collar's
+     *       uphill edge (r = 11)        deck + 2.18 - D
      *
-     * and the mouth is clear only when D >= 14.91. Below that it protrudes
-     * BELOW the underside plane — 2.91 mm at D = 12 — and the piece laid on
-     * its own underside balances on that instead. Above it, the recess is a
-     * pocket in the underside and the plane is the lowest thing on the part,
-     * which is what makes the tilt possible at all.
+     * so D >= 15.21, and 15.5 takes it with 0.29 to spare. Below that the
+     * collar has nowhere to go: it either protrudes past the underside plane —
+     * and the piece laid on its own underside balances on THAT, which is the
+     * failure the first tilt was reverted for — or it inverts. `bossOps` and
+     * `tiltOntoUnderside` share one test for it, so a shallower depth simply
+     * gets the old plain boss and no tilt rather than a broken part.
      *
      * This used to say "12, and it is not a choice", because the depths that
      * kept a socket mouth on the 15 mm grid were 12, 27 and 42. That was true
      * while the boss carried its OWN pad down to the grid. The spacer carries
-     * the grid now, so D is free, and the only thing left asking for a number
-     * is the mouth. 12 is still what to use for a part that will be printed
-     * rim-down with supports: it is 3.2 cm3 lighter on a straight and the
-     * protruding mouth costs nothing when the piece is not standing on it.
+     * the grid now, so D is free of that family entirely, and what asks for a
+     * number instead is the seat. 12 remains the right answer for a part that
+     * will be printed rim-down with supports: 3.7 cm3 lighter on a straight,
+     * and none of the above matters when the piece is not standing on it.
      */
-    skirt: { style: 'viaduct', minimalDepthMm: 15 },
+    skirt: { style: 'viaduct', minimalDepthMm: 15.5 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -226,7 +228,32 @@ export const SPEC = {
          * the 0.1 AF, the right feature is a crushable rib — compliance that
          * is local, so the shoulder still seats.
          */
-        gripTaperAF: 0
+        gripTaperAF: 0,
+        /**
+         * THE COLLAR — what takes a `minimal` boss down to the print plane.
+         *
+         * A minimal boss stands over the OPEN channel underside: there is no
+         * material between the walls below the floor, so the boss is a
+         * free-standing tube. Ending it at the socket mouth left that tube
+         * starting in mid-air — sliced, its first layer was **1.3 mm²**, a
+         * sliver that will not stick to a plate. The fix is not a pier and
+         * should not be confused with one: a pier runs to a flat rim on the
+         * 15 mm grid and carries the tower. This is ~2.5 mm of ring that
+         * carries nothing and exists only so the tube starts on the bed.
+         *
+         * Its bottom is CUT BY THE UNDERSIDE PLANE, so it is coplanar with the
+         * wall bottoms and lands with the rest of the part — 114 mm² from the
+         * first layer instead of 1.3.
+         *
+         * The bore is what keeps the SEAT LEVEL. The spacer has to bear on a
+         * horizontal face or the tower leans, and a horizontal face cut into a
+         * sloping underside is the whole problem this file keeps running into.
+         * So the collar is bored out to clear the spacer's Ø18 body, the
+         * spacer tucks up inside it, and the level face it seats on is the
+         * ledge at the top of that bore — `socketMouthY`, unmoved.
+         */
+        collarR: 11,
+        collarBoreR: 9.2
     },
     /**
      * The JOG: an offset riser that moves a support column sideways when the

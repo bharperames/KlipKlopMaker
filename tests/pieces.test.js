@@ -14,7 +14,7 @@ import {
     buildSwitchExportGeometry, buildSwitchDisplayGeometry,
     buildPillarGeometry, buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry,
-    engraveOps, engravePoint, MIN_DEPTH_FOR_TILT
+    engraveOps, engravePoint, printsLyingDown
 } from '../js/pieces.js';
 import { analyzeMesh, bedStability, verifyManifold, buildTopologyFromIndices, deduplicateGeometry } from '../js/mesh_utils.js';
 
@@ -711,27 +711,42 @@ describe('the minimal skirt', () => {
         expectNoFloatingProtrusion(g, pc, `minimal ${type}`);
     });
 
-    test.each(['straight', 'curveL', 'lift'])('%s: the boss is a recess, not a column to the rim', (type) => {
+    /**
+     * The boss stands over the OPEN channel underside, so it is a free-standing
+     * tube however deep it goes. It used to be a column to the rim; it is a
+     * recess now, and its collar takes it back down to the underside PLANE so
+     * that the tube starts on the bed rather than in mid-air. Ending it at the
+     * seat left a first layer of 1.3 mm2.
+     *
+     * So there are two heights to check and they are different: the SEAT, a
+     * level face the spacer bears on, and the BOTTOM, which is the plane.
+     */
+    test.each(['straight', 'curveL', 'lift'])('%s: the boss reaches the underside plane, and seats above it', (type) => {
         const { g, pc, support } = built(type);
-        const mouth = socketMouthY(pc, support.s);
-        expect(mouth).toBeGreaterThan(pc.rimY + 10);   // well clear of the rim
+        const seat = socketMouthY(pc, support.s);
+        expect(seat).toBeGreaterThan(pc.rimY + 10);   // well clear of the rim
 
-        // nothing of the boss reaches down toward the rim: sample the mesh
-        // inside the boss footprint and take the lowest surface there. A
-        // column would read at the rim; a recess reads at its own mouth.
         const p = planPosAt(pc, support.s);
         const dir = [Math.cos(p.h), Math.sin(p.h)], right = [Math.sin(p.h), -Math.cos(p.h)];
-        let lowest = Infinity;
-        for (let ds = -8; ds <= 8; ds += 1) {
-            for (let lat = -8; lat <= 8; lat += 1) {
-                if (ds * ds + lat * lat > 64) continue;
+        const D = SPEC.skirt.minimalDepthMm;
+        // gap = how far the lowest material at a point sits ABOVE the plane.
+        // Zero somewhere means the boss reaches it; negative anywhere would
+        // mean it punches through, and the part laid down rests on the boss.
+        let gap = Infinity;
+        for (let ds = -10; ds <= 10; ds += 1) {
+            for (let lat = -10; lat <= 10; lat += 1) {
+                if (ds * ds + lat * lat > 100) continue;
                 const ys = surfacesAt(g, p.x + dir[0] * ds + right[0] * lat,
                     p.z + dir[1] * ds + right[1] * lat);
-                if (ys.length) lowest = Math.min(lowest, ys.at(-1));
+                if (!ys.length) continue;
+                gap = Math.min(gap, ys.at(-1) - (deckYAt(pc, support.s + ds) - D));
             }
         }
-        expect(`${type} boss bottoms at rim+${(lowest - pc.rimY).toFixed(1)}`)
-            .toBe(`${type} boss bottoms at rim+${(mouth - pc.rimY).toFixed(1)}`);
+        // flush is what "reaches the plane" means, so the band is tight both
+        // ways: a hair of float noise either side of zero, nothing more.
+        const mm = (v) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+        expect(`${type} boss stops ${mm(gap)} mm above the plane`)
+            .toBe(`${type} boss stops ${mm(Math.min(Math.max(gap, -0.05), 0.15))} mm above the plane`);
     });
 
     /**
@@ -769,7 +784,7 @@ describe('the minimal skirt', () => {
         const [va, vb] = [analyzeGeometry(flat.g).volumeMm3, analyzeGeometry(tilted.g).volumeMm3];
         expect(Math.abs(vb - va) / va).toBeLessThan(1e-6);
         expect(`${type} contact ${down.contactMm2.toFixed(0)} -> ${up.contactMm2.toFixed(0)} mm2`)
-            .toBe(`${type} contact ${down.contactMm2.toFixed(0)} -> ${Math.max(up.contactMm2, 450).toFixed(0)} mm2`);
+            .toBe(`${type} contact ${down.contactMm2.toFixed(0)} -> ${Math.max(up.contactMm2, 600).toFixed(0)} mm2`);
         // and the part stops being tall: 56 mm standing up, 28 lying down
         expect(up.heightMm).toBeLessThan(down.heightMm * 0.6);
     });
@@ -785,14 +800,18 @@ describe('the minimal skirt', () => {
      * tilt puts the part on that instead, which is the fault that got the
      * first version reverted — so the tilt refuses rather than obliges.
      */
-    test('the tilt refuses a depth that would put the part back on its mouth', () => {
+    test('a depth with no room for the collar gets neither collar nor tilt', () => {
         const shallow = { ...SPEC, skirt: { ...SPEC.skirt, minimalDepthMm: 12 } };
         const world = pieces.filter(p => p.type === 'straight').at(-1);
         const support = planPillarPositions(pieces).find(s => s.pieceIndex === world.index);
         const a = buildPieceExportGeometry(world, { support, spec: shallow });
         const b = buildPieceExportGeometry(world, { support, spec: shallow, forPrint: true });
         expect(Array.from(b.positions)).toEqual(Array.from(a.positions));
-        expect(SPEC.skirt.minimalDepthMm).toBeGreaterThanOrEqual(MIN_DEPTH_FOR_TILT);
+        expect(printsLyingDown(pieceInFrame(world), shallow)).toBe(false);
+        // and at the shipped depth it does both
+        expect(printsLyingDown(pieceInFrame(world))).toBe(true);
+        expect(analyzeGeometry(a).volumeMm3)
+            .toBeLessThan(analyzeGeometry(built('straight').g).volumeMm3);
     });
 
     test.each(['straight', 'curveL', 'lift'])('%s: the floor over the socket keeps its thickness', (type) => {
