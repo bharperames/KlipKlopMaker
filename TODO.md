@@ -244,12 +244,39 @@ the boss would do better than least squares; and a plane cut means the two
 walls have different bottom heights at the same station, which `channelProfile`
 cannot currently express — it takes one `rimY` per station.
 
-**The way out, if this is worth another pass:** make the pad a SEPARATE PART.
-The piece keeps a shallow socket recess in its underside and prints as a pure
-slab that tilts flat; a spacer part brings the mouth down to the grid. It is
-the same move the jog made — take the support's problem out of the track piece
-— and it costs one new part per piece type (17.6 mm for a straight, 27.2 for a
-curve), neither of which is a grid multiple.
+### The design to build: an insertable spacer instead of a long boss
+
+NOT BUILT YET. Recorded with the numbers so it can be picked up.
+
+The piece keeps only a socket RECESS in its underside — the underside is 12 mm
+below the deck and the floor is 2, which leaves exactly the 10 mm the socket
+needs, so the boss stops being a column and becomes a hole. A separate spacer
+plugs into it and carries the mouth down to a 15 mm grid line, exactly the
+move the jog made: take the support's problem out of the track piece.
+
+Spacer heights, shoulder to shoulder (measured):
+
+| piece | boss at | mouth would sit at | spacer |
+|---|---|---|---|
+| straight | s = 61 | deck − 12 | **17.6 mm** |
+| lift | s = 89 | deck − 12 | **17.7 mm** |
+| curveL | s = 88 | deck − 12 | **27.2 or 12.2 mm** |
+
+A spacer cannot be shorter than ~12 mm whatever the arithmetic says: its body
+has to hold a 10 mm socket plus a floor. That rules out the tempting
+`17.6 − 15 = 2.6` for a straight, and makes 12.2 the useful curve variant
+(the column below simply grows one grid unit).
+
+So it is **two new parts** — call them 17.5 and 12.5 — and both are small.
+They can share the riser's tenon and socket, so nothing new is introduced to
+the interlock.
+
+**Why this is worth doing rather than leaning on the slicer.** Bambu's
+automatic supports on one printed piece: **44.66 g of support against 72.04 g
+of model** — 62% overhead, and the tree supports run the full depth under the
+part. Designed geometry that lands on the bed beats that by a wide margin,
+which is the whole argument for getting the pad out of the way so the piece
+can lie on its underside.
 
 ### And on putting the tilt in the exporter at all
 
