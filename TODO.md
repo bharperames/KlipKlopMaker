@@ -278,16 +278,20 @@ in a heap with sixty risers.
 
 What makes it unmistakable, in order of how well it works:
 
-1. **A round body instead of a hex one.** Risers, feet, towers and jogs are
-   all 15 AF hex; nothing else in the library is a cylinder. You cannot
-   mistake a cylinder for a hex prism by eye or by touch, in any light, at any
-   angle. Only the BODY changes — the tenon and socket stay hex, so the
-   interlock is untouched. Ø18 also reads as a collar rather than a post.
+1. **A round body with ONE FLAT — a D section.** Risers, feet, towers and
+   jogs are all 15 AF hex; nothing else in the library is round. You cannot
+   mistake a D for a hex prism by eye or by touch, in any light, at any angle.
+   Only the BODY changes — the tenon and socket stay hex, so the interlock is
+   untouched. Ø18 reads as a collar rather than a post.
+
+   The flat earns its place three times over. It carries the engraved code,
+   which a plain cylinder has nowhere to put (the foot has to use its base).
+   It gives fingers something to bear on, which is the one thing a hex body
+   was doing that a cylinder gives up. And it is a rotational reference, so
+   the code always faces the same way when the part is seated.
 2. **Grooves that can be counted**, one for the short spacer and two for the
    tall, so the two are told apart in isolation rather than side by side.
-   A count survives what a dimension does not.
-3. The engraved code goes on the BASE, as the foot's does — a round body has
-   no flat to write along, and the base is the one face with room.
+   A count survives what a 5 mm dimension does not.
 
 Colour is not on the list: a part that is only distinguishable when you happen
 to have printed it in a second filament is not distinguishable.
