@@ -274,7 +274,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
             piece.entryDeck + spec.waterfallStepMm,
-            skirtBottom(piece, piece.entryDeck, spec, (d) => deckYAt(piece, Math.min(piece.planLen, d))),
+            skirtBottom(piece, { ...piece.entry }, spec),
             piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
@@ -283,7 +283,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
             piece.exitDeck, piece.exitDeck,
-            skirtBottom(piece, piece.exitDeck, spec, (d) => deckYAt(piece, Math.max(0, piece.planLen - d))),
+            skirtBottom(piece, { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI }, spec),
             piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
@@ -335,7 +335,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
         mainPiece.entryDeck + spec.waterfallStepMm,
-        skirtBottom(mainPiece, mainPiece.entryDeck, spec, (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))),
+        skirtBottom(mainPiece, { ...mainPiece.entry }, spec),
         mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
@@ -343,7 +343,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
             pc.exitDeck, pc.exitDeck,
-            skirtBottom(pc, pc.exitDeck, spec, (d) => deckYAt(pc, Math.max(0, pc.planLen - d))),
+            skirtBottom(pc, { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI }, spec),
             pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
@@ -377,12 +377,19 @@ function fineShell(piece, spec, bossStations, forced) {
  * a full-depth block at each end and undoes the point of the variant. See
  * archedRimY.
  */
-function skirtBottom(piece, deckHere, spec, deckAtDepth = null) {
+function skirtBottom(piece, face, spec) {
     if (piece.skirtStyle !== 'minimal') return piece.rimY;
-    const D = spec.skirt?.minimalDepthMm ?? 15;
+    // THE SAME PLANE THE SHELL AND THE BOSS USE. It used to be `deck - D`
+    // computed here, which is the plane under a straight and NOT under a curve
+    // — the rib then sat up to 10 mm above its own underside and the end of the
+    // part never reached the bed. Three places expressing one surface is what
+    // put the boss in mid-air; there is one expression of it now.
+    const pl = undersidePlane(piece, spec);
     const lying = laysOnUnderside(piece, spec);
-    return (d = 0) => {
-        const y = (deckAtDepth ? deckAtDepth(d) : deckHere) - D;
+    const dir = [Math.cos(face.h), Math.sin(face.h)];
+    const right = [Math.sin(face.h), -Math.cos(face.h)];
+    return (d = 0, u = 0) => {
+        const y = pl.at(face.x + dir[0] * d + right[0] * u, face.z + dir[1] * d + right[1] * u);
         return lying ? y : Math.max(piece.rimY, y);
     };
 }
@@ -406,8 +413,10 @@ function jointOps(face, deckY, seamDeckY, rimAt, innerWidth, spec, deckAtDepth =
     // below it) or protrudes through it, and protruding took measured bed
     // contact to zero.
     const rimFn = typeof rimAt === 'function' ? rimAt : () => rimAt;
-    const rimLow = Math.min(rimFn(0), rimFn(K.ribThk));
-    const rimHigh = Math.max(rimFn(0), rimFn(K.ribThk));
+    const corners = [[0, -Wi - 1], [0, Wi + 1], [K.ribThk, -Wi - 1], [K.ribThk, Wi + 1]]
+        .map(([d, u]) => rimFn(d, u));
+    const rimLow = Math.min(...corners);
+    const rimHigh = Math.max(...corners);
     const rib = planToWorld(
         [[-Wi - 1, 0], [Wi + 1, 0], [Wi + 1, K.ribThk], [-Wi - 1, K.ribThk]],
         face
@@ -507,8 +516,8 @@ function jointOps(face, deckY, seamDeckY, rimAt, innerWidth, spec, deckAtDepth =
         const profiles = [], stations = [];
         for (let i = 0; i < n; i++) {
             const d = (K.ribThk * i) / (n - 1);
-            const t = top(d), b = rimFn(d);
-            profiles.push([[-Wi - 1, b], [Wi + 1, b], [Wi + 1, t], [-Wi - 1, t]]);
+            const t = top(d), bL = rimFn(d, -Wi - 1), bR = rimFn(d, Wi + 1);
+            profiles.push([[-Wi - 1, bL], [Wi + 1, bR], [Wi + 1, t], [-Wi - 1, t]]);
             stations.push({
                 origin: [face.x + dir[0] * d, 0, face.z + dir[1] * d],
                 right: [right[0], 0, right[1]], up: [0, 1, 0]
@@ -993,7 +1002,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
             piece.entryDeck + spec.waterfallStepMm,
-            skirtBottom(piece, piece.entryDeck, spec, (d) => deckYAt(piece, Math.min(piece.planLen, d))),
+            skirtBottom(piece, { ...piece.entry }, spec),
             piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
@@ -1002,7 +1011,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
             piece.exitDeck, piece.exitDeck,
-            skirtBottom(piece, piece.exitDeck, spec, (d) => deckYAt(piece, Math.max(0, piece.planLen - d))),
+            skirtBottom(piece, { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI }, spec),
             piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
@@ -1109,7 +1118,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
         mainPiece.entryDeck + spec.waterfallStepMm,
-        skirtBottom(mainPiece, mainPiece.entryDeck, spec, (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))),
+        skirtBottom(mainPiece, { ...mainPiece.entry }, spec),
         mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
@@ -1117,7 +1126,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
             pc.exitDeck, pc.exitDeck,
-            skirtBottom(pc, pc.exitDeck, spec, (d) => deckYAt(pc, Math.max(0, pc.planLen - d))),
+            skirtBottom(pc, { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI }, spec),
             pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));

@@ -775,6 +775,53 @@ describe('the minimal skirt', () => {
      * hollow under it does not move.
      */
     /**
+     * THE UNDERSIDE IS ONE SURFACE, AND THIS IS THE TEST THAT SAYS SO.
+     *
+     * Three separate places computed "where the underside is" — the shell
+     * (archedRimY), the boss (bossOps) and the end ribs (skirtBottom) — each
+     * with its own copy of `deck - D`. That expression IS the plane under a
+     * straight, so they agreed for as long as only straights were laid down,
+     * and diverged the moment a curve's underside was fitted instead: the boss
+     * hung 5.3 mm in the air and the ribs sat up to 10 mm above the bed. Every
+     * part was watertight throughout and every test passed.
+     *
+     * So this asserts the invariant rather than any one feature: nothing lies
+     * BELOW the piece's own plane, and everything that has to reach it — both
+     * end ribs and the boss, the three things that are not the walls — does.
+     * Anything built to a different notion of the underside fails one or the
+     * other, whichever way it is wrong.
+     */
+    test.each(['straight', 'curveL', 'lift'])('%s: every feature agrees where the underside is', (type) => {
+        const { g, pc, support } = built(type);
+        const pl = undersidePlane(pc);
+        const P = g.positions;
+        let deepest = 0;
+        for (let i = 0; i < P.length; i += 3) {
+            deepest = Math.min(deepest, P[i + 1] - pl.at(P[i], P[i + 2]));
+        }
+        expect(`${type}: deepest vertex ${deepest.toFixed(2)} mm below its own plane`)
+            .toBe(`${type}: deepest vertex ${Math.max(deepest, -0.01).toFixed(2)} mm below its own plane`);
+
+        // and the three features that are not the walls all reach it
+        const boss = planPosAt(pc, support.s);
+        const regions = {
+            'entry rib': { ...pc.entry, r: 26 },
+            'exit rib': { x: pc.exit.x, z: pc.exit.z, r: 26 },
+            boss: { x: boss.x, z: boss.z, r: 10 }
+        };
+        for (const [name, c] of Object.entries(regions)) {
+            let gap = Infinity;
+            for (let i = 0; i < P.length; i += 3) {
+                if (Math.hypot(P[i] - c.x, P[i + 2] - c.z) > c.r) continue;
+                gap = Math.min(gap, P[i + 1] - pl.at(P[i], P[i + 2]));
+            }
+            const mm = (v) => (Math.abs(v) < 0.005 ? 0 : v).toFixed(2);
+            expect(`${type} ${name} reaches ${mm(Math.abs(gap))} mm from the plane`)
+                .toBe(`${type} ${name} reaches ${mm(Math.min(Math.abs(gap), 0.05))} mm from the plane`);
+        }
+    });
+
+    /**
      * THE TILT. A straight's constant-depth underside is a PLANE, just not a
      * horizontal one — printed rim-down it is a wall bottom ramping at 11.22°,
      * a 78.8° overhang. Rotated by its own slope it is on the bed.
