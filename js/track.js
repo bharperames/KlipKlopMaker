@@ -308,7 +308,22 @@ export const SPEC = {
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
-        neckHalf: 8, tipHalf: 12, depth: 9, height: 6, ribThk: 12,
+        neckHalf: 8, tipHalf: 12, depth: 9, height: 12, ribThk: 12,
+        /**
+         * 12, DOUBLED FROM 6, and the reason is a failure Brett saw on the
+         * bench: with a key in two pieces the pieces could still ROTATE away
+         * from each other about the seam. Part of that was a loose fit from an
+         * older key, but not all of it — a 6 mm band is a short lever arm, and
+         * once the seam opens a hair at the deck the key has almost nothing
+         * below to resist it. The flanks only ever bear when something tries to
+         * pull the seam apart (see fitClearanceMm), so what they need is DEPTH:
+         * twice the band is twice the moment before the pieces hinge.
+         *
+         * A tall key is the one feature here that the viaduct skirt pays for
+         * and the minimal skirt does not have room for. The pocket ceiling is
+         * 3 mm under the deck and the key rises into it from below, so the rib
+         * needs the band plus a throat to offer it — see SPEC.skirt.
+         */
         // Per side, key flank to pocket wall, drawn. Printing adds ~0.025 to
         // it — the slot's neck came out 16.85 against 16.40 drawn while the
         // key's came out 16.40 against 16.00, so the two oversizes very nearly
@@ -1174,6 +1189,39 @@ export function supportBossPos(piece, support) {
 }
 
 /**
+ * Is there room to take a minimal boss down to the underside plane?
+ *
+ * The collar's bottom IS that plane, so the level ledge the spacer seats on has
+ * to sit above the plane everywhere under it. The plane is highest at the
+ * collar's uphill edge, so D >= floorThk + socketDepth + grad·(rCorner +
+ * collarR) — 15.21 at the standard slope. Below that the collar would protrude
+ * past the plane and the piece laid down would balance on it.
+ */
+export function collarFits(piece, spec) {
+    if (piece.skirtStyle !== 'minimal' || !(spec.socket?.collarR > 0)) return false;
+    const grad = piece.planLen > 0 ? Math.abs(piece.drop ?? 0) / piece.planLen : 0;
+    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
+    return (spec.skirt?.minimalDepthMm ?? 15)
+        >= spec.floorThk + spec.socket.depth + grad * (rCorner + spec.socket.collarR);
+}
+
+/**
+ * Is this piece EXPORTED LYING ON ITS UNDERSIDE? One predicate, because three
+ * things have to agree about it: the shell (whether to clamp the underside at
+ * the rim), the boss (whether to build a collar), and the exporter (whether to
+ * rotate). They disagreed once and the part balanced on its boss.
+ *
+ * A curve is excluded because its constant-depth underside is a HELICOID,
+ * measured 5.15 mm from its own best-fit plane, and no rotation flattens it.
+ * A curve has to have its underside CUT as a plane first — TODO §6.
+ */
+export function laysOnUnderside(piece, spec) {
+    return piece.skirtStyle === 'minimal' && !piece.radius
+        && piece.planLen > 0 && Math.abs(piece.drop ?? 0) > 1e-6
+        && collarFits(piece, spec);
+}
+
+/**
  * Where the socket MOUTH is — the level face the support column bears on.
  *
  * On a `viaduct` piece it is the rim, because the boss is a column that runs
@@ -1205,7 +1253,12 @@ export function socketMouthY(piece, s = null, spec = SPEC) {
     // An elevator keeps the rim boss whatever the skirt style: its housing is
     // a solid block from the rim to the deck, so there is no sloping underside
     // for a recess to sit in and nothing to save by cutting one.
-    if (piece.skirtStyle !== 'minimal' || piece.isElevator || piece.type === 'elevator') {
+    // ONLY A PIECE THAT IS LAID ON ITS UNDERSIDE gets a recessed seat. A piece
+    // printed rim-down needs its boss to reach the rim and stand on the bed
+    // there, exactly as a viaduct boss does — recessing it on a rim-down piece
+    // left the boss floating 26 mm up, and on a flat platform it built a collar
+    // BELOW the rim, so the whole part balanced on a 114 mm² ring.
+    if (!laysOnUnderside(piece, spec) || piece.isElevator || piece.type === 'elevator') {
         return piece.rimY;
     }
     const at = s ?? massCentreS(piece);

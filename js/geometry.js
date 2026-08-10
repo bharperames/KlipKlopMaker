@@ -8,7 +8,7 @@
  */
 
 import { signedMeshVolumeMm3 } from './mesh_utils.js';
-import { ridgeOffset, deckYAt, innerWidthAt } from './track.js';
+import { ridgeOffset, deckYAt, innerWidthAt, collarFits, laysOnUnderside } from './track.js';
 
 /** Shoelace signed area of a 2D polygon [[x,y],...]. Positive = CCW. */
 export function signedArea2D(pts) {
@@ -578,7 +578,15 @@ export function archedRimY(piece, s, spec, supportStations = [], forced = null) 
     if (piece.skirtStyle === 'minimal') {
         const D = spec.skirt?.minimalDepthMm ?? 15;
         const deck = piece.entryDeck - (piece.drop ?? 0) * (piece.planLen ? s / piece.planLen : 0);
-        return Math.max(flat, deck - D);
+        // CLAMPED AT THE RIM ONLY FOR A PIECE THAT PRINTS RIM-DOWN, because
+        // then the rim IS its bed contact. A piece that is laid on its own
+        // underside wants the opposite: the clamp flattens the last 17 mm, the
+        // plane runs away below it, and the end of the part lifts off the bed
+        // and keeps the 78.8 deg overhang the rest of it just lost. It does not
+        // matter that the underside then hangs below the piece's grid datum —
+        // Brett: "the bottom doesn't have to end up level" — because nothing
+        // stands on it. The spacer does that.
+        return laysOnUnderside(piece, spec) ? deck - D : Math.max(flat, deck - D);
     }
     const bounds = windowBounds(piece, spec, supportStations, forced);
     if (!bounds.length) return flat;

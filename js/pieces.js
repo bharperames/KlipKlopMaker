@@ -22,7 +22,7 @@ import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
-    pieceFrame, pieceInFrame, supportInFrame, socketMouthY
+    pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside
 } from './track.js';
 import {
     textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm,
@@ -272,14 +272,18 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     if (hasEntryJoint) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, skirtBottom(piece, piece.entryDeck, spec), piece.entryWidth ?? piece.innerWidth, spec,
+            piece.entryDeck + spec.waterfallStepMm,
+            skirtBottom(piece, piece.entryDeck, spec, (d) => deckYAt(piece, Math.min(piece.planLen, d))),
+            piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, skirtBottom(piece, piece.exitDeck, spec), piece.exitWidth ?? piece.innerWidth, spec,
+            piece.exitDeck, piece.exitDeck,
+            skirtBottom(piece, piece.exitDeck, spec, (d) => deckYAt(piece, Math.max(0, piece.planLen - d))),
+            piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
@@ -329,13 +333,17 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, skirtBottom(mainPiece, mainPiece.entryDeck, spec), mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        mainPiece.entryDeck + spec.waterfallStepMm,
+        skirtBottom(mainPiece, mainPiece.entryDeck, spec, (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))),
+        mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, skirtBottom(pc, pc.exitDeck, spec), pc.exitWidth ?? pc.innerWidth, spec,
+            pc.exitDeck, pc.exitDeck,
+            skirtBottom(pc, pc.exitDeck, spec, (d) => deckYAt(pc, Math.max(0, pc.planLen - d))),
+            pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }
@@ -368,10 +376,14 @@ function fineShell(piece, spec, bossStations, forced) {
  * a full-depth block at each end and undoes the point of the variant. See
  * archedRimY.
  */
-function skirtBottom(piece, deckHere, spec) {
-    return piece.skirtStyle === 'minimal'
-        ? Math.max(piece.rimY, deckHere - (spec.skirt?.minimalDepthMm ?? 15))
-        : piece.rimY;
+function skirtBottom(piece, deckHere, spec, deckAtDepth = null) {
+    if (piece.skirtStyle !== 'minimal') return piece.rimY;
+    const D = spec.skirt?.minimalDepthMm ?? 15;
+    const lying = laysOnUnderside(piece, spec);
+    return (d = 0) => {
+        const y = (deckAtDepth ? deckAtDepth(d) : deckHere) - D;
+        return lying ? y : Math.max(piece.rimY, y);
+    };
 }
 
 /**
@@ -382,9 +394,19 @@ function skirtBottom(piece, deckHere, spec) {
  *                    (pocket bands anchor here so both sides align absolutely)
  * @param rimY - piece rim (bed) height
  */
-function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = null) {
+function jointOps(face, deckY, seamDeckY, rimAt, innerWidth, spec, deckAtDepth = null) {
     const Wi = innerWidth / 2;
     const K = spec.key;
+    // The rib's bottom follows the same underside the shell does. On a viaduct
+    // piece that is a flat rim and one number will do; on a minimal piece it is
+    // the plane, which drops `ribThk`·grad = 2.4 mm across the rib — and a
+    // LEVEL bottom there is the same fault the rib's level TOP had. Left level
+    // it either lifts the end of the part off the bed (the plane runs away
+    // below it) or protrudes through it, and protruding took measured bed
+    // contact to zero.
+    const rimFn = typeof rimAt === 'function' ? rimAt : () => rimAt;
+    const rimLow = Math.min(rimFn(0), rimFn(K.ribThk));
+    const rimHigh = Math.max(rimFn(0), rimFn(K.ribThk));
     const rib = planToWorld(
         [[-Wi - 1, 0], [Wi + 1, 0], [Wi + 1, K.ribThk], [-Wi - 1, K.ribThk]],
         face
@@ -439,7 +461,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
             levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
         );
     };
-    const detent = (K.detentProud > 0 && detentBot > rimY + 0.5)
+    const detent = (K.detentProud > 0 && detentBot > rimHigh + 0.5)
         ? [
             { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(detentPlan(pocketClearance, 0), detentBot, detentTop)) },
             { op: SUBTRACTION, geometry: toBufferGeometry(detentVoid()) }
@@ -476,15 +498,16 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     function ribSolid() {
         const top = (d) => (deckAtDepth ? deckAtDepth(d) : deckY) - spec.floorThk + 0.5;
         // the rib reaches the same underside the shell does, so a minimal
-        // piece does not sprout a full-depth block at each end
+        // piece does not sprout a full-depth block at each end — and it FOLLOWS
+        // it, so the end of the part lands on the bed with the rest of it
         const dir = [Math.cos(face.h), Math.sin(face.h)];
         const right = [Math.sin(face.h), -Math.cos(face.h)];
         const n = 5;
         const profiles = [], stations = [];
         for (let i = 0; i < n; i++) {
             const d = (K.ribThk * i) / (n - 1);
-            const t = top(d);
-            profiles.push([[-Wi - 1, rimY], [Wi + 1, rimY], [Wi + 1, t], [-Wi - 1, t]]);
+            const t = top(d), b = rimFn(d);
+            profiles.push([[-Wi - 1, b], [Wi + 1, b], [Wi + 1, t], [-Wi - 1, t]]);
             stations.push({
                 origin: [face.x + dir[0] * d, 0, face.z + dir[1] * d],
                 right: [right[0], 0, right[1]], up: [0, 1, 0]
@@ -509,11 +532,11 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
         const rise = K.gripRiseMm ?? 0, grip = K.seatGripMm ?? 0, land = K.seatLandMm ?? 0;
         const landBase = pocketTop - land;
         const gripBase = landBase - rise;
-        if (!(rise > 0 && grip > 0) || gripBase <= rimY) {
-            return extrudePolygonY(pocket, rimY - 1, pocketTop);
+        if (!(rise > 0 && grip > 0) || gripBase <= rimLow) {
+            return extrudePolygonY(pocket, rimLow - 1, pocketTop);
         }
         const levels = [
-            { y: rimY - 1, c: pocketClearance },
+            { y: rimLow - 1, c: pocketClearance },
             { y: gripBase, c: pocketClearance },
             { y: landBase, c: pocketClearance - grip },
             { y: pocketTop, c: pocketClearance - grip }
@@ -532,7 +555,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
     const ribTop = Math.min(deckY, deckAtDepth ? deckAtDepth(K.ribThk) : deckY) - spec.floorThk + 0.5;
     // A minimal piece's rib is only ~15 mm deep; lightening it further leaves
     // slivers around the pocket, and there is nothing left to save.
-    const ribDepth = ribTop - rimY;
+    const ribDepth = ribTop - rimHigh;
     const windows = (winOuter - winInner > 3 && ribDepth > 25)
         ? [-1, 1].map(sgn => ({
             op: SUBTRACTION,
@@ -541,7 +564,7 @@ function jointOps(face, deckY, seamDeckY, rimY, innerWidth, spec, deckAtDepth = 
                     [sgn * winInner, winZ0], [sgn * winOuter, winZ0],
                     [sgn * winOuter, winZ1], [sgn * winInner, winZ1]
                 ], face),
-                rimY - 1, ribTop - WALL
+                rimLow - 1, ribTop - WALL
             ))
         }))
         : [];
@@ -659,34 +682,6 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside, yStart) {
  * Outrigger mode adds a printable arm at rim level (on the bed — no overhang)
  * carrying the socket boss outboard of the tier below.
  */
-/**
- * Is there room to take the boss down to the print plane?
- *
- * The collar's bottom IS that plane, so its top — the level ledge the spacer
- * seats on — has to sit above the plane everywhere under it. The plane is
- * highest at the collar's uphill edge, so:
- *
- *     ledge          deck - floorThk - grad·rCorner - socketDepth
- *     plane, uphill  deck + grad·collarR - D
- *
- * i.e. D >= floorThk + socketDepth + grad·(rCorner + collarR) = 15.21 at the
- * standard slope. Below that the collar would protrude past the plane and the
- * piece laid on its underside would balance on it — so it is simply not built,
- * and `tiltOntoUnderside` refuses on the same test. A shallower minimal piece
- * is then exactly what it was: printed rim-down, with supports.
- */
-function collarFits(piece, grad, spec) {
-    if (piece.skirtStyle !== 'minimal') return false;
-    if (!(spec.socket.collarR > 0)) return false;
-    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
-    const need = spec.floorThk + spec.socket.depth
-        + Math.abs(grad) * (rCorner + spec.socket.collarR);
-    return (spec.skirt?.minimalDepthMm ?? 15) >= need;
-}
-
-/** The gradient of the deck along the track, signed the way bossOps uses it. */
-const deckGrad = (piece) => piece.planLen > 0 ? piece.drop / piece.planLen : 0;
-
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
@@ -717,7 +712,7 @@ function bossOps(piece, spec, support) {
                 mouthY, (ds) => bossUnderside(ds) + 0.5)
         });
         // and take it down to the print plane, if there is room for the collar
-        if (collarFits(piece, grad, spec)) {
+        if (laysOnUnderside(piece, spec)) {
             const planeAt = (ds) => bossUnderside(ds) + spec.floorThk
                 - (spec.skirt?.minimalDepthMm ?? 15);
             const { collarR, collarBoreR } = spec.socket;
@@ -977,14 +972,18 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         // seam's uphill deck = this entry + the waterfall step
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
-            piece.entryDeck + spec.waterfallStepMm, skirtBottom(piece, piece.entryDeck, spec), piece.entryWidth ?? piece.innerWidth, spec,
+            piece.entryDeck + spec.waterfallStepMm,
+            skirtBottom(piece, piece.entryDeck, spec, (d) => deckYAt(piece, Math.min(piece.planLen, d))),
+            piece.entryWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.min(piece.planLen, d))
         ));
     }
     if (hasExitJoint) {
         ops.push(...jointOps(
             { x: piece.exit.x, z: piece.exit.z, h: piece.exit.h + Math.PI },
-            piece.exitDeck, piece.exitDeck, skirtBottom(piece, piece.exitDeck, spec), piece.exitWidth ?? piece.innerWidth, spec,
+            piece.exitDeck, piece.exitDeck,
+            skirtBottom(piece, piece.exitDeck, spec, (d) => deckYAt(piece, Math.max(0, piece.planLen - d))),
+            piece.exitWidth ?? piece.innerWidth, spec,
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
@@ -1023,8 +1022,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  * orientation, because that is where you check whether a tower stands up.
  */
 export function tiltOntoUnderside(solid, piece, spec = SPEC) {
-    if (piece.skirtStyle !== 'minimal' || piece.radius || !piece.planLen) return solid;
-    if (!collarFits(piece, deckGrad(piece), spec)) return solid;
+    if (!laysOnUnderside(piece, spec)) return solid;
     const th = Math.atan2(piece.drop ?? 0, piece.planLen);
     if (Math.abs(th) < 1e-6) return solid;
     const c = Math.cos(th), s = Math.sin(th);
@@ -1041,9 +1039,7 @@ export function tiltOntoUnderside(solid, piece, spec = SPEC) {
  * Whether a piece is exported lying on its underside — the same test the
  * collar is built on, exposed so a test can assert the two agree.
  */
-export const printsLyingDown = (piece, spec = SPEC) =>
-    piece.skirtStyle === 'minimal' && !piece.radius && piece.planLen > 0
-    && collarFits(piece, deckGrad(piece), spec);
+export const printsLyingDown = (piece, spec = SPEC) => laysOnUnderside(piece, spec);
 
 /**
  * Where a switch's code goes: which rail, and how far along.
@@ -1083,13 +1079,17 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
 
     ops.push(...jointOps(
         { ...mainPiece.entry }, mainPiece.entryDeck,
-        mainPiece.entryDeck + spec.waterfallStepMm, skirtBottom(mainPiece, mainPiece.entryDeck, spec), mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
+        mainPiece.entryDeck + spec.waterfallStepMm,
+        skirtBottom(mainPiece, mainPiece.entryDeck, spec, (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))),
+        mainPiece.entryWidth ?? mainPiece.innerWidth, spec,
         (d) => deckYAt(mainPiece, Math.min(mainPiece.planLen, d))
     ));
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...jointOps(
             { x: pc.exit.x, z: pc.exit.z, h: pc.exit.h + Math.PI },
-            pc.exitDeck, pc.exitDeck, skirtBottom(pc, pc.exitDeck, spec), pc.exitWidth ?? pc.innerWidth, spec,
+            pc.exitDeck, pc.exitDeck,
+            skirtBottom(pc, pc.exitDeck, spec, (d) => deckYAt(pc, Math.max(0, pc.planLen - d))),
+            pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }

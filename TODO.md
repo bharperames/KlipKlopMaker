@@ -395,7 +395,7 @@ The changes are strictly ordered, because each one unblocks the next:
    back to 16%. Worth it: a straight that lies down needs almost no print
    support, against 44.66 g of support for 72.04 g of model.
 
-   *Residual: the END RIB AT THE EXIT FACE.* "No supports at all" was
+   *The residual is gone.* It was the END RIB AT THE EXIT FACE: "No supports at all" was
    overstated. Probed along the wall, the underside is on the bed from 5% to
    90% of the length; the last 15 mm rises to 2.6 mm, because `skirtBottom`
    clamps at the rim and D exceeds `skirtDepth` by 3.5, so the piece steps up
@@ -403,10 +403,23 @@ The changes are strictly ordered, because each one unblocks the next:
    across the joint that carries the bowtie pocket — therefore keeps the 78.8°
    overhang the rest of the part no longer has.
 
-   Removing the clamp is NOT the fix: tried, and the rib's own level bottom
-   then protrudes below the plane and bed contact goes to **zero**. The rib
-   bottom has to FOLLOW the plane instead of being level, which is the same
-   change curves need in §6.
+   Removing the clamp alone is not enough — tried, and the rib's own LEVEL
+   bottom then protrudes below the plane and bed contact goes to **zero**. Both
+   halves had to move: `archedRimY` stops clamping and `ribSolid` takes a
+   bottom that follows the plane the way its top already followed the deck.
+   Brett: "the bottom doesn't have to end up level after printing." It does
+   not, and nothing stands on it — the spacer does that.
+
+   **Bed contact, straight: 443 → 524 → 629 → 1480 mm².** The whole underside,
+   ends included.
+
+   The clamp is now tied to `laysOnUnderside`, and that is the rule: the
+   underside is held at the rim exactly when the rim is what the piece stands
+   on. A piece printed rim-down keeps it; a piece laid on its underside does
+   not. The same predicate decides whether the boss is a recess with a collar
+   or a plain column to the rim — they were allowed to disagree once, and a
+   flat platform built a collar BELOW its rim and balanced the whole part on a
+   114 mm² ring.
 
 6. **The collar.** DONE, and it is why the boss is not a floating island.
 

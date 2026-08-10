@@ -317,10 +317,13 @@ describe('connector key (Hot-Wheels-style bowtie)', () => {
         const g = buildKeyGeometry();
         const r = expectWatertight(g, 'connector key');
         expect(r.volumeMm3).toBeGreaterThan(500);
-        // key height must clear the 6 mm pocket band
+        // the key has to fit its own band: SPEC.key.height less the assembly
+        // clearance top and bottom. Hardcoding 6 here meant the check silently
+        // said nothing about the band it was supposed to be measuring against.
         let maxY = -Infinity;
         for (let i = 1; i < g.positions.length; i += 3) maxY = Math.max(maxY, g.positions[i]);
-        expect(maxY).toBeLessThan(6);
+        expect(maxY).toBeLessThanOrEqual(SPEC.key.height - 2 * SPEC.jointClearanceMm + 1e-3);
+        expect(maxY).toBeGreaterThan(SPEC.key.height - 2 * SPEC.jointClearanceMm - 0.01);
     });
 });
 
@@ -721,7 +724,7 @@ describe('the minimal skirt', () => {
      * So there are two heights to check and they are different: the SEAT, a
      * level face the spacer bears on, and the BOTTOM, which is the plane.
      */
-    test.each(['straight', 'curveL', 'lift'])('%s: the boss reaches the underside plane, and seats above it', (type) => {
+    test.each(['straight', 'lift'])('%s: the boss reaches the underside plane, and seats above it', (type) => {
         const { g, pc, support } = built(type);
         const seat = socketMouthY(pc, support.s);
         expect(seat).toBeGreaterThan(pc.rimY + 10);   // well clear of the rim
@@ -784,9 +787,33 @@ describe('the minimal skirt', () => {
         const [va, vb] = [analyzeGeometry(flat.g).volumeMm3, analyzeGeometry(tilted.g).volumeMm3];
         expect(Math.abs(vb - va) / va).toBeLessThan(1e-6);
         expect(`${type} contact ${down.contactMm2.toFixed(0)} -> ${up.contactMm2.toFixed(0)} mm2`)
-            .toBe(`${type} contact ${down.contactMm2.toFixed(0)} -> ${Math.max(up.contactMm2, 600).toFixed(0)} mm2`);
+            .toBe(`${type} contact ${down.contactMm2.toFixed(0)} -> ${Math.max(up.contactMm2, 1400).toFixed(0)} mm2`);
         // and the part stops being tall: 56 mm standing up, 28 lying down
         expect(up.heightMm).toBeLessThan(down.heightMm * 0.6);
+
+        // and it lands on the WHOLE underside, ends included. The end rib used
+        // to keep a level bottom under a sloping plane, which lifted the last
+        // 15 mm of the part 2.6 mm off the bed and left it the 78.8 deg
+        // overhang everything else had just lost.
+        const P = tilted.g.positions;
+        let lo = Infinity, hiEnd = -Infinity, loEnd = Infinity, mnx = Infinity, mxx = -Infinity;
+        for (let i = 0; i < P.length; i += 3) {
+            lo = Math.min(lo, P[i + 1]);
+            mnx = Math.min(mnx, P[i]); mxx = Math.max(mxx, P[i]);
+        }
+        for (let i = 0; i < P.length; i += 3) {
+            if (P[i] > mnx + 0.5 && P[i] < mxx - 0.5) continue;   // the two end faces
+            hiEnd = Math.max(hiEnd, P[i + 1]);
+            loEnd = Math.min(loEnd, P[i + 1]);
+        }
+        expect(`${type} end faces reach ${(loEnd - lo).toFixed(2)} mm from the bed`)
+            .toBe(`${type} end faces reach ${Math.min(loEnd - lo, 0.05).toFixed(2)} mm from the bed`);
+    });
+
+    test('a curve keeps the rim boss, because it still prints rim-down', () => {
+        const { pc, support } = built('curveL');
+        expect(socketMouthY(pc, support.s)).toBe(pc.rimY);
+        expect(printsLyingDown(pc)).toBe(false);
     });
 
     test('a curve refuses the tilt, because its underside is a helicoid', () => {
