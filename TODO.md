@@ -401,13 +401,10 @@ The changes are strictly ordered, because each one unblocks the next:
    is NOT the fix: tried, and the exit rib's own level bottom then protrudes
    below the plane and contact goes to zero. The rib bottom would have to
    follow the plane, which is the same change curves need below.
-5. **Curves.** The underside has to be cut as a **tilted plane** rather than at
-   constant depth under the deck, at D = 14, or the surface being laid on the
-   bed is still a helicoid. That needs `channelProfile` to accept a different
-   bottom height for each wall at the same station, which it cannot express
-   today. This is the only real refactor left in the sequence — and note that
-   D = 14 is below the 14.91 the socket mouth needs, so a plane-cut curve has
-   to check its own mouth clearance rather than inherit the straight's.
+5. **Curves.** NOT BUILT. The underside has to be cut as a **tilted plane**
+   rather than at constant depth under the deck, or the surface being laid on
+   the bed is still a helicoid. See §6 — the D = 14 in the old note is wrong,
+   and the reason it is wrong also makes the change simpler than it looked.
 
 ## 5. Spacer build: the two decisions it needed
 
@@ -443,3 +440,98 @@ Where that leaves the arithmetic, on the demo tower:
 the column the scene draws by the spacer height, so the spacer had to be
 modelled and added to the same change — it was, and the browser check on the
 demo tower shows columns meeting their sockets in both styles.
+
+
+---
+
+## 6. The plane-cut curve: what to build, and why D = 14 was the wrong number
+
+The remaining step (§4 step 5) is a curve whose underside is cut as one PLANE
+so it can be laid on the bed like a straight now is. Nothing of it is built.
+What follows is the design worked out against the real curve geometry, and it
+differs from the earlier §3 note in one decision that changes everything else.
+
+### The measurement, on a standard curve in its own frame
+
+Fitting a plane by least squares to the two wall bottom lines (u = ±26.4, the
+whole arc, 800 samples):
+
+| | |
+|---|---|
+| plane tilt | **11.53°** |
+| deck above the plane | **−5.46 … +5.46 mm** |
+
+§3 recorded 11.77° and ±4.74 from a different sample set. Use ±5.46: the
+walls are what has to touch the bed, so they are what the fit should minimise
+against.
+
+Depth under the deck, relative to the plane's mean, at the places features
+live — and note the SPREAD ACROSS A SINGLE END FACE, which is the part the
+old note missed entirely:
+
+| where | depth |
+|---|---|
+| entry rib, outer wall (u = −26) | mean + 4.99 |
+| entry rib, centre | mean + 1.34 |
+| entry rib, inner wall (u = +26) | mean − 2.31 |
+| exit rib, outer wall | mean − 4.99 |
+| exit rib, centre | mean − 1.34 |
+| exit rib, inner wall | mean + 2.31 |
+| boss centre | mean − 0.12 |
+
+### The decision: the plane is set by its SHALLOWEST point, not its mean
+
+§3 put the plane at a mean depth of 14 and checked that the shallowest point
+still cleared the key band (8.6). That is the wrong end to hold, for two
+reasons that only showed up once the boss became a recess:
+
+- **The socket mouth needs 14.91 of local depth** (§4 step 4), and the boss
+  sits at mean − 0.12. At a mean of 14 the mouth protrudes and the curve
+  balances on it — the same failure the straight's tilt was reverted for. Even
+  at a mean of 15 it is 0.03 short.
+- **The key's THROAT wants 14.2, not the band's 8.6.** At a mean of 14 the
+  shallowest point is 8.5, which does not even clear the band.
+
+Hold the shallowest point instead — put the plane so that
+`min(deck − plane) = SPEC.skirt.minimalDepthMm` — and every one of those falls
+out for free: min depth is D = 15 by construction (clears the throat), and the
+boss is then at D + 5.34 = 20.3 (clears 14.91 with 5.4 to spare). It also
+keeps today's straight EXACTLY as it is, because a straight's constant-depth
+underside already is that plane with zero residual, so one code path serves
+both.
+
+**It costs about 5.9 cm³ on a curve** — mean depth 20.5 instead of 15, so
+68.6 → ~74.5 cm³, and the saving against viaduct drops from 20% to ~14%. That
+is the price of a curve that needs no print supports, against Bambu's measured
+44.66 g of support for 72.04 g of model. Worth it.
+
+### The shape of the change
+
+- `undersidePlane(piece, spec)` in `geometry.js`: fit by least squares over the
+  two wall lines, then offset to the shallowest point. Memoise on a signature
+  that includes the piece's FRAME — the coefficients are frame-dependent, and
+  `archedRimY` is called with world pieces (display) and framed ones (export).
+- `archedRimY` gains a trailing `u`, and the minimal branch returns the plane
+  at (s, u) instead of `deck(s) − D`. Straights are unchanged by construction.
+- `channelProfile` takes `rimL`/`rimR` (the values at u = ∓Wo) and lerps for
+  the two inner bottom corners at ±Wi — exact, because it is a plane. Defaults
+  to today's single `rimY`.
+- `pieceProfiles` evaluates both ends.
+- **The ribs are the awkward part, and the reason this is not a small change.**
+  `jointOps` takes ONE `rimY` and `ribSolid` builds the rib bottom flat at it.
+  Across one end face the plane moves 7.3 mm, so a flat rib bottom is either
+  7.3 mm proud of the plane (and the part lands on the rib, contact → 0, which
+  is exactly what happened when the clamp was removed from a straight) or
+  7.3 mm recessed (a notch at each end with a 78.8° roof). `ribSolid` already
+  lofts five stations with a varying top, so it can take a varying bottom the
+  same way — but `rimY` is also used by the detent guard and the lightening
+  windows in the same function, and all of them have to agree.
+- `tiltOntoUnderside` generalises: rotate the plane's normal onto −Y. That one
+  rotation then serves straights too, and the current special case goes away.
+
+### The residual that comes with it
+
+The straight's exit end already lifts 2.6 mm off the bed because `skirtBottom`
+clamps at the rim (§4 step 4). Under min-depth semantics a curve will do the
+same thing, at the same place, for the same reason. The fix is the same fix as
+the rib bottoms: the clamp has to follow the plane rather than the rim.
