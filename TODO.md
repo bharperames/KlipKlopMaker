@@ -218,6 +218,32 @@ Lay the piece on its underside and it balances on that pad instead. The tilt
 and the grid-aligned pad are mutually exclusive: you can have a face on the
 bed or a socket mouth on the grid, not both.
 
+### Correction: an off-axis tilt DOES work for a curve
+
+I said no rotation flattens a helicoid and treated the 5.15 mm deviation as
+disqualifying. Wrong — the question is not whether the underside can be made
+planar, it is whether the DEPTH BUDGET can absorb the deviation. It can.
+
+Cut the underside as the best-fit PLANE rather than at constant depth under
+the deck. For a standard curve that plane is tilted **11.77°** and the deck
+wanders **±4.74 mm** about it, so the depth under the deck varies over a
+9.5 mm band:
+
+| D | shallowest | deepest | key band needs 8.6 |
+|---|---|---|---|
+| 12 | 7.3 | 16.7 | fails by 1.3 |
+| 13 | 8.3 | 17.7 | fails by 0.3 |
+| **14** | **9.3** | 18.7 | **clears by 0.7** |
+| 15 | 10.3 | 19.7 | clears by 1.7 |
+
+So **a curve with a plane-cut underside at D = 14 lies flat on the bed**, and
+the whole "curves are impossible" line above is wrong. Two notes: the ribs sit
+at the extremes of the deck relative to the plane, so the shallow one is the
+binding case and a fit that maximised the minimum depth at the two ribs and
+the boss would do better than least squares; and a plane cut means the two
+walls have different bottom heights at the same station, which `channelProfile`
+cannot currently express — it takes one `rimY` per station.
+
 **The way out, if this is worth another pass:** make the pad a SEPARATE PART.
 The piece keeps a shallow socket recess in its underside and prints as a pure
 slab that tilts flat; a spacer part brings the mouth down to the grid. It is
