@@ -324,7 +324,36 @@ export path.
 
 ---
 
-## 4. Spacer build: started, backed out, two problems found
+## 4. THE ORDER THIS HAS TO HAPPEN IN
+
+"Flat on the plate" is the payoff and it is NOT in the app yet. What ships
+today is a minimal piece printed rim-down: the arcade is gone and it is 18-20%
+lighter, but it still stands the way a viaduct piece does, and its ramped wall
+bottom is a 78.8° overhang that needs supports. That is half the idea.
+
+The three changes are strictly ordered, because each one unblocks the next:
+
+1. **The spacer part.** DONE — `buildSpacerGeometry`, two variants, watertight.
+   Nothing references it yet.
+2. **The boss becomes a recess.** NOT DONE. `bossOps` in minimal mode stops at
+   the underside and cuts the socket 10 mm up from there, instead of running a
+   Ø19 column down to the rim. The spacer carries the mouth to the grid.
+3. **The tilt.** REVERTED, and it must come back AFTER (2). It was built and
+   measured 2 mm² of bed contact — because the boss column was the lowest
+   thing on the part, so laying the piece on its underside balanced it on that
+   column. Take the column away and the underside is the only downward
+   surface, which is the whole reason (2) comes first.
+
+And for curves there is a fourth: the underside has to be cut as a **tilted
+plane** rather than at constant depth under the deck, at D = 14, or the
+surface being laid on the bed is still a helicoid. That needs `channelProfile`
+to accept a different bottom height for each wall at the same station, which
+it cannot express today.
+
+So: the reason nothing prints flat yet is that step 2 is missing, and step 3
+was correctly reverted because without step 2 it makes things worse.
+
+## 5. Spacer build: started, backed out, two problems found
 
 Attempted the integration (`socketMouthY`, `spacerHeightMm`, `stackHeightMm`
 for minimal pieces) and reverted it. The arithmetic composes — every stack
