@@ -3,7 +3,10 @@
  * operations — must be a watertight, consistently wound solid.
  */
 import { jest } from '@jest/globals';
-import { layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt } from '../js/track.js';
+import {
+    layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt,
+    planPillarPositions, socketMouthY
+} from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
 import * as pieceBuilders from '../js/pieces.js';
 import {
@@ -630,6 +633,106 @@ describe('nothing pokes up through the walking surface', () => {
         // through the floor read 0.28 to 0.48.
         expect(`${type} proud by ${worst.proud.toFixed(2)} mm at s=${worst.s?.toFixed(0)}`)
             .toBe(`${type} proud by ${Math.min(worst.proud, 0.15).toFixed(2)} mm at s=${worst.s?.toFixed(0)}`);
+    });
+});
+
+describe('the minimal skirt', () => {
+    /**
+     * `SPEC.skirt.style = 'minimal'` had NO coverage at all — it shipped as a
+     * second underside for every track piece with nothing asserting it was
+     * even watertight. These are the three claims the variant makes.
+     *
+     * The boss is the interesting one. On a viaduct piece it is a column from
+     * the rim up to the floor; on a minimal piece there is no rim under it, so
+     * it is a RECESS — 12 mm of socket in the underside and nothing below —
+     * and the spacer makes up the rest of the way to the grid.
+     */
+    const { pieces } = layoutTrack(['start', 'straight', 'curveL', 'lift', 'straight', 'end'],
+        { slopeDeg: 11.2167, skirtStyle: 'minimal' });
+
+    /** Every surface height at (x,z), high to low. */
+    const surfacesAt = (g, x, z) => {
+        const P = g.positions, I = g.indices;
+        const ys = [];
+        for (let t = 0; t < I.length; t += 3) {
+            const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+            const ax = P[a], az = P[a + 2], bx = P[b], bz = P[b + 2], cx = P[c], cz = P[c + 2];
+            const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+            if (Math.abs(d) < 1e-12) continue;
+            const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+            const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+            if (l1 < 0 || l2 < 0 || 1 - l1 - l2 < 0) continue;
+            ys.push(l1 * P[a + 1] + l2 * P[b + 1] + (1 - l1 - l2) * P[c + 1]);
+        }
+        return ys.sort((p, q) => q - p);
+    };
+
+    const built = (type) => {
+        const world = pieces.filter(p => p.type === type).at(-1);
+        const support = planPillarPositions(pieces).find(s => s.pieceIndex === world.index);
+        return { g: buildPieceExportGeometry(world, { support }), pc: pieceInFrame(world), support };
+    };
+
+    test.each(['straight', 'curveL', 'lift'])('%s exports watertight', (type) => {
+        const { g, pc } = built(type);
+        expectWatertight(g, `minimal ${type}`);
+        expectNoFloatingProtrusion(g, pc, `minimal ${type}`);
+    });
+
+    test.each(['straight', 'curveL', 'lift'])('%s: the boss is a recess, not a column to the rim', (type) => {
+        const { g, pc, support } = built(type);
+        const mouth = socketMouthY(pc, support.s);
+        expect(mouth).toBeGreaterThan(pc.rimY + 10);   // well clear of the rim
+
+        // nothing of the boss reaches down toward the rim: sample the mesh
+        // inside the boss footprint and take the lowest surface there. A
+        // column would read at the rim; a recess reads at its own mouth.
+        const p = planPosAt(pc, support.s);
+        const dir = [Math.cos(p.h), Math.sin(p.h)], right = [Math.sin(p.h), -Math.cos(p.h)];
+        let lowest = Infinity;
+        for (let ds = -8; ds <= 8; ds += 1) {
+            for (let lat = -8; lat <= 8; lat += 1) {
+                if (ds * ds + lat * lat > 64) continue;
+                const ys = surfacesAt(g, p.x + dir[0] * ds + right[0] * lat,
+                    p.z + dir[1] * ds + right[1] * lat);
+                if (ys.length) lowest = Math.min(lowest, ys.at(-1));
+            }
+        }
+        expect(`${type} boss bottoms at rim+${(lowest - pc.rimY).toFixed(1)}`)
+            .toBe(`${type} boss bottoms at rim+${(mouth - pc.rimY).toFixed(1)}`);
+    });
+
+    /**
+     * THE 1.03 mm. `minimalDepthMm` is 12 = a 10 mm socket under a 2 mm floor,
+     * and that is exact at one point only: the socket is a hex 10.39 mm across
+     * corners and the deck falls 0.198 mm/mm, so putting the mouth at the
+     * underside leaves the socket's LEVEL ceiling 1.03 mm inside the floor at
+     * its downhill corner. Measured that way the walking surface over the
+     * socket came out 1.27-1.38 mm thick — a flat blind hole under three
+     * layers of PLA. socketMouthY drops the mouth by that much instead.
+     *
+     * Nothing else catches this: the mesh stays watertight, and the
+     * "floor is the highest thing" test above reads the TOP surface, which a
+     * hollow under it does not move.
+     */
+    test.each(['straight', 'curveL', 'lift'])('%s: the floor over the socket keeps its thickness', (type) => {
+        const { g, pc, support } = built(type);
+        const p = planPosAt(pc, support.s);
+        const dir = [Math.cos(p.h), Math.sin(p.h)], right = [Math.sin(p.h), -Math.cos(p.h)];
+        let thinnest = Infinity, at = null;
+        for (let ds = -9; ds <= 9; ds += 0.5) {
+            for (let lat = -9; lat <= 9; lat += 0.5) {
+                if (ds * ds + lat * lat > 81) continue;
+                const ys = surfacesAt(g, p.x + dir[0] * ds + right[0] * lat,
+                    p.z + dir[1] * ds + right[1] * lat);
+                if (ys.length < 2) continue;
+                if (ys[0] - ys[1] < thinnest) { thinnest = ys[0] - ys[1]; at = [ds, lat]; }
+            }
+        }
+        // the washboard means the top surface is a ridge, so the reading runs
+        // slightly OVER floorThk; it must never run under it.
+        expect(`${type} floor ${thinnest.toFixed(2)} mm at ${at}`)
+            .toBe(`${type} floor ${Math.max(thinnest, SPEC.floorThk).toFixed(2)} mm at ${at}`);
     });
 });
 

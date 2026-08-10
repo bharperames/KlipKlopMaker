@@ -1104,6 +1104,43 @@ export function supportBossPos(piece, support) {
     return { x: p.x, z: p.z, h: p.h, s };
 }
 
+/**
+ * Where the socket MOUTH is — the level face the support column bears on.
+ *
+ * On a `viaduct` piece it is the rim, because the boss is a column that runs
+ * all the way down to it. On a `minimal` piece there is no rim under the boss:
+ * the underside follows the deck, so the boss stops being a column and becomes
+ * a recess, and the mouth lands wherever the deck happens to be. That is what
+ * the spacer is for (see buildSpacerGeometry) — everything below the mouth is
+ * the support's problem, not the track's.
+ *
+ * THE SLOPE COSTS 1.03 mm AND IT IS NOT NEGOTIABLE. `minimalDepthMm` is 12 =
+ * 10 of socket + a 2 mm floor, which is exact at ONE POINT and only at one
+ * point: the socket is a hex 10.39 mm across corners, the deck falls 0.198
+ * mm/mm, so its downhill corner sits 1.03 mm lower than its centre. A mouth
+ * placed at the underside puts the socket's level ceiling 1.03 mm INTO a 2 mm
+ * floor and leaves 0.97 mm of walking surface over a flat blind hole. So the
+ * mouth drops by that much and the socket keeps its full depth under a full
+ * floor. A platform pays nothing (grad = 0), which is why the same 12 has
+ * always worked for the viaduct boss.
+ *
+ * The cost is paid in bed contact, not in plastic: a level mouth inside a
+ * sloping underside protrudes below it on the uphill side, and lowering the
+ * mouth deepens that. See TODO §4 — it is what step 3, the tilt, has to face.
+ */
+export function socketMouthY(piece, s = null, spec = SPEC) {
+    if (piece.skirtStyle !== 'minimal') return piece.rimY;
+    const at = s ?? massCentreS(piece);
+    const f = piece.planLen ? at / piece.planLen : 0;
+    const deck = piece.entryDeck - (piece.drop ?? 0) * f;
+    const grad = piece.planLen ? Math.abs(piece.drop ?? 0) / piece.planLen : 0;
+    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
+    return Math.max(piece.rimY, Math.min(
+        deck - (spec.skirt?.minimalDepthMm ?? 15),
+        deck - spec.floorThk - grad * rCorner - spec.socket.depth
+    ));
+}
+
 /** Height the riser stack has to make up under a support record. */
 export function stackHeightMm(piece, support) {
     return piece.rimY - (support?.mode === 'jog' ? SPEC.jog.heightMm : 0);

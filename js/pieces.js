@@ -22,7 +22,7 @@ import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
-    pieceFrame, pieceInFrame, supportInFrame
+    pieceFrame, pieceInFrame, supportInFrame, socketMouthY
 } from './track.js';
 import {
     textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm,
@@ -614,10 +614,9 @@ function slantedCylinder(bx, bz, heading, r, yBottom, topAt, segs = 28) {
  * Upward bore that hollows a boss above its socket. Returns null when the boss
  * is too short for a bore to be worth it.
  */
-function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
+function bossBoreSolids(cx, cz, heading, piece, spec, underside, yStart) {
     const rSock = spec.socket.hexAF / 2;          // inscribed in the hex: no ledge
     const rBore = spec.socket.bossR - 3;          // leave a 3 mm wall
-    const yStart = piece.rimY + spec.socket.depth;
     const flare = rBore - rSock;
     // The bore's roof used to be a flat lid held CAP below the floor: a Ø13
     // horizontal ceiling inside a blind hole, which is exactly the shape a
@@ -657,7 +656,7 @@ function bossBoreSolids(cx, cz, heading, piece, spec, underside) {
 function bossOps(piece, spec, support) {
     if (support?.mode === 'none') return [];
     const ops = [];
-    let bx, bz, bossHeading = 0, bossUnderside = null;
+    let bx, bz, bossHeading = 0, bossUnderside = null, mouthY = piece.rimY;
 
     // The boss is always at mid-piece. It used to move along the track, and
     // grow an outrigger arm when that was not enough, whenever the column below
@@ -674,24 +673,30 @@ function bossOps(piece, spec, support) {
         const grad = piece.planLen > 0 ? piece.drop / piece.planLen : 0;
         bossHeading = m.h;
         bossUnderside = (ds) => ceilY - grad * ds;
+        // viaduct: the rim, and the boss is a column down to it. minimal: just
+        // under the piece's own underside, and the boss is only a recess — the
+        // spacer carries the mouth the rest of the way to the grid.
+        mouthY = socketMouthY(piece, s, spec);
         ops.push({
             op: ADDITION,
             geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
-                piece.rimY, (ds) => bossUnderside(ds) + 0.5)
+                mouthY, (ds) => bossUnderside(ds) + 0.5)
         });
     }
     ops.push({
         op: SUBTRACTION,
         // the track's socket alone is cut undersize — see socket.trackShrinkAF
-        geometry: hexSocketSolid(bx, bz, piece.rimY - 0.5, piece.rimY + spec.socket.depth, spec,
+        geometry: hexSocketSolid(bx, bz, mouthY - 0.5, mouthY + spec.socket.depth, spec,
             spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0), spec.socket.gripTaperAF ?? 0)
     });
     // Core the boss out above the socket: only the socket walls carry the
     // tenon, so a solid post is ~6.6 cm3 doing nothing. The bore continues the
     // socket upward at 45 deg — self-supporting, and it keeps the void open to
-    // the bed so nothing is trapped.
+    // the bed so nothing is trapped. A `minimal` boss is 12 mm tall and all of
+    // it is socket, so there is nothing left to core and this returns nothing.
     if (bossUnderside) {
-        for (const g of bossBoreSolids(bx, bz, bossHeading, piece, spec, bossUnderside)) {
+        for (const g of bossBoreSolids(bx, bz, bossHeading, piece, spec, bossUnderside,
+            mouthY + spec.socket.depth)) {
             ops.push({ op: SUBTRACTION, geometry: g });
         }
     }
