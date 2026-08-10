@@ -190,3 +190,55 @@ supports**? The underside is not a show surface, so support scars there cost
 nothing but time and a little filament. That is a preference, not a
 constraint, and it is the only thing standing between the current part and
 another ~30% on top of the 18–20% already saved.
+
+
+---
+
+## 3. The tilt: built, measured, reverted
+
+Rotating a `minimal` piece by its own slope so the underside lies on the bed
+was the obvious answer to the 78.8° overhang. It was implemented and it made
+things worse, for a reason that is worth keeping:
+
+| minimal piece | rim-down | tilted |
+|---|---|---|
+| straight | 618 mm² on the bed | **2 mm²** |
+| lift | 620 mm² | **2 mm²** |
+
+**The socket pad is what stops it.** The pad has to reach a 15 mm grid line —
+that is the only reason it exists — so it hangs below the constant-depth
+underside by however far the boss's deck is above the piece's low end:
+
+| piece | underside at the boss | rim | pad protrudes |
+|---|---|---|---|
+| straight | 62.6 | 45.0 | **17.6 mm** |
+| curveL | 27.2 | 0.0 | **27.2 mm** |
+
+Lay the piece on its underside and it balances on that pad instead. The tilt
+and the grid-aligned pad are mutually exclusive: you can have a face on the
+bed or a socket mouth on the grid, not both.
+
+**The way out, if this is worth another pass:** make the pad a SEPARATE PART.
+The piece keeps a shallow socket recess in its underside and prints as a pure
+slab that tilts flat; a spacer part brings the mouth down to the grid. It is
+the same move the jog made — take the support's problem out of the track piece
+— and it costs one new part per piece type (17.6 mm for a straight, 27.2 for a
+curve), neither of which is a grid multiple.
+
+### And on putting the tilt in the exporter at all
+
+Brett: "I wouldn't want the tilt to exist just in the exporter, I'd worry about
+geometry drift."
+
+Right, and the worry is not really numerical — a rotation is lossless to well
+under a printer's resolution. It is that an export-only transform makes the
+thing you INSPECT a different object from the thing that SHIPS, and this
+codebase has been bitten by exactly that twice: the joint guide silently lost
+its track pieces when export geometry moved into a per-piece frame, and the
+gate paddle shipped balanced on the tip of its pin because nothing checked the
+orientation it went out in.
+
+So if orientation is ever reintroduced it should follow the pattern the gate
+now uses: a named, documented function on the pure module (`forPrint`), with a
+test that reads the bed contact off the built mesh — not a step hidden in the
+export path.
