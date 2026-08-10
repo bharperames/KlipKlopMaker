@@ -268,8 +268,29 @@ has to hold a 10 mm socket plus a floor. That rules out the tempting
 (the column below simply grows one grid unit).
 
 So it is **two new parts** — call them 17.5 and 12.5 — and both are small.
-They can share the riser's tenon and socket, so nothing new is introduced to
-the interlock.
+They share the riser's tenon and socket, so nothing new enters the interlock.
+
+**They must not look like risers.** A 17.5 spacer next to a 15 riser is 2.6 mm
+different: nobody picks that out of a bag, and the wrong one under a pier
+tilts the deck it carries. The two spacers are also only 5 mm apart from each
+other. "Slightly unique" is not enough — the difference has to survive being
+in a heap with sixty risers.
+
+What makes it unmistakable, in order of how well it works:
+
+1. **A round body instead of a hex one.** Risers, feet, towers and jogs are
+   all 15 AF hex; nothing else in the library is a cylinder. You cannot
+   mistake a cylinder for a hex prism by eye or by touch, in any light, at any
+   angle. Only the BODY changes — the tenon and socket stay hex, so the
+   interlock is untouched. Ø18 also reads as a collar rather than a post.
+2. **Grooves that can be counted**, one for the short spacer and two for the
+   tall, so the two are told apart in isolation rather than side by side.
+   A count survives what a dimension does not.
+3. The engraved code goes on the BASE, as the foot's does — a round body has
+   no flat to write along, and the base is the one face with room.
+
+Colour is not on the list: a part that is only distinguishable when you happen
+to have printed it in a second filament is not distinguishable.
 
 **Why this is worth doing rather than leaning on the slicer.** Bambu's
 automatic supports on one printed piece: **44.66 g of support against 72.04 g
