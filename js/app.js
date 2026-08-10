@@ -476,6 +476,7 @@ function rebuild() {
 
     rebuildScenery();
     fitSunShadow();
+
     refreshSelectionHighlight();
     refreshPieceList();
     refreshPhysicsPanel();
@@ -4936,9 +4937,25 @@ function shopBuildList() {
  * remembers what you last did in it and a preview of "everything" is what the
  * export buttons beside it are about to produce.
  */
+/**
+ * What the shop's cached geometry was built FROM.
+ *
+ * It caches every part's mesh, and nothing was invalidating that: clear the
+ * scene, drop in one curve, open the shop, and you were still looking at the
+ * previous tower's eleven plates — with the previous underside on them. A
+ * fingerprint is better than clearing on every edit, because rebuilding the
+ * catalogue takes ~15 seconds and most edits do not change what it contains.
+ */
+const shopDesignKey = () => JSON.stringify([
+    state.sequence, state.skirtStyle,
+    (state.scenery ?? []).map(s => s.kind).sort()
+]);
+
 async function openPrintShop(opts = {}) {
     $('shop-overlay').style.display = '';
     shop.open = true;
+    if (shop.builtFor !== shopDesignKey()) shop.built = false;
+    const justBuilt = !shop.built;
     initShop();
     sizeShop();
     if (!shop.built) {
@@ -4964,7 +4981,11 @@ async function openPrintShop(opts = {}) {
             // exactly what the Klip Klop Standard is for: pieces built to it mate
             // with any other export at the same major version, so a design with no
             // curve can still order one and it will fit.
-            const STD = { slopeDeg: STANDARD.slopeDeg, curveRadius: STANDARD.curveRadius, innerWidth: STANDARD.innerWidth };
+            // ...but the UNDERSIDE follows the design, or picking `minimal`
+            // gives you a catalogue of viaduct spares that do not match the
+            // pieces beside them on the plate.
+            const STD = { slopeDeg: STANDARD.slopeDeg, curveRadius: STANDARD.curveRadius,
+                innerWidth: STANDARD.innerWidth, skirtStyle: state.skirtStyle };
             // every simple type, from SIMPLE_TYPES rather than a hand-written
             // list that quietly goes stale when a piece type is added
             const seq = SIMPLE_TYPES.flatMap(t => [t, 'straight']);
@@ -5014,6 +5035,7 @@ async function openPrintShop(opts = {}) {
             ].filter(c => !have.has(c.name)).map(c => ({ ...c, count: 0 }));
 
             shop.items = [];
+            shop.counts.clear();
             for (const part of [...parts, ...canonical, ...catalogue]) {
                 await new Promise(r => setTimeout(r));
                 const mesh = recenter(part.build());
@@ -5033,13 +5055,17 @@ async function openPrintShop(opts = {}) {
             shopBuildList();
             $('shop-preset-hint').textContent = getExportSet($('shop-preset').value).hint;
             shop.built = true;
+            shop.builtFor = shopDesignKey();
         } catch (err) {
             console.error(err);
             $('shop-summary').textContent = `could not build parts: ${err.message}`;
             return;
         }
     }
-    if (opts.preset) {
+    // Only seed the preset on a FRESH catalogue. Forcing it on every open
+    // threw away whatever you had set — press "Clear all", close, come back,
+    // and the plates were full again.
+    if (opts.preset && justBuilt) {
         const sel = $('shop-preset');
         if (sel) sel.value = opts.preset;
         shopApplyPreset(opts.preset);
@@ -5111,8 +5137,7 @@ window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideS
 $('in-skirt').addEventListener('change', () => {
     recordEdit('skirt');
     state.skirtStyle = $('in-skirt').value === 'minimal' ? 'minimal' : 'viaduct';
-    shop.built = false;           // the parts themselves changed, so rebuild them
-    rebuild();
+    rebuild();                    // clears shop.built for us
 });
 
 $('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all' }));
