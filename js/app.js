@@ -1083,12 +1083,15 @@ function refreshSkirtMode() {
     const sel = $('in-skirt');
     if (!sel) return;
     sel.value = state.skirtStyle;
-    $('skirt-hint').textContent = state.skirtStyle === 'minimal'
-        ? 'Saves ~18-20% of each piece and drops the arcade. The underside follows the '
-          + 'deck, so a straight can be laid flat and printed tilted — but a curve\u2019s '
-          + 'underside is a helicoid (5.2 mm off any plane) and needs print supports.'
+    $('skirt-hint').innerHTML = state.skirtStyle === 'minimal'
+        ? '<b>18-20% less plastic</b> per track piece and no arcade. The underside '
+          + 'follows the deck 12 mm below it \u2014 the depth the key pocket needs \u2014 '
+          + 'so the bottom edge of every wall ramps at the track slope and <b>needs print '
+          + 'supports</b> under it. Joints, socket and grid are unchanged, so minimal and '
+          + 'viaduct pieces mate.'
         : 'The skirt carries the deck down to a flat rim on the 15 mm grid, and the arcade '
-          + 'is cut out of it. Every piece prints rim-down with no supports.';
+          + 'is cut out of it. Every downward surface is a vertical pier or a self-supporting '
+          + 'arch, so <b>every piece prints rim-down with no supports</b>.';
 }
 
 function refreshParamsMode() {
