@@ -394,13 +394,33 @@ The changes are strictly ordered, because each one unblocks the next:
    from 23% back to 18%. Worth it: a straight that lies down needs no print
    supports at all, against 44.66 g of support for 72.04 g of model.
 
-   *Residual:* probed along the wall, the underside is on the bed from 5% to
-   90% of the length. The last 15 mm rises to 2.6 mm, because `skirtBottom`
-   clamps at the rim and D exceeds `skirtDepth` by 3 — so the exit rib keeps
-   the 78.8° overhang the rest of the part no longer has. Removing the clamp
-   is NOT the fix: tried, and the exit rib's own level bottom then protrudes
-   below the plane and contact goes to zero. The rib bottom would have to
-   follow the plane, which is the same change curves need below.
+   *Residual — TWO LEVEL FACES THE TILT TURNS INTO RAMPS.* "No supports at
+   all" was overstated. Probed along the wall, the underside is on the bed
+   from 5% to 90% of the length, and what is left is:
+
+   - **The exit rib**, lifted to 2.6 mm. `skirtBottom` clamps at the rim and D
+     exceeds `skirtDepth` by 3, so the last 15 mm steps up off the plane.
+     Removing the clamp is NOT the fix: tried, and the rib's own level bottom
+     then protrudes below the plane and bed contact goes to **zero**.
+   - **The socket mouth**, the Ø19 annulus the spacer bears on. Measured, it
+     clears the plate by **0.15 mm at its uphill edge** and ~3.9 mm at its
+     downhill one — it very nearly grazes, but it is a level face inside an
+     11.2° plane, so it is a ramp like everything else was. ~220 mm².
+
+   Both are the same fault and want the same fix: a face that is level IN USE
+   has to be cut parallel to the underside FOR PRINT. For the rib that is a
+   varying bottom in `ribSolid`. For the mouth it is worse than it looks — a
+   sloped mouth needs a sloped spacer shoulder to bear on, and the hex socket
+   only clocks six ways, so five of six insertions would be wrong. Leave the
+   mouth level until there is a reason not to; it is 220 mm² of support.
+
+   The mouth CANNOT simply be dropped to the plane, and this is worth knowing
+   before anyone tries: the boss stands over the open channel underside where
+   there is no material at all, so it can only reach the bed by becoming a
+   pier again. Its allowed window is 0.09 mm wide — no lower than
+   `deck − 13.03` (the floor over the socket) and no higher than
+   `deck + 1.88 − D` (or it protrudes below the plane and the part rests on
+   it). It is already at the top of that window.
 5. **Curves.** NOT BUILT. The underside has to be cut as a **tilted plane**
    rather than at constant depth under the deck, or the surface being laid on
    the bed is still a helicoid. See §6 — the D = 14 in the old note is wrong,

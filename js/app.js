@@ -1108,10 +1108,13 @@ function refreshSkirtMode() {
     sel.value = state.skirtStyle;
     $('skirt-hint').innerHTML = state.skirtStyle === 'minimal'
         ? '<b>18-20% less plastic</b> per track piece and no arcade. The underside '
-          + 'follows the deck 12 mm below it \u2014 the depth the key pocket needs \u2014 '
-          + 'so the bottom edge of every wall ramps at the track slope and <b>needs print '
-          + 'supports</b> under it. Joints, socket and grid are unchanged, so minimal and '
-          + 'viaduct pieces mate.'
+          + `follows the deck ${SPEC.skirt.minimalDepthMm} mm below it, so it is a `
+          + 'ramp rather than a flat rim \u2014 and <b>straights and lifts are '
+          + 'exported lying on it</b>, flat on the plate and half as tall. A '
+          + 'curve\u2019s underside is a helicoid, so no orientation lays it down and '
+          + 'it <b>still needs print supports</b>. Each piece takes a spacer under its '
+          + 'socket; joints, grid and the rest of the stack are unchanged, so minimal '
+          + 'and viaduct pieces mate.'
         : 'The skirt carries the deck down to a flat rim on the 15 mm grid, and the arcade '
           + 'is cut out of it. Every downward surface is a vertical pier or a self-supporting '
           + 'arch, so <b>every piece prints rim-down with no supports</b>.';
@@ -4079,23 +4082,37 @@ function orientDimText(group, camera) {
  *
  * The part mesh is opaque and already writes depth, so no prepass is needed
  * here — only the polygonOffset on GALLERY_MATS so edges win the depth test.
+ *
+ * THE INK HAS TO KNOW WHAT IT IS DRAWN ON, and `withHidden` is that flag too:
+ * it is on exactly when the surface is off. Shaded + HLR draws on a gold part,
+ * so the lines are near-black. HLR-only draws on the viewer's own background,
+ * which is 0x0b1017 — near-black lines there are invisible, and the mode
+ * rendered as an almost blank frame with only the dimension arrows in it. Same
+ * fault the wireframe had (dark navy on mid-blue), same fix: light ink on the
+ * dark plate.
  */
+const EDGE_INK = {
+    onPart: { visible: 0x23180a, hidden: 0x2b3138, hiddenOpacity: 0.5 },
+    onPlate: { visible: 0xf4efe4, hidden: 0x8fa0b4, hiddenOpacity: 0.45 }
+};
+
 function makePartEdges(geo, res, withHidden, thresholdDeg = EDGE_ANGLE.washboard) {
     const g = new THREE.Group();
+    const ink = withHidden ? EDGE_INK.onPlate : EDGE_INK.onPart;
     // LineMaterial.resolution is a COPY-ON-SET accessor (it does
     // uniforms.resolution.value.copy(v)), so handing it a shared Vector2 and
     // mutating that later never reaches the shader. The materials themselves
     // have to be updated — see updateLineRes().
     const fat = new LineSegmentsGeometry().fromEdgesGeometry(new THREE.EdgesGeometry(geo, thresholdDeg));
     const hidden = new LineSegments2(fat, new LineMaterial({
-        color: 0x2b3138, linewidth: 1.5, resolution: res,
-        transparent: true, opacity: 0.5, depthTest: false,
+        color: ink.hidden, linewidth: 1.5, resolution: res,
+        transparent: true, opacity: ink.hiddenOpacity, depthTest: false,
         dashed: true, dashSize: 4.2, gapSize: 1.5
     }));
     hidden.computeLineDistances();
     hidden.renderOrder = 2;
     const visible = new LineSegments2(fat, new LineMaterial({
-        color: 0x23180a, linewidth: 2.0, resolution: res
+        color: ink.visible, linewidth: 2.0, resolution: res
     }));
     visible.renderOrder = 3;
     if (withHidden) g.add(hidden);
