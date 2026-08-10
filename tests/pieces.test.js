@@ -5,7 +5,7 @@
 import { jest } from '@jest/globals';
 import {
     layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt,
-    planPillarPositions, socketMouthY, SPACER_VARIANTS
+    planPillarPositions, socketMouthY, SPACER_VARIANTS, undersidePlane
 } from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
 import * as pieceBuilders from '../js/pieces.js';
@@ -736,18 +736,22 @@ describe('the minimal skirt', () => {
 
         const p = planPosAt(pc, support.s);
         const dir = [Math.cos(p.h), Math.sin(p.h)], right = [Math.sin(p.h), -Math.cos(p.h)];
-        const D = SPEC.skirt.minimalDepthMm;
-        // gap = how far the lowest material at a point sits ABOVE the plane.
-        // Zero somewhere means the boss reaches it; negative anywhere would
-        // mean it punches through, and the part laid down rests on the boss.
+        // gap = how far the lowest material at a point sits ABOVE the piece's
+        // own underside plane. Zero somewhere means the boss reaches it;
+        // negative anywhere means it punches through and the part laid down
+        // rests on the boss. Measured against the REAL plane — `deck - D` is
+        // the same surface under a straight but 5.3 mm shallower under a curve,
+        // where the plane is fitted rather than held at constant depth.
+        const pl = undersidePlane(pc);
         let gap = Infinity;
         for (let ds = -10; ds <= 10; ds += 1) {
             for (let lat = -10; lat <= 10; lat += 1) {
                 if (ds * ds + lat * lat > 100) continue;
-                const ys = surfacesAt(g, p.x + dir[0] * ds + right[0] * lat,
-                    p.z + dir[1] * ds + right[1] * lat);
+                const x = p.x + dir[0] * ds + right[0] * lat;
+                const z = p.z + dir[1] * ds + right[1] * lat;
+                const ys = surfacesAt(g, x, z);
                 if (!ys.length) continue;
-                gap = Math.min(gap, ys.at(-1) - (deckYAt(pc, support.s + ds) - D));
+                gap = Math.min(gap, ys.at(-1) - pl.at(x, z));
             }
         }
         // flush is what "reaches the plane" means, so the band is tight both

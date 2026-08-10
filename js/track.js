@@ -1199,10 +1199,25 @@ export function supportBossPos(piece, support) {
  */
 export function collarFits(piece, spec) {
     if (piece.skirtStyle !== 'minimal' || !(spec.socket?.collarR > 0)) return false;
-    const grad = piece.planLen > 0 ? Math.abs(piece.drop ?? 0) / piece.planLen : 0;
+    if (!(piece.planLen > 0)) return false;
+    const s = massCentreS(piece);
+    const pos = planPosAt(piece, s);
+    const grad = Math.abs(piece.drop ?? 0) / piece.planLen;
     const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
-    return (spec.skirt?.minimalDepthMm ?? 15)
-        >= spec.floorThk + spec.socket.depth + grad * (rCorner + spec.socket.collarR);
+    const seat = deckYAt(piece, s) - spec.floorThk - grad * rCorner - spec.socket.depth;
+    // measured against the REAL plane, not `deck - D`. Those are the same
+    // surface under a straight and 5.3 mm apart under a curve, where the plane
+    // is fitted rather than held at constant depth — and a collar built to the
+    // wrong one stops short and leaves the boss floating, which is exactly what
+    // it did the first time a curve was laid down.
+    const pl = undersidePlane(piece, spec);
+    let highest = -Infinity;
+    for (let k = 0; k < 16; k++) {
+        const a = (2 * Math.PI * k) / 16;
+        highest = Math.max(highest, pl.at(pos.x + Math.cos(a) * spec.socket.collarR,
+            pos.z + Math.sin(a) * spec.socket.collarR));
+    }
+    return seat >= highest;
 }
 
 /**

@@ -628,9 +628,13 @@ function slantedCylinder(bx, bz, heading, r, bottomAt, topAt, segs = 28) {
         const a = (Math.PI * i) / segs;
         const ds = -r * Math.cos(a);
         const w = Math.max(0.15, r * Math.sin(a));
-        const y0 = bot(ds);
-        const h = Math.max(0.2, top(ds) - y0);
-        profiles.push([[-w, 0], [w, 0], [w, h], [-w, h]]);
+        // the bottom is sampled at BOTH edges of the chord, not just at its
+        // centre. A plane under a curve is tilted across the track as well as
+        // along it, and a bottom that only follows the along-track slope cuts
+        // below it on one side — which put the part back on its boss.
+        const y0 = bot(ds, -w), y1 = bot(ds, w);
+        const t = Math.max(top(ds), Math.max(y0, y1) + 0.2);
+        profiles.push([[-w, 0], [w, y1 - y0], [w, t - y0], [-w, t - y0]]);
         stations.push({
             origin: [bx + dir[0] * ds, y0, bz + dir[1] * ds],
             right: [right[0], 0, right[1]],
@@ -707,24 +711,39 @@ function bossOps(piece, spec, support) {
         // under the piece's own underside, and the boss is only a recess — the
         // spacer carries the mouth the rest of the way to the grid.
         mouthY = socketMouthY(piece, s, spec);
-        ops.push({
-            op: ADDITION,
-            geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
-                mouthY, (ds) => bossUnderside(ds) + 0.5)
-        });
-        // and take it down to the print plane, if there is room for the collar
         if (laysOnUnderside(piece, spec)) {
-            const planeAt = (ds) => bossUnderside(ds) + spec.floorThk
-                - (spec.skirt?.minimalDepthMm ?? 15);
+            // ONE POST, from the print plane up to the floor, at the collar's
+            // diameter the whole way. It used to be a bossR post with a wider
+            // collar under it, and that step was a level annulus facing DOWN —
+            // the same 78.8 deg ramp the tilt exists to get rid of, and it read
+            // on screen as a brim round the boss. One diameter has no step.
+            //
+            // The plane is `undersidePlane`, NOT `deck - D`. They are the same
+            // surface under a straight and 5.3 mm apart under a curve, where
+            // the plane is fitted; built to the wrong one the post stopped
+            // short and the boss floated.
+            const pl = undersidePlane(piece, spec);
+            const dir = [Math.cos(bossHeading), Math.sin(bossHeading)];
+            const rt = [Math.sin(bossHeading), -Math.cos(bossHeading)];
+            const planeAt = (ds, lat = 0) =>
+                pl.at(bx + dir[0] * ds + rt[0] * lat, bz + dir[1] * ds + rt[1] * lat);
             const { collarR, collarBoreR } = spec.socket;
             ops.push({
                 op: ADDITION,
-                geometry: slantedCylinder(bx, bz, bossHeading, collarR, planeAt, mouthY)
+                geometry: slantedCylinder(bx, bz, bossHeading, collarR, planeAt,
+                    (ds) => bossUnderside(ds) + 0.5)
             });
+            // bored out below the seat so the spacer's body tucks up inside it
             ops.push({
                 op: SUBTRACTION,
                 geometry: slantedCylinder(bx, bz, bossHeading, collarBoreR,
-                    (ds) => planeAt(ds) - 0.5, mouthY)
+                    (ds, lat) => planeAt(ds, lat) - 0.5, mouthY)
+            });
+        } else {
+            ops.push({
+                op: ADDITION,
+                geometry: slantedCylinder(bx, bz, bossHeading, spec.socket.bossR,
+                    mouthY, (ds) => bossUnderside(ds) + 0.5)
             });
         }
     }
