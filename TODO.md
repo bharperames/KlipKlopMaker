@@ -64,22 +64,28 @@ constant-depth underside the mouth would land wherever the deck happens to be,
 so one local pad under the boss makes up the remaining 0–15 mm. That pad is
 today's skirt — kept only where it does a job.
 
+*Superseded.* The pad is gone: the remainder is carried by a separate spacer
+part instead, which is what lets the piece lie on its own underside. §4 step 2.
+
 **Built, and two of the claims above were wrong.** `SPEC.skirt.style` now
 takes `viaduct` or `minimal`; measured on the built meshes:
 
 | | straight | curveL |
 |---|---|---|
 | viaduct | 60.2 cm³ | 86.2 cm³ |
-| **minimal (D = 12)** | **49.5 (−18%)** | **69.0 (−20%)** |
+| minimal (D = 12), boss column to the rim | 49.5 (−18%) | 69.0 (−20%) |
+| **minimal, boss as a recess** | **46.3 (−23%)** | **64.4 (−25%)** |
 | minimal, D = 15 | 52.7 (−12%) | 73.3 (−15%) |
 
-On the demo tower that is 1672 g → **1492 g**, an 11% job (only the track
-parts change; keys, risers and feet are untouched).
+On the demo tower the first of those was 1672 g → **1492 g**, an 11% job (only
+the track parts change; keys, risers and feet are untouched).
 
-- **The saving is 18–20%, not 26–31%.** The Monte-Carlo estimate compared
-  against a bare beam. The real part keeps a full-depth pad under the socket
-  (which is what puts the mouth on the grid) and keeps its skirt over the last
-  stretch, where the deck is already within D of the rim.
+- **The saving is 18–20%, not 26–31%** — for as long as the boss is still a
+  column down to the rim. Turning it into a recess (§4 step 2) takes another
+  5 points, so the shipped number is **23–25%**. The Monte-Carlo estimate that
+  said 26–31% compared against a bare beam and was wrong for a different
+  reason: the real part also keeps its skirt over the last stretch, where the
+  deck is already within D of the rim.
 - **The print does not get shorter.** A piece still spans from the rim at its
   low end to deck-plus-rails at its high end: 56 mm on a straight, 71 on a
   curve, unchanged. Height only drops if the part is also tilted, and see
@@ -246,35 +252,45 @@ cannot currently express — it takes one `rimY` per station.
 
 ### The design to build: an insertable spacer instead of a long boss
 
-NOT BUILT YET. Recorded with the numbers so it can be picked up.
+BUILT AND INTEGRATED. The numbers below are what shipped.
 
-The piece keeps only a socket RECESS in its underside — the underside is 12 mm
-below the deck and the floor is 2, which leaves exactly the 10 mm the socket
-needs, so the boss stops being a column and becomes a hole. A separate spacer
-plugs into it and carries the mouth down to a 15 mm grid line, exactly the
-move the jog made: take the support's problem out of the track piece.
+The piece keeps only a socket RECESS in its underside, so the boss stops being
+a column and becomes a hole. A separate spacer plugs into it and carries the
+mouth down to a 15 mm grid line, exactly the move the jog made: take the
+support's problem out of the track piece.
 
-Spacer heights, shoulder to shoulder (measured):
+**"Exactly the 10 mm the socket needs" was true at one point only, and cost
+1.03 mm.** The underside is 12 below the deck and the floor is 2, which does
+leave 10 — at the boss centre. But the socket is a hex 10.39 across corners
+and the deck falls 0.198 mm/mm, so its downhill corner is 1.03 lower, and a
+level socket ceiling at deck − 2 eats into a 2 mm floor: measured on the built
+mesh the walking surface over the socket came out **1.27–1.38 mm**. The mouth
+drops by that much (`socketMouthY`) and the floor reads 2.32–2.41 instead. A
+platform pays nothing, grad being 0 — which is why the same 12 has always
+worked for the viaduct boss.
 
-| piece | boss at | mouth would sit at | spacer |
-|---|---|---|---|
-| straight | s = 61 | deck − 12 | **17.6 mm** |
-| lift | s = 89 | deck − 12 | **17.7 mm** |
-| curveL | s = 88 | deck − 12 | **27.2 or 12.2 mm** |
+Spacer heights, shoulder to shoulder (measured, after that correction):
 
-A spacer cannot be shorter than ~12 mm whatever the arithmetic says: its body
-has to hold a 10 mm socket plus a floor. That rules out the tempting
-`17.6 − 15 = 2.6` for a straight, and makes 12.2 the useful curve variant
-(the column below simply grows one grid unit).
+| piece | boss at | mouth sits at | remainder | spacer |
+|---|---|---|---|---|
+| straight | s = 61 | rim + 16.5888 | 16.5888 | **16.59** |
+| lift | s = 89 | rim + 16.6645 | 16.6645 | 16.59 (shares) |
+| curveL | s = 88 | rim + 26.1991 | 26.1991 − 15 | **11.20** |
 
-So it is **two new parts** — call them 17.5 and 12.5 — and both are small.
-They share the riser's tenon and socket, so nothing new enters the interlock.
+So it is **two new parts**, and both are small. They share the riser's tenon
+and socket, so nothing new enters the interlock.
 
-**They must not look like risers.** A 17.5 spacer next to a 15 riser is 2.6 mm
+The curve's 11.20 is under the ~12 mm that "a 10 mm socket plus a floor"
+suggests — it leaves a 1.2 mm plate between the socket ceiling and the tenon
+shoulder. That plate is not in the load path (the column bears through the
+annular wall), and the alternative is a 26.20 spacer with no grid unit under
+it, which stands a grounded curve on an 18 mm disc instead of on a foot.
+
+**They must not look like risers.** A 16.59 spacer next to a 15 riser is 1.6 mm
 different: nobody picks that out of a bag, and the wrong one under a pier
-tilts the deck it carries. The two spacers are also only 5 mm apart from each
-other. "Slightly unique" is not enough — the difference has to survive being
-in a heap with sixty risers.
+tilts the deck it carries. The two spacers are also only 5.4 mm apart from
+each other. "Slightly unique" is not enough — the difference has to survive
+being in a heap with sixty risers.
 
 What makes it unmistakable, in order of how well it works:
 
@@ -326,64 +342,73 @@ export path.
 
 ## 4. THE ORDER THIS HAS TO HAPPEN IN
 
-"Flat on the plate" is the payoff and it is NOT in the app yet. What ships
-today is a minimal piece printed rim-down: the arcade is gone and it is 18-20%
-lighter, but it still stands the way a viaduct piece does, and its ramped wall
-bottom is a 78.8° overhang that needs supports. That is half the idea.
+"Flat on the plate" is the payoff and it is STILL not in the app. What ships
+today is a minimal piece printed rim-down: the arcade is gone and it is 23-25%
+lighter, and nothing under it reaches the rim any more — but it still stands
+the way a viaduct piece does, and its ramped wall bottom is a 78.8° overhang
+that needs supports.
 
-The three changes are strictly ordered, because each one unblocks the next:
+The changes are strictly ordered, because each one unblocks the next:
 
 1. **The spacer part.** DONE — `buildSpacerGeometry`, two variants, watertight.
-   Nothing references it yet.
-2. **The boss becomes a recess.** NOT DONE. `bossOps` in minimal mode stops at
-   the underside and cuts the socket 10 mm up from there, instead of running a
-   Ø19 column down to the rim. The spacer carries the mouth to the grid.
-3. **The tilt.** REVERTED, and it must come back AFTER (2). It was built and
+2. **The boss becomes a recess.** DONE. `bossOps` in minimal mode starts at the
+   underside and cuts the socket 10 mm up from there, instead of running a Ø19
+   column down to the rim. `socketMouthY` is the one place that says where the
+   mouth is; it cost 1.03 mm to the slope (see §3).
+3. **The support chain carries the spacer.** DONE. `stackHeightMm` reads the
+   mouth and takes the spacer's bite; `needsPier` reads the mouth too, because
+   a grounded minimal piece has no skirt under its boss to rest on. The scene
+   and the print shop both draw and count the part.
+4. **The tilt.** REVERTED, and this is where it comes back. It was built and
    measured 2 mm² of bed contact — because the boss column was the lowest
    thing on the part, so laying the piece on its underside balanced it on that
-   column. Take the column away and the underside is the only downward
-   surface, which is the whole reason (2) comes first.
+   column. The column is gone now.
 
-And for curves there is a fourth: the underside has to be cut as a **tilted
-plane** rather than at constant depth under the deck, at D = 14, or the
-surface being laid on the bed is still a helicoid. That needs `channelProfile`
-to accept a different bottom height for each wall at the same station, which
-it cannot express today.
+   *What it will meet:* the mouth is a LEVEL face inside a SLOPING underside,
+   so it cannot be flush with it. It hangs below the underside plane on the
+   uphill side of the boss, by up to `grad × bossR + 1.03` ≈ 2.9 mm. That is
+   6× better than the 17.6 mm pad it replaces and 60× better than the measured
+   2 mm² of contact, but it is not zero, and the tilt has to be measured
+   against it rather than assumed. The algebra says a boss recess is flush AND
+   keeps its floor only when D ≥ 14.91 — which is a second, independent
+   argument for the D = 14–15 that step 5 wants for curves.
+5. **Curves.** The underside has to be cut as a **tilted plane** rather than at
+   constant depth under the deck, at D = 14, or the surface being laid on the
+   bed is still a helicoid. That needs `channelProfile` to accept a different
+   bottom height for each wall at the same station, which it cannot express
+   today. This is the only real refactor left in the sequence.
 
-So: the reason nothing prints flat yet is that step 2 is missing, and step 3
-was correctly reverted because without step 2 it makes things worse.
+## 5. Spacer build: the two decisions it needed
 
-## 5. Spacer build: started, backed out, two problems found
+The integration was attempted once and backed out, because two things in it
+were Brett's call and not the arithmetic's. Both are now decided and built.
 
-Attempted the integration (`socketMouthY`, `spacerHeightMm`, `stackHeightMm`
-for minimal pieces) and reverted it. The arithmetic composes — every stack
-still decomposed into a foot and standard risers — but two things surfaced
-that need deciding before the part is worth cutting.
+**Decision 1 — a lift shares the straight's spacer.** A straight's remainder
+is 16.5888 and a lift's is 16.6645: the lift climbs at `liftSlopeDeg`
+(11.4045°) against the ramp's 11.2167°, so its boss sits fractionally higher.
+Two parts 0.08 mm apart is worse than no distinguishing feature at all — it is
+the exact failure the D section exists to prevent, reintroduced by arithmetic.
+**The lift takes the straight's spacer and its deck sits 0.08 low**, beside a
+waterfall step of 0.25.
 
-| piece | socket mouth | spacer | stack below | decomposes |
+**Decision 2 — platforms keep the viaduct boss.** A start or end platform has
+no drop, so its deck is only `skirtDepth` above its rim and `deck − 12` lands
+just below the rim. They are flat: no skirt taper to save, nothing to gain.
+`socketMouthY` clamps to the rim, so they fall out of the spacer path on their
+own. Elevators are excluded for their own reason — the housing is a solid
+block from rim to deck, so there is no sloping underside to recess into.
+
+Where that leaves the arithmetic, on the demo tower:
+
+| piece | mouth (above rim) | spacer | stack below | decomposes |
 |---|---|---|---|---|
-| start | 75.0 | 15.0 | 60.0 | foot + 30 + 15 |
-| straight | 62.6 | **17.6** | 45.0 | foot + 30 |
-| curveL | 27.2 | 12.2 | 15.0 | foot |
-| **lift** | 17.7 | **17.7** | 0.0 | spacer on the ground |
-| end | −0.3 | 0.0 | −0.3 | — |
+| start | 0 | — | 450.0 | foot + 120·3 + 60 + 15 |
+| straight | 16.5888 | 16.59 | 405.0 | foot + 120·3 + 30 |
+| curveL | 26.1991 | 11.20 | 375.0 | foot + 120·3 |
+| lift | 16.6645 | 16.59 (+0.08) | on the grid | — |
+| grounded straight | 16.5888 | 16.59 | 0.0 | spacer on the bed |
 
-**Problem 1: a straight wants 17.6 and a lift wants 17.7.** The lift climbs at
-`liftSlopeDeg` (11.4045°) against the ramp's 11.2167°, so its boss sits at a
-fractionally different height. Two parts 0.1 mm apart is worse than no
-distinguishing feature at all — it is the exact failure the D section exists
-to prevent, reintroduced by arithmetic. Either quantise spacer heights and
-absorb ~0.1 mm at the pier (the waterfall step is 0.25, so it is probably
-below noticing), or give the lift the same spacer and let its deck sit 0.1 mm
-off. Needs a decision, not a default.
-
-**Problem 2: flat pieces produce a mouth below the ground.** A start or end
-platform has no drop, so its deck is only `skirtDepth` above its rim and
-`deck − 12` lands at −0.3. Platforms should almost certainly keep the viaduct
-boss and never take a spacer — they are flat, so they have no skirt taper to
-save and nothing to gain.
-
-**And a live regression to avoid:** changing `stackHeightMm` shortens the
-column the SCENE draws by the spacer height. The spacer has to be modelled and
-added to `buildSupportObject` in the same change, or every minimal piece
-floats above its pier in the viewport.
+**The regression that was flagged did not happen:** `stackHeightMm` shortens
+the column the scene draws by the spacer height, so the spacer had to be
+modelled and added to the same change — it was, and the browser check on the
+demo tower shows columns meeting their sockets in both styles.
