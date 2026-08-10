@@ -3367,7 +3367,10 @@ function assembleParts() {
                 kind: 'track',
                 piece: pc,
                 support: support,
-                build: () => buildPieceExportGeometry(pc, { support })
+                // forPrint lays a minimal piece on its own underside; it is a
+                // no-op for a viaduct piece and for any curve (see
+                // tiltOntoUnderside), so it is safe to ask for unconditionally
+                build: () => buildPieceExportGeometry(pc, { support, forPrint: true })
             });
         }
     }
@@ -5040,7 +5043,7 @@ async function openPrintShop(opts = {}) {
                     const support = canonSup.find(x => x.pieceIndex === pc.index);
                     return {
                         name: `standard_${t}`, kind: 'track', count: 0,
-                        build: () => buildPieceExportGeometry(pc, { support })
+                        build: () => buildPieceExportGeometry(pc, { support, forPrint: true })
                     };
                 }).filter(Boolean);
 

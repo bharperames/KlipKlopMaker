@@ -14,9 +14,9 @@ import {
     buildSwitchExportGeometry, buildSwitchDisplayGeometry,
     buildPillarGeometry, buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry,
-    engraveOps, engravePoint
+    engraveOps, engravePoint, MIN_DEPTH_FOR_TILT
 } from '../js/pieces.js';
-import { analyzeMesh, verifyManifold, buildTopologyFromIndices, deduplicateGeometry } from '../js/mesh_utils.js';
+import { analyzeMesh, bedStability, verifyManifold, buildTopologyFromIndices, deduplicateGeometry } from '../js/mesh_utils.js';
 
 beforeAll(async () => { await initCSG(); });
 
@@ -699,10 +699,10 @@ describe('the minimal skirt', () => {
         return ys.sort((p, q) => q - p);
     };
 
-    const built = (type) => {
+    const built = (type, forPrint = false) => {
         const world = pieces.filter(p => p.type === type).at(-1);
         const support = planPillarPositions(pieces).find(s => s.pieceIndex === world.index);
-        return { g: buildPieceExportGeometry(world, { support }), pc: pieceInFrame(world), support };
+        return { g: buildPieceExportGeometry(world, { support, forPrint }), pc: pieceInFrame(world), support };
     };
 
     test.each(['straight', 'curveL', 'lift'])('%s exports watertight', (type) => {
@@ -747,6 +747,54 @@ describe('the minimal skirt', () => {
      * "floor is the highest thing" test above reads the TOP surface, which a
      * hollow under it does not move.
      */
+    /**
+     * THE TILT. A straight's constant-depth underside is a PLANE, just not a
+     * horizontal one — printed rim-down it is a wall bottom ramping at 11.22°,
+     * a 78.8° overhang. Rotated by its own slope it is on the bed.
+     *
+     * This measures bed contact off the built mesh rather than asserting the
+     * rotation happened, because the first version of the tilt DID happen and
+     * was still wrong: the boss pad was the lowest thing on the part, so the
+     * piece balanced on it at 2 mm² of contact. The numbers are the test.
+     */
+    test.each(['straight', 'lift'])('%s lies down on its underside for print', (type) => {
+        const flat = built(type), tilted = built(type, true);
+        const down = bedStability(flat.g.positions, flat.g.indices);
+        const up = bedStability(tilted.g.positions, tilted.g.indices);
+        expectWatertight(tilted.g, `minimal ${type} forPrint`);
+        // a rotation cannot change the volume; anything else here would mean
+        // the tilt was applied to the geometry rather than to the part.
+        // (Float32 positions, so compare relatively — the residual is 3e-3 mm³
+        // in 49.5 cm³, which is the storage and not the transform.)
+        const [va, vb] = [analyzeGeometry(flat.g).volumeMm3, analyzeGeometry(tilted.g).volumeMm3];
+        expect(Math.abs(vb - va) / va).toBeLessThan(1e-6);
+        expect(`${type} contact ${down.contactMm2.toFixed(0)} -> ${up.contactMm2.toFixed(0)} mm2`)
+            .toBe(`${type} contact ${down.contactMm2.toFixed(0)} -> ${Math.max(up.contactMm2, 450).toFixed(0)} mm2`);
+        // and the part stops being tall: 56 mm standing up, 28 lying down
+        expect(up.heightMm).toBeLessThan(down.heightMm * 0.6);
+    });
+
+    test('a curve refuses the tilt, because its underside is a helicoid', () => {
+        const flat = built('curveL'), asked = built('curveL', true);
+        expect(Array.from(asked.g.positions)).toEqual(Array.from(flat.g.positions));
+    });
+
+    /**
+     * D >= 14.91 is what keeps the socket mouth clear of the underside plane
+     * (see SPEC.skirt.minimalDepthMm). Below it the mouth protrudes and the
+     * tilt puts the part on that instead, which is the fault that got the
+     * first version reverted — so the tilt refuses rather than obliges.
+     */
+    test('the tilt refuses a depth that would put the part back on its mouth', () => {
+        const shallow = { ...SPEC, skirt: { ...SPEC.skirt, minimalDepthMm: 12 } };
+        const world = pieces.filter(p => p.type === 'straight').at(-1);
+        const support = planPillarPositions(pieces).find(s => s.pieceIndex === world.index);
+        const a = buildPieceExportGeometry(world, { support, spec: shallow });
+        const b = buildPieceExportGeometry(world, { support, spec: shallow, forPrint: true });
+        expect(Array.from(b.positions)).toEqual(Array.from(a.positions));
+        expect(SPEC.skirt.minimalDepthMm).toBeGreaterThanOrEqual(MIN_DEPTH_FOR_TILT);
+    });
+
     test.each(['straight', 'curveL', 'lift'])('%s: the floor over the socket keeps its thickness', (type) => {
         const { g, pc, support } = built(type);
         const p = planPosAt(pc, support.s);

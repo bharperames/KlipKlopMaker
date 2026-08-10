@@ -144,18 +144,30 @@ export const SPEC = {
      * The two underside shapes. `viaduct` is the default and the printable
      * one; `minimal` keeps only what the joints need. See archedRimY.
      *
-     * 12, and it is not a choice. The underside meets the rim exactly when
-     * the depth equals `skirtDepth`, so the depths that keep every socket
-     * mouth on the 15 mm grid are 12, 27, 42 — and 12 is the shallowest.
-     * There is no argument for adding a grid unit: the socket does not
-     * constrain it at all (the boss keeps its own full-depth pad down to the
-     * rim, which is what puts the mouth on the grid), and the only other
-     * feature down here is the bowtie pocket, whose ceiling is 3 mm under the
-     * deck and whose key is 5.6 tall. At 12 the key still has 3.4 mm of
-     * travel with the pocket fully engaged, after rising its own height to
-     * get there. Height bought past that is height nothing asked for.
+     * 15, AND 14.91 IS WHY. The number that has to clear is not a feature
+     * under the deck — it is the socket mouth. The mouth is a LEVEL face
+     * (a column has to bear on it) inside a SLOPING underside, so the two
+     * can only miss each other by one of them being clear of the other:
+     *
+     *     mouth, from the floor        deck - 2 - 1.03 - 10  = deck - 13.03
+     *     underside at the boss's
+     *       uphill edge (r = 9.5)      deck + 1.88 - D
+     *
+     * and the mouth is clear only when D >= 14.91. Below that it protrudes
+     * BELOW the underside plane — 2.91 mm at D = 12 — and the piece laid on
+     * its own underside balances on that instead. Above it, the recess is a
+     * pocket in the underside and the plane is the lowest thing on the part,
+     * which is what makes the tilt possible at all.
+     *
+     * This used to say "12, and it is not a choice", because the depths that
+     * kept a socket mouth on the 15 mm grid were 12, 27 and 42. That was true
+     * while the boss carried its OWN pad down to the grid. The spacer carries
+     * the grid now, so D is free, and the only thing left asking for a number
+     * is the mouth. 12 is still what to use for a part that will be printed
+     * rim-down with supports: it is 3.2 cm3 lighter on a straight and the
+     * protruding mouth costs nothing when the piece is not standing on it.
      */
-    skirt: { style: 'viaduct', minimalDepthMm: 12 },
+    skirt: { style: 'viaduct', minimalDepthMm: 15 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -1144,19 +1156,23 @@ export function supportBossPos(piece, support) {
  * the spacer is for (see buildSpacerGeometry) — everything below the mouth is
  * the support's problem, not the track's.
  *
- * THE SLOPE COSTS 1.03 mm AND IT IS NOT NEGOTIABLE. `minimalDepthMm` is 12 =
- * 10 of socket + a 2 mm floor, which is exact at ONE POINT and only at one
- * point: the socket is a hex 10.39 mm across corners, the deck falls 0.198
- * mm/mm, so its downhill corner sits 1.03 mm lower than its centre. A mouth
- * placed at the underside puts the socket's level ceiling 1.03 mm INTO a 2 mm
- * floor and leaves 0.97 mm of walking surface over a flat blind hole. So the
- * mouth drops by that much and the socket keeps its full depth under a full
- * floor. A platform pays nothing (grad = 0), which is why the same 12 has
- * always worked for the viaduct boss.
+ * THE FLOOR SETS IT, NOT THE UNDERSIDE. The socket is a hex 10.39 mm across
+ * corners and the deck falls 0.198 mm/mm, so its DOWNHILL CORNER is 1.03 mm
+ * lower than its centre. Put the ceiling one floor thickness under the deck
+ * at that corner and the mouth is 10 mm below that — full socket, full floor,
+ * everywhere. Measured on the built mesh, a mouth placed at the underside
+ * instead left 1.27-1.38 mm of walking surface over a flat blind hole.
  *
- * The cost is paid in bed contact, not in plastic: a level mouth inside a
- * sloping underside protrudes below it on the uphill side, and lowering the
- * mouth deepens that. See TODO §4 — it is what step 3, the tilt, has to face.
+ * `minimalDepthMm` deliberately does not appear here. It used to, as an upper
+ * bound, from the days when the boss carried its own pad down to the grid and
+ * the mouth had to be ON the underside. The spacer carries the grid now, so
+ * the two are independent — and they have to be, because the relationship
+ * between them is what decides whether the piece can be laid on its underside
+ * and printed. See `SPEC.skirt.minimalDepthMm`: at 12 the mouth sits 1.03
+ * BELOW the underside and hangs 2.91 below the plane at the boss's uphill
+ * edge; at 15 it sits 1.97 ABOVE it and the recess is a pocket, clear of the
+ * bed. A platform pays nothing either way, grad being 0 — which is why the
+ * same arithmetic has always worked for the viaduct boss.
  */
 export function socketMouthY(piece, s = null, spec = SPEC) {
     // An elevator keeps the rim boss whatever the skirt style: its housing is
@@ -1170,10 +1186,8 @@ export function socketMouthY(piece, s = null, spec = SPEC) {
     const deck = piece.entryDeck - (piece.drop ?? 0) * f;
     const grad = piece.planLen ? Math.abs(piece.drop ?? 0) / piece.planLen : 0;
     const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
-    return Math.max(piece.rimY, Math.min(
-        deck - (spec.skirt?.minimalDepthMm ?? 15),
-        deck - spec.floorThk - grad * rCorner - spec.socket.depth
-    ));
+    return Math.max(piece.rimY,
+        deck - spec.floorThk - grad * rCorner - spec.socket.depth);
 }
 
 /**

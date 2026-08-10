@@ -941,8 +941,58 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     }
     ops.push(...bossOps(piece, spec, opts.support));
     ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
-    return csgChain(shell, ops, opts.simplifyTol);
+    const solid = csgChain(shell, ops, opts.simplifyTol);
+    return opts.forPrint ? tiltOntoUnderside(solid, piece, spec) : solid;
 }
+
+/**
+ * PRINT ORIENTATION: lay a `minimal` piece on its own underside.
+ *
+ * The whole point of the minimal variant is a constant-depth underside, and a
+ * constant-depth underside under a straight ramp is a PLANE — it just is not a
+ * horizontal one. Printed rim-down, that plane is a wall bottom ramping at
+ * 11.22°, which advances 1.01 mm per 0.2 mm layer: a 78.8° overhang against
+ * the 45-60° FDM tolerates, so the slicer plants tree supports under the whole
+ * length of the part (measured: 44.66 g of support against 72.04 g of model).
+ * Rotated by its own slope the plane is on the bed and the overhang is gone.
+ *
+ * IT IS NOT A ROTATION OF THE WHOLE LIBRARY. Three conditions, all necessary:
+ *
+ *  - `minimal` only. A viaduct piece already has a flat rim on the bed.
+ *  - NO RADIUS. A curve's constant-depth underside is a helicoid, measured
+ *    5.15 mm from its own best-fit plane, and no rotation flattens it. A curve
+ *    has to have its underside CUT as a plane first — see TODO §4 step 5.
+ *  - The socket mouth has to be clear of the underside plane, which is
+ *    `SPEC.skirt.minimalDepthMm >= 14.91`. Below that the mouth protrudes and
+ *    the piece balances on it: the first version of this measured 2 mm² of bed
+ *    contact against 618 rim-down, and was reverted for it.
+ *
+ * Modelled Y-up with the ramp descending along +X, so this is a rotation about
+ * Z through the deck's own slope angle — a proper rotation, so a chiral part
+ * is never mirrored. Applied to the EXPORT mesh only: the scene keeps assembly
+ * orientation, because that is where you check whether a tower stands up.
+ */
+export function tiltOntoUnderside(solid, piece, spec = SPEC) {
+    if (piece.skirtStyle !== 'minimal' || piece.radius || !piece.planLen) return solid;
+    if ((spec.skirt?.minimalDepthMm ?? 0) < MIN_DEPTH_FOR_TILT) return solid;
+    const th = Math.atan2(piece.drop ?? 0, piece.planLen);
+    if (Math.abs(th) < 1e-6) return solid;
+    const c = Math.cos(th), s = Math.sin(th);
+    const p = solid.positions ?? solid.attributes.position.array;
+    for (let i = 0; i < p.length; i += 3) {
+        const x = p[i], y = p[i + 1];
+        p[i] = c * x - s * y;
+        p[i + 1] = s * x + c * y;
+    }
+    return solid;
+}
+
+/**
+ * The depth at which the socket mouth stops protruding below the underside
+ * plane — see `SPEC.skirt.minimalDepthMm`. Below it the tilt makes the part
+ * WORSE than printing it rim-down, so it is refused rather than applied.
+ */
+export const MIN_DEPTH_FOR_TILT = 14.91;
 
 /**
  * Where a switch's code goes: which rail, and how far along.
