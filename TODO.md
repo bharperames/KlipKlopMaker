@@ -320,3 +320,41 @@ So if orientation is ever reintroduced it should follow the pattern the gate
 now uses: a named, documented function on the pure module (`forPrint`), with a
 test that reads the bed contact off the built mesh — not a step hidden in the
 export path.
+
+
+---
+
+## 4. Spacer build: started, backed out, two problems found
+
+Attempted the integration (`socketMouthY`, `spacerHeightMm`, `stackHeightMm`
+for minimal pieces) and reverted it. The arithmetic composes — every stack
+still decomposed into a foot and standard risers — but two things surfaced
+that need deciding before the part is worth cutting.
+
+| piece | socket mouth | spacer | stack below | decomposes |
+|---|---|---|---|---|
+| start | 75.0 | 15.0 | 60.0 | foot + 30 + 15 |
+| straight | 62.6 | **17.6** | 45.0 | foot + 30 |
+| curveL | 27.2 | 12.2 | 15.0 | foot |
+| **lift** | 17.7 | **17.7** | 0.0 | spacer on the ground |
+| end | −0.3 | 0.0 | −0.3 | — |
+
+**Problem 1: a straight wants 17.6 and a lift wants 17.7.** The lift climbs at
+`liftSlopeDeg` (11.4045°) against the ramp's 11.2167°, so its boss sits at a
+fractionally different height. Two parts 0.1 mm apart is worse than no
+distinguishing feature at all — it is the exact failure the D section exists
+to prevent, reintroduced by arithmetic. Either quantise spacer heights and
+absorb ~0.1 mm at the pier (the waterfall step is 0.25, so it is probably
+below noticing), or give the lift the same spacer and let its deck sit 0.1 mm
+off. Needs a decision, not a default.
+
+**Problem 2: flat pieces produce a mouth below the ground.** A start or end
+platform has no drop, so its deck is only `skirtDepth` above its rim and
+`deck − 12` lands at −0.3. Platforms should almost certainly keep the viaduct
+boss and never take a spacer — they are flat, so they have no skirt taper to
+save and nothing to gain.
+
+**And a live regression to avoid:** changing `stackHeightMm` shortens the
+column the SCENE draws by the spacer height. The spacer has to be modelled and
+added to `buildSupportObject` in the same change, or every minimal piece
+floats above its pier in the viewport.
