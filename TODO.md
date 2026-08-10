@@ -74,8 +74,11 @@ takes `viaduct` or `minimal`; measured on the built meshes:
 |---|---|---|
 | viaduct | 60.2 cm³ | 86.2 cm³ |
 | minimal (D = 12), boss column to the rim | 49.5 (−18%) | 69.0 (−20%) |
-| **minimal, boss as a recess** | **46.3 (−23%)** | **64.4 (−25%)** |
-| minimal, D = 15 | 52.7 (−12%) | 73.3 (−15%) |
+| minimal, boss as a recess, D = 12 | 46.3 (−23%) | 64.4 (−25%) |
+| **shipped: recess, D = 15** | **49.5 (−18%)** | **68.6 (−20%)** |
+
+D = 15 rather than 12 is what lets a straight lie on its own underside (§4
+step 4). The 5 points it gives back buy a part that needs no print supports.
 
 On the demo tower the first of those was 1672 g → **1492 g**, an 11% job (only
 the track parts change; keys, risers and feet are untouched).
@@ -100,11 +103,19 @@ and the only other feature is the bowtie pocket, whose ceiling is 3 mm under
 the deck and whose key is 5.6 tall. At 12 the key still has 3.4 mm of travel
 with the pocket fully engaged, after rising its own height to get there.
 
+*Overtaken, and by its own premise.* That whole argument rests on the boss
+keeping a pad down to the grid. The spacer carries the grid now, so D is free
+of the 15 mm family entirely — and the socket, which "does not constrain it at
+all" while it has a pad, constrains it completely once it is a recess: the
+mouth is level and the underside slopes, so **D ≥ 14.91** or the mouth
+protrudes. 15, and see §4 step 4. The key's throat wanted 14.2 anyway.
+
 **What it costs:** the arcade, and unsupported printing on curves. A
-straight's constant-depth underside is planar, so it could be laid flat and
-printed tilted; **a curve's is a helicoid, measured 5.15 mm from the best-fit
-plane**, so no orientation puts it on the bed and a minimal curve needs print
-supports under it. That is why `viaduct` stays the default.
+straight's constant-depth underside is planar, so it can be laid flat and
+printed tilted — it now is, `forPrint`, 524 mm² on the bed and half the
+height. **A curve's is a helicoid, measured 5.15 mm from the best-fit
+plane**, so no orientation puts it on the bed and a minimal curve still needs
+print supports under it. That is why `viaduct` stays the default.
 
 ### Option A — treat the skirt as a breakaway print support
 
@@ -133,15 +144,17 @@ pieces read as one arcade rather than two. Does nothing for the 30%.
 
 ### What is still unproven about B′
 
-- **The print orientation is a claim, not a result.** Laying the underside on
-  the bed puts the socket bore, the key pocket and both end faces 11.2° off
-  vertical. Nothing says that fails, but nothing has printed it either.
-- **The pad under the boss has to be sized per piece type** and its own
-  underside is horizontal in use, so it is 11.2° off the bed in print — a
-  small sloped pad, but it is where the column seats.
-- **The grounded case.** A piece with `rimY = 0` currently rests on its whole
-  skirt. With B′ it rests on the pad and the rib ends, like every other piece.
-  Probably fine, worth checking against `needsPier`.
+- **The print orientation is a claim, not a result** — still true, and the one
+  that matters. Laying the underside on the bed puts the socket bore, the key
+  pocket and both end faces 11.2° off vertical. It measures 524 mm² of bed
+  contact and no overhang over 85% of the length; **nothing has printed it.**
+  That is the next thing to do with a printer rather than a keyboard.
+- ~~The pad under the boss has to be sized per piece type~~ — there is no pad.
+  It is a spacer, and there are two of them, chosen by piece type.
+- **The grounded case** — checked, and it was not fine. A grounded minimal
+  piece touches `rimY` only at its exit boundary, a knife edge rather than a
+  skirt, so `needsPier` reading `rimY > 1` left it standing on nothing. It
+  reads the socket mouth now.
 - **The arcade goes away.** If that turns out to matter, Option C recovers the
   look on whatever depth remains.
 
@@ -200,7 +213,11 @@ another ~30% on top of the 18–20% already saved.
 
 ---
 
-## 3. The tilt: built, measured, reverted
+## 3. The tilt: built, measured, reverted — and now built again
+
+*It shipped in the end (§4 step 4): 443 → 524 mm² on the bed for a straight,
+56 → 28 mm tall. Everything below is the version that failed and why, which is
+still the reason the shipped one is shaped the way it is.*
 
 Rotating a `minimal` piece by its own slope so the underside lies on the bed
 was the obvious answer to the 78.8° overhang. It was implemented and it made
@@ -359,24 +376,38 @@ The changes are strictly ordered, because each one unblocks the next:
    mouth and takes the spacer's bite; `needsPier` reads the mouth too, because
    a grounded minimal piece has no skirt under its boss to rest on. The scene
    and the print shop both draw and count the part.
-4. **The tilt.** REVERTED, and this is where it comes back. It was built and
-   measured 2 mm² of bed contact — because the boss column was the lowest
-   thing on the part, so laying the piece on its underside balanced it on that
-   column. The column is gone now.
+4. **The tilt.** DONE, for straights and lifts. `tiltOntoUnderside`, applied
+   on the export path the way the gate's `forPrint` is, with a test that reads
+   bed contact off the built mesh.
 
-   *What it will meet:* the mouth is a LEVEL face inside a SLOPING underside,
-   so it cannot be flush with it. It hangs below the underside plane on the
-   uphill side of the boss, by up to `grad × bossR + 1.03` ≈ 2.9 mm. That is
-   6× better than the 17.6 mm pad it replaces and 60× better than the measured
-   2 mm² of contact, but it is not zero, and the tilt has to be measured
-   against it rather than assumed. The algebra says a boss recess is flush AND
-   keeps its floor only when D ≥ 14.91 — which is a second, independent
-   argument for the D = 14–15 that step 5 wants for curves.
+   | | rim-down | forPrint |
+   |---|---|---|
+   | straight | 443 mm² contact, 56 mm tall | **524 mm², 28 mm** |
+   | lift | 446 mm², 56 mm tall | **523 mm², 28 mm** |
+   | curveL | 444 mm², 71 mm tall | refused |
+
+   **It cost D = 15.** The mouth is a LEVEL face inside a SLOPING underside,
+   so one has to be clear of the other, and the algebra says D ≥ 14.91 —
+   below that the mouth protrudes 2.91 mm and the piece balances on it, which
+   is exactly the 2 mm² failure that got the first version reverted. So the
+   part is 3.2 cm³ heavier on a straight and the saving against viaduct goes
+   from 23% back to 18%. Worth it: a straight that lies down needs no print
+   supports at all, against 44.66 g of support for 72.04 g of model.
+
+   *Residual:* probed along the wall, the underside is on the bed from 5% to
+   90% of the length. The last 15 mm rises to 2.6 mm, because `skirtBottom`
+   clamps at the rim and D exceeds `skirtDepth` by 3 — so the exit rib keeps
+   the 78.8° overhang the rest of the part no longer has. Removing the clamp
+   is NOT the fix: tried, and the exit rib's own level bottom then protrudes
+   below the plane and contact goes to zero. The rib bottom would have to
+   follow the plane, which is the same change curves need below.
 5. **Curves.** The underside has to be cut as a **tilted plane** rather than at
    constant depth under the deck, at D = 14, or the surface being laid on the
    bed is still a helicoid. That needs `channelProfile` to accept a different
    bottom height for each wall at the same station, which it cannot express
-   today. This is the only real refactor left in the sequence.
+   today. This is the only real refactor left in the sequence — and note that
+   D = 14 is below the 14.91 the socket mouth needs, so a plane-cut curve has
+   to check its own mouth clearance rather than inherit the straight's.
 
 ## 5. Spacer build: the two decisions it needed
 
