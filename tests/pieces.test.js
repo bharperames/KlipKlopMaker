@@ -5,7 +5,7 @@
 import { jest } from '@jest/globals';
 import {
     layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt,
-    planPillarPositions, socketMouthY
+    planPillarPositions, socketMouthY, SPACER_VARIANTS
 } from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
 import * as pieceBuilders from '../js/pieces.js';
@@ -384,6 +384,38 @@ describe('standard support parts', () => {
         for (const size of STANDARD.riserSizes) {
             expectWatertight(buildRiserGeometry(size), `riser ${size}`);
         }
+    });
+
+    /**
+     * The spacer is the one support part you have to pick out of a heap by
+     * feel, so its shape is doing a job: round with one flat where everything
+     * else in the library is a 15 AF hex, and rings you count rather than a
+     * height you would have to measure. These check the part is real (both
+     * variants watertight, both plugging into the same interlock) and that the
+     * two are actually TOLD APART by their ring count and their code.
+     */
+    test.each(SPACER_VARIANTS.map(v => [v.code, v]))('spacer %s is watertight and reads as itself', async (_code, v) => {
+        const { buildSpacerGeometry } = await import('../js/pieces.js');
+        const plain = expectWatertight(buildSpacerGeometry(v.heightMm, SPEC, { rings: v.rings }), `spacer ${v.code}`);
+        const marked = expectWatertight(
+            buildSpacerGeometry(v.heightMm, SPEC, { rings: v.rings, code: partCode(v.code, GEOMETRY_VERSION) }),
+            `spacer ${v.code} engraved`);
+        // the code is cut into the flat, so it can only remove material
+        expect(plain.volumeMm3 - marked.volumeMm3).toBeGreaterThan(1);
+
+        // rings are counted, so they have to exist: one groove per variant,
+        // each a measurable bite out of the body
+        const ringless = analyzeGeometry(buildSpacerGeometry(v.heightMm, SPEC, { rings: 0 }));
+        const perRing = (ringless.volumeMm3 - plain.volumeMm3) / v.rings;
+        expect(`${v.code} ${v.rings} rings, ${perRing.toFixed(0)} mm3 each`)
+            .toBe(`${v.code} ${v.rings} rings, ${Math.max(perRing, 40).toFixed(0)} mm3 each`);
+    });
+
+    test('the two spacers are never the same part', () => {
+        const [a, b] = SPACER_VARIANTS;
+        expect(a.rings).not.toBe(b.rings);
+        expect(a.code).not.toBe(b.code);
+        expect(Math.abs(a.heightMm - b.heightMm)).toBeGreaterThan(3);
     });
 });
 

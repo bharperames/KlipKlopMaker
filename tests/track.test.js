@@ -516,3 +516,95 @@ describe('seam widths', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// The spacer: what puts a minimal piece's socket back on the grid
+// ---------------------------------------------------------------------------
+import { socketMouthY, spacerHeightMm, spacerVariant, supportsPillar, SPACER_VARIANTS }
+    from '../js/track.js';
+
+describe('the spacer', () => {
+    const SPIRAL = ['straight', 'curveL', 'curveL', 'curveL', 'curveL',
+        'curveL', 'curveL', 'curveL', 'curveL', 'straight', 'straight'];
+    const LIFTS = ['straight', 'curveL', 'curveL', 'lift', 'lift', 'curveR', 'straight'];
+
+    const chain = (seq, skirtStyle) => {
+        const { pieces } = layoutTrack(seq, { skirtStyle });
+        return planPillarPositions(pieces)
+            .filter(s => supportsPillar(s) && needsPier(pieces[s.pieceIndex]))
+            .map(s => ({ sup: s, pc: pieces[s.pieceIndex] }));
+    };
+
+    test('a viaduct build is untouched: the mouth is the rim and no spacer exists', () => {
+        for (const { sup, pc } of chain(SPIRAL, 'viaduct')) {
+            expect(socketMouthY(pc, sup.s)).toBe(pc.rimY);
+            expect(spacerHeightMm(pc)).toBe(0);
+            expect(stackHeightMm(pc, sup))
+                .toBeCloseTo(pc.rimY - (sup.mode === 'jog' ? SPEC.jog.heightMm : 0), 9);
+        }
+    });
+
+    /**
+     * THE WHOLE POINT. A minimal piece's socket mouth lands wherever the deck
+     * happens to be, which is never a grid line — so the parts under it have
+     * to add up to it anyway: riser stack (a multiple of 15) + jog + spacer.
+     * If this drifts, columns stop reaching their sockets.
+     */
+    test.each([['spiral', SPIRAL], ['lifts', LIFTS]])(
+        'every %s support composes: foot + risers + jog + spacer = the mouth', (_name, seq) => {
+            const worst = [];
+            for (const { sup, pc } of chain(seq, 'minimal')) {
+                const stack = stackHeightMm(pc, sup);
+                const dec = decomposeSupport(stack);
+                expect(stack > 1 ? dec : null).not.toBe(undefined);
+                if (stack > 1) expect(dec).not.toBeNull();
+                const built = (dec ? STANDARD.footHeight + dec.risers.reduce((a, b) => a + b, 0) : 0)
+                    + (sup.mode === 'jog' ? SPEC.jog.heightMm : 0)
+                    + spacerHeightMm(pc);
+                worst.push(Math.abs(built - socketMouthY(pc, sup.s)));
+            }
+            expect(worst.length).toBeGreaterThan(4);
+            // 0.08 is the LIFT, and it is a decision: a lift's own remainder is
+            // 16.6645 against a straight's 16.5888, and two spacers 0.08 apart
+            // is worse than no distinguishing feature at all. Its deck sits
+            // 0.08 low instead, beside a waterfall step of 0.25.
+            expect(Math.max(...worst)).toBeLessThan(0.08);
+        });
+
+    test('only two spacers exist, and each stack lands on one of them', () => {
+        const heights = new Set();
+        for (const { pc } of [...chain(SPIRAL, 'minimal'), ...chain(LIFTS, 'minimal')]) {
+            const h = spacerHeightMm(pc);
+            if (h > 0) heights.add(h);
+        }
+        expect([...heights].sort((a, b) => b - a))
+            .toEqual(SPACER_VARIANTS.map(v => v.heightMm).sort((a, b) => b - a));
+        for (const h of heights) expect(spacerVariant(h)).not.toBeNull();
+    });
+
+    /**
+     * A grounded minimal piece has no rim under its boss — its underside
+     * follows the deck and only touches rimY at the exit boundary — so unlike
+     * a grounded viaduct piece it cannot rest on its own skirt.
+     */
+    test('a grounded minimal piece still needs something under it', () => {
+        const ground = chain(SPIRAL, 'minimal').find(({ pc }) => pc.rimY < 1);
+        expect(ground).toBeDefined();
+        expect(needsPier(ground.pc)).toBe(true);
+        expect(stackHeightMm(ground.pc, ground.sup)).toBeCloseTo(0, 2);   // spacer on the bed
+        expect(spacerHeightMm(ground.pc)).toBeGreaterThan(10);
+
+        const viaduct = layoutTrack(SPIRAL, { skirtStyle: 'viaduct' }).pieces.find(p => p.rimY < 1
+            && p.type !== 'end' && p.type !== 'start');
+        expect(needsPier(viaduct)).toBe(false);
+    });
+
+    test('platforms and elevators keep the rim boss and take no spacer', () => {
+        const { pieces } = layoutTrack(['start', 'straight', 'elevator', 'powered', 'end'],
+            { skirtStyle: 'minimal' });
+        for (const pc of pieces.filter(p => ['start', 'end', 'powered', 'elevator'].includes(p.type))) {
+            expect(`${pc.type} mouth ${socketMouthY(pc).toFixed(2)}`).toBe(`${pc.type} mouth ${pc.rimY.toFixed(2)}`);
+            expect(spacerHeightMm(pc)).toBe(0);
+        }
+    });
+});

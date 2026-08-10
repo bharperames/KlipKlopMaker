@@ -236,6 +236,36 @@ export const SPEC = {
      * adding an off-grid step: `decomposeSupport` still lands on the grid.
      */
     jog: { armMm: 45, heightMm: 15 },
+    /**
+     * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
+     * the 15 mm grid. Same move as the jog: the track piece keeps one shape and
+     * the support absorbs the remainder.
+     *
+     * TWO SIZES, and they are not round numbers because they are not free. A
+     * minimal piece's mouth sits at `socketMouthY`, which is fixed by the deck
+     * height at the boss — 16.5888 above the rim on a straight, 26.1991 on a
+     * curve. The spacer is exactly that remainder (less a whole grid unit,
+     * where one fits), so the stack UNDER it is a multiple of 15 and
+     * `decomposeSupport` still works:
+     *
+     *     straight   16.5888 -> 16.59 spacer, stack = rim          (-0.001)
+     *     lift       16.6645 -> 16.59 spacer, stack = rim          (+0.075)
+     *     curve      26.1991 -> 11.20 spacer, stack = rim + 15     (-0.001)
+     *
+     * A LIFT SHARES THE STRAIGHT'S. It climbs at `liftSlopeDeg` against the
+     * ramp's slope, so its own remainder is 0.0757 mm more — and two parts a
+     * tenth of a millimetre apart is the exact failure the D section exists to
+     * prevent, reintroduced by arithmetic. The lift's deck sits 0.08 low
+     * instead; the waterfall step it lands beside is 0.25.
+     *
+     * The curve's 11.20 is under the ~12 mm that "a 10 mm socket plus a floor"
+     * suggests: it leaves a 1.2 mm plate between the socket ceiling and the
+     * tenon shoulder. That plate is not in the load path — the column bears
+     * through the annular wall — and taking the alternative (a 26.20 spacer,
+     * no grid unit under it) would stand a grounded curve on an 18 mm disc
+     * instead of on a foot.
+     */
+    spacer: { straightMm: 16.59, curveMm: 11.20 },
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
@@ -1129,7 +1159,12 @@ export function supportBossPos(piece, support) {
  * mouth deepens that. See TODO §4 — it is what step 3, the tilt, has to face.
  */
 export function socketMouthY(piece, s = null, spec = SPEC) {
-    if (piece.skirtStyle !== 'minimal') return piece.rimY;
+    // An elevator keeps the rim boss whatever the skirt style: its housing is
+    // a solid block from the rim to the deck, so there is no sloping underside
+    // for a recess to sit in and nothing to save by cutting one.
+    if (piece.skirtStyle !== 'minimal' || piece.isElevator || piece.type === 'elevator') {
+        return piece.rimY;
+    }
     const at = s ?? massCentreS(piece);
     const f = piece.planLen ? at / piece.planLen : 0;
     const deck = piece.entryDeck - (piece.drop ?? 0) * f;
@@ -1141,20 +1176,63 @@ export function socketMouthY(piece, s = null, spec = SPEC) {
     ));
 }
 
-/** Height the riser stack has to make up under a support record. */
+/**
+ * Which spacer goes under a piece, or 0 for the pieces that take none.
+ *
+ * Platforms and powered tiles are FLAT, so their deck is exactly `skirtDepth`
+ * above the rim and the mouth lands on the rim itself — they keep the viaduct
+ * boss and need nothing. Everything that slopes takes one of the two.
+ */
+export function spacerHeightMm(piece) {
+    if (!piece || socketMouthY(piece) - piece.rimY < 0.5) return 0;
+    return piece.radius ? SPEC.spacer.curveMm : SPEC.spacer.straightMm;
+}
+
+/**
+ * The two spacers as PARTS: what to engrave on one and how many rings to turn
+ * into it. The rings are the thing that survives a heap — 16.59 and 11.20 are
+ * 5.4 mm apart, which nobody picks out by eye, and the taller one takes the
+ * larger count so the two agree with each other.
+ */
+export const SPACER_VARIANTS = [
+    { heightMm: SPEC.spacer.straightMm, rings: 2, code: 'SPS', fits: 'straights and lifts' },
+    { heightMm: SPEC.spacer.curveMm, rings: 1, code: 'SPC', fits: 'curves' }
+];
+
+/** The variant record for a height from spacerHeightMm, or null for none. */
+export const spacerVariant = (heightMm) =>
+    SPACER_VARIANTS.find(v => Math.abs(v.heightMm - heightMm) < 0.005) ?? null;
+
+/**
+ * Height the riser stack has to make up under a support record — from the
+ * ground to the bottom of whatever plugs into the socket.
+ *
+ * Three things can stand between the ground and the mouth and each takes its
+ * own bite: the riser stack, a jog where the column had to step aside, and a
+ * spacer where the mouth is not on the grid. On a viaduct piece the last is
+ * zero and the mouth IS the rim, so this is the expression it always was.
+ */
 export function stackHeightMm(piece, support) {
-    return piece.rimY - (support?.mode === 'jog' ? SPEC.jog.heightMm : 0);
+    return socketMouthY(piece, support?.s) - spacerHeightMm(piece)
+        - (support?.mode === 'jog' ? SPEC.jog.heightMm : 0);
 }
 
 /** True for records that carry a real socket boss (i.e. not a blocked column). */
 export const supportsPillar = (s) => !!s && (s.mode === 'center' || s.mode === 'jog');
 
 /**
- * True when a piece actually needs a pier printed under its boss. A piece
- * sitting at ground level rests on its own skirt: it keeps the boss (so the
- * part stays interchangeable with airborne ones) but nothing goes under it.
+ * True when a piece actually needs something printed under its boss. A viaduct
+ * piece sitting at ground level rests on its own skirt: it keeps the boss (so
+ * the part stays interchangeable with airborne ones) but nothing goes under it.
+ *
+ * A GROUNDED MINIMAL PIECE IS NOT THAT CASE, and that is why this reads the
+ * MOUTH rather than the rim. Its underside follows the deck, so `rimY` is
+ * touched only at the exit boundary — a knife edge, not a skirt — and the
+ * mouth is 16.6 mm (straight) or 26.2 mm (curve) up in the air. It stands on
+ * its spacer like every other minimal piece; there is simply no riser stack
+ * under it. See TODO §1, "the grounded case".
  */
-export const needsPier = (piece) => !!piece && piece.rimY > 1;
+export const needsPier = (piece) => !!piece && socketMouthY(piece) > 1;
 
 /**
  * Spiral-tier / branch clearance check. Pieces that share an endpoint

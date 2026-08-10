@@ -23,7 +23,8 @@ import {
     SPEC, STANDARD, GEOMETRY_VERSION, isStandardParams, decomposeSupport,
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
-    planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame, innerWidthAt
+    planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame, innerWidthAt,
+    spacerHeightMm, spacerVariant, SPACER_VARIANTS
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
@@ -37,6 +38,7 @@ import {
     initCSG, toBufferGeometry, buildPieceDisplayGeometry, buildSwitchDisplayGeometry,
     buildPieceExportGeometry, buildSwitchExportGeometry, gatePinPosition,
     buildPillarGeometry, buildSupportFootGeometry, buildRiserGeometry, buildJogGeometry,
+    buildSpacerGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
     sectionGeometry, supportStations, GATE
@@ -422,13 +424,25 @@ function rebuild() {
         // and one curve, not two of each — but there is nothing for a pier to
         // span, and buildPillarGeometry(0) drew a stub foot under it anyway.
         if (!needsPier(pc)) continue;
-        trackGroup.add(buildSupportObject(stackHeightMm(pc, sup), sup.x, sup.z));
+        // Ground to mouth, in the order the parts stack: risers, then the jog
+        // that steps the column across, then the spacer that makes up whatever
+        // the 15 mm grid could not. A grounded minimal piece has no stack at
+        // all — its spacer stands on the bed.
+        let y = stackHeightMm(pc, sup);
+        if (y > 1) trackGroup.add(buildSupportObject(y, sup.x, sup.z));
+        const boss = supportBossPos(pc, sup);
         if (sup.mode === 'jog') {
-            const boss = supportBossPos(pc, sup);
             const jog = makeStackedSupportMesh(supportGeom('jog'), MAT.pillar);
-            jog.position.set(sup.x, stackHeightMm(pc, sup), sup.z);
+            jog.position.set(sup.x, y, sup.z);
             jog.rotation.y = -Math.atan2(boss.z - sup.z, boss.x - sup.x);
             trackGroup.add(jog);
+            y += SPEC.jog.heightMm;
+        }
+        const spacer = spacerHeightMm(pc);
+        if (spacer > 0) {
+            const mesh = makeStackedSupportMesh(supportGeom(`spacer:${spacer}`), MAT.pillar);
+            mesh.position.set(boss.x, y, boss.z);
+            trackGroup.add(mesh);
         }
     }
 
@@ -502,9 +516,18 @@ function supportGeom(kind) {
         supportGeomCache.set(kind,
             kind === 'foot' ? buildSupportFootGeometry()
                 : kind === 'jog' ? toBufferGeometry(buildJogGeometry())
-                    : toBufferGeometry(buildRiserGeometry(Number(kind))));
+                    : String(kind).startsWith('spacer:')
+                        ? toBufferGeometry(spacerGeometryFor(Number(String(kind).slice(7))))
+                        : toBufferGeometry(buildRiserGeometry(Number(kind))));
     }
     return supportGeomCache.get(kind);
+}
+
+/** One spacer, rings and all. `code` is export-only — see buildRiserGeometry. */
+function spacerGeometryFor(heightMm, withCode = false) {
+    const v = spacerVariant(heightMm);
+    return buildSpacerGeometry(v.heightMm, SPEC,
+        { rings: v.rings, code: withCode ? partCode(v.code, GEOMETRY_VERSION) : null });
 }
 
 function makeStackedSupportMesh(geometry, material) {
@@ -3207,6 +3230,7 @@ function assembleParts() {
         gate: 'Pin seats in the switch deck bore; blade must swing freely.',
         pillar: 'Hex tenon, 8.6 mm across the flats, 10 mm deep. Sockets are drawn 9.0 in risers and scenery but 8.75 in a track piece: from the same AF 9 drawing the riser sockets measured 8.62–8.65 and the track sockets 8.85–8.95, and the same tenon is snug in one and loose in the other.',
         jog: 'Offset riser: steps a support column 45 mm sideways past the tier below. One grid unit tall, so it replaces a 15 mm riser in the stack.',
+        spacer: 'Goes directly under a minimal piece, between the riser stack and the socket. Round with one flat, so it is never confused with a hex riser; count the rings — two for straights and lifts, one for curves.',
         scenery: 'Shares the same hex tenon/socket interlock standard.',
         figure: 'Print on its side; hoof cams must be smooth arcs.'
     };
@@ -3359,15 +3383,27 @@ function assembleParts() {
     if (usingStandard()) {
         let feet = 0, jogs = 0;
         const riserCounts = new Map();
+        const spacerCounts = new Map();
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
             if (sup.mode === 'jog') jogs++;
+            // counted before the decompose, because a grounded minimal piece
+            // has NO stack under its spacer and would drop out at the `continue`
+            const sp = spacerHeightMm(pc);
+            if (sp > 0) spacerCounts.set(sp, (spacerCounts.get(sp) ?? 0) + 1);
             const dec = decomposeSupport(stackHeightMm(pc, sup));
             if (!dec) continue;
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
         if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) });
+        for (const [h, count] of [...spacerCounts.entries()].sort((a, b) => b[0] - a[0])) {
+            const v = spacerVariant(h);
+            parts.push({
+                name: `support_spacer_${v.code}`, count, sig: `support_spacer_${v.code}`,
+                kind: 'support', note: note.spacer, build: () => spacerGeometryFor(h, true)
+            });
+        }
         if (feet) parts.push({ name: 'support_foot', count: feet, sig: 'support_foot', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
             parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
@@ -5028,6 +5064,8 @@ async function openPrintShop(opts = {}) {
                 ...[120, 60, 30, 15].map(r => ({
                     name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
                 { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
+                ...SPACER_VARIANTS.map(v => ({
+                    name: `support_spacer_${v.code}`, kind: 'support', build: () => spacerGeometryFor(v.heightMm, true) })),
                 { name: 'scenery_tower', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
