@@ -1347,6 +1347,87 @@ function baseMarkOrigin(code, spec) {
     return [-size.widthMm / 2, 0, -size.heightMm / 2];
 }
 
+/**
+ * SPACER — the short adapter under a `minimal` piece.
+ *
+ * A minimal piece's underside follows the deck, so its socket mouth lands
+ * wherever the deck happens to be rather than on the 15 mm grid, and the
+ * riser ladder cannot compose under it. This makes up the remainder. It is
+ * the jog's move applied to the pad: take the support's problem out of the
+ * track piece rather than growing the piece to solve it.
+ *
+ * TWO of them, one for straights and one for curves — the decision is that a
+ * lift shares the straight's, accepting ~0.1 mm at the pier (the waterfall
+ * step is 0.25, so it is below noticing) rather than shipping two parts a
+ * tenth apart that nobody could tell apart.
+ *
+ * THE BODY IS A D, and that is the whole point of its shape. Every other
+ * support part — riser, foot, tower, jog — is a 15 AF hex, and a 17.5 spacer
+ * beside a 15 riser is 2.6 mm different: invisible in a bag, and the wrong
+ * one under a pier tilts the deck it carries. Round is unmistakable by eye
+ * and by touch. The flat then earns its place three times: it carries the
+ * code, which a plain cylinder has nowhere to put; it gives fingers
+ * something to bear on, which is the one thing the hex body was doing; and
+ * it is a rotational reference, so the code faces the same way when seated.
+ *
+ * Grooves count the variant — one ring for the short, two for the tall — so
+ * the pair is told apart in isolation and not only side by side.
+ */
+export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
+    const R = 9;                       // Ø18: reads as a collar, not a post
+    const FLAT = 6.6;                  // how far the flat cuts in from the axis
+    const n = segmentsForCircle(R);
+    const body = toBufferGeometry(sweepSolid(
+        // hexRingPlan, not hexPlan: sweepSolid lofts profiles point-to-point,
+        // so the hex tenon has to be sampled at the circle's own point count
+        [circlePlan(R, n), circlePlan(R, n),
+         hexRingPlan(TENON_AF, n), hexRingPlan(TENON_AF, n),
+         hexRingPlan(TENON_AF - 1.4, n)
+        ].map(pl => pl.map(([x, z]) => [x, -z])),
+        [0, heightMm, heightMm,
+         heightMm + spec.socket.depth - 2,
+         heightMm + spec.socket.depth - 1
+        ].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+    ));
+    const ops = [
+        // the socket the riser stack plugs into, opening downward
+        { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        // the flat: a slab taken off one side of the body only
+        {
+            op: SUBTRACTION,
+            geometry: toBufferGeometry(extrudePolygonY(
+                [[FLAT, -R - 2], [R + 2, -R - 2], [R + 2, R + 2], [FLAT, R + 2]],
+                -1, heightMm + 0.001))
+        }
+    ];
+    // one ring per variant, counted rather than measured
+    const rings = opts.rings ?? 1;
+    for (let i = 0; i < rings; i++) {
+        const y = 2.5 + i * 3;
+        if (y + 1.2 >= heightMm) break;
+        ops.push({
+            op: SUBTRACTION,
+            geometry: toBufferGeometry(sweepSolid(
+                [circlePlan(R + 1, n), circlePlan(R - 0.7, n), circlePlan(R + 1, n)]
+                    .map(pl => pl.map(([x, z]) => [x, -z])),
+                [y, y + 0.6, y + 1.2].map(yy => ({ origin: [0, yy, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+            ))
+        });
+    }
+    // the code goes on the flat, reading up the part
+    if (opts.code) {
+        const lines = String(opts.code).split(' ');
+        const size = blockSizeMm(lines, { capHeight: spec.engrave.capHeight * 0.7,
+            strokeMm: spec.engrave.minFeature });
+        if (size.heightMm < heightMm - 2 && size.widthMm < 2 * R - 2) {
+            ops.push(...engraveFlatOps(lines,
+                [FLAT, (heightMm - size.widthMm) / 2, size.heightMm / 2],
+                [0, 1, 0], [0, 0, -1], spec, { capHeight: spec.engrave.capHeight * 0.7 }));
+        }
+    }
+    return csgChain(body, ops);
+}
+
 /** Stackable riser: hex tube with a socket below and a tenon above. Needs initCSG. */
 export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     const body = toBufferGeometry(stackedHex([
