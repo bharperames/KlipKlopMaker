@@ -22,7 +22,8 @@ import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
-    pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside
+    pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside,
+    undersidePlane
 } from './track.js';
 import {
     textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm,
@@ -1023,14 +1024,23 @@ export function buildPieceExportGeometry(piece, opts = {}) {
  */
 export function tiltOntoUnderside(solid, piece, spec = SPEC) {
     if (!laysOnUnderside(piece, spec)) return solid;
-    const th = Math.atan2(piece.drop ?? 0, piece.planLen);
-    if (Math.abs(th) < 1e-6) return solid;
-    const c = Math.cos(th), s = Math.sin(th);
+    // Rotate the underside plane's normal onto +Y. For a straight this is the
+    // pitch about Z it always was; for a curve the plane is skewed as well as
+    // pitched, so it takes a general rotation about a horizontal axis. One
+    // Rodrigues rotation covers both, and a rotation is a proper one — a
+    // chiral part is never mirrored.
+    const pl = undersidePlane(piece, spec);
+    const len = Math.hypot(pl.a, 1, pl.b);
+    const n = [-pl.a / len, 1 / len, -pl.b / len];
+    const cos = n[1], sin = Math.hypot(n[0], n[2]);
+    if (sin < 1e-9) return solid;
+    const k = [-n[2] / sin, 0, n[0] / sin];          // unit axis = n x Y
     const p = solid.positions ?? solid.attributes.position.array;
     for (let i = 0; i < p.length; i += 3) {
-        const x = p[i], y = p[i + 1];
-        p[i] = c * x - s * y;
-        p[i + 1] = s * x + c * y;
+        const v = [p[i], p[i + 1], p[i + 2]];
+        const kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+        const cr = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+        for (let j = 0; j < 3; j++) p[i + j] = v[j] * cos + cr[j] * sin + k[j] * kv * (1 - cos);
     }
     return solid;
 }
@@ -1506,18 +1516,37 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
                 -1, heightMm + 0.001))
         }
     ];
-    // one ring per variant, counted rather than measured
+    /**
+     * One ring per variant, counted rather than measured.
+     *
+     * THE CUTTER HAS TO BE A TUBE. `sweepSolid` over circle profiles makes a
+     * solid of revolution — it contains the AXIS — so a bicone 10 → 8.3 → 10
+     * subtracted straight from the body does not cut a groove, it eats the
+     * core: at the waist all that was left was a 0.76 mm shell, and the part
+     * read on screen as though it were in three pieces. It stayed watertight
+     * throughout, so nothing caught it; the test now bounds how much a ring may
+     * remove, not just how little.
+     *
+     * So the bicone has its own bore taken out first, and what is subtracted
+     * from the spacer is the annular V that is left.
+     */
     const rings = opts.rings ?? 1;
+    const waist = R - 0.7;
     for (let i = 0; i < rings; i++) {
         const y = 2.5 + i * 3;
         if (y + 1.2 >= heightMm) break;
+        const bicone = toBufferGeometry(sweepSolid(
+            [circlePlan(R + 1, n), circlePlan(waist, n), circlePlan(R + 1, n)]
+                .map(pl => pl.map(([x, z]) => [x, -z])),
+            [y, y + 0.6, y + 1.2].map(yy => ({ origin: [0, yy, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        ));
+        const bore = toBufferGeometry(sweepSolid(
+            [circlePlan(waist, n), circlePlan(waist, n)].map(pl => pl.map(([x, z]) => [x, -z])),
+            [y - 1, y + 2.2].map(yy => ({ origin: [0, yy, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        ));
         ops.push({
             op: SUBTRACTION,
-            geometry: toBufferGeometry(sweepSolid(
-                [circlePlan(R + 1, n), circlePlan(R - 0.7, n), circlePlan(R + 1, n)]
-                    .map(pl => pl.map(([x, z]) => [x, -z])),
-                [y, y + 0.6, y + 1.2].map(yy => ({ origin: [0, yy, 0], right: [1, 0, 0], up: [0, 0, -1] }))
-            ))
+            geometry: toBufferGeometry(csgChain(bicone, [{ op: SUBTRACTION, geometry: bore }]))
         });
     }
     // the code goes on the flat, reading up the part

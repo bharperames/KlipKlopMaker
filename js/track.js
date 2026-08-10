@@ -1206,17 +1206,98 @@ export function collarFits(piece, spec) {
 }
 
 /**
+ * THE UNDERSIDE OF A MINIMAL PIECE, AS ONE PLANE.
+ *
+ * A constant-depth underside — the deck held down by D — is a plane under a
+ * straight and a HELICOID under a curve, measured 5.15 mm from its own
+ * best-fit plane. That is why a straight can be laid on the bed and a curve
+ * cannot. Cutting the underside as an actual plane makes them the same part
+ * again, and a straight is unchanged by it: its constant-depth surface already
+ * IS a plane, so the fit reproduces it with zero residual and one code path
+ * serves both.
+ *
+ * FITTED TO THE TWO WALL BOTTOM LINES, because they are what has to touch the
+ * bed, so they are what the fit should minimise against. (§3 of TODO recorded
+ * 11.77° and ±4.74 from a different sample set; over the walls it is 11.53°
+ * and ±5.46.)
+ *
+ * THE OFFSET IS SET BY THE SHALLOWEST POINT, NOT THE MEAN, and that is the
+ * decision the whole thing turns on. Held at the mean, D = 14 leaves 8.5 mm at
+ * the shallow corner — less than the key band it was chosen to clear — and
+ * puts the boss at mean − 0.12, missing the depth its collar needs. Held at the
+ * shallowest point, `minimalDepthMm` means what it says everywhere: min depth
+ * is D by construction, the key's throat clears, and the boss sits 5.3 mm
+ * deeper than it needs. It costs a curve about 6 cm³ of extra material, which
+ * is what a part that lands on the plate is worth.
+ *
+ * Frame-dependent, so the cache key carries the frame: `archedRimY` is called
+ * with world pieces (display) and framed ones (export).
+ */
+const planeCache = new Map();
+
+export function undersidePlane(piece, spec = SPEC) {
+    const D = spec.skirt?.minimalDepthMm ?? 15;
+    const key = [piece.type, piece.planLen, piece.radius ?? 0, piece.turn ?? 0,
+        piece.drop, piece.entryDeck, piece.innerWidth, D,
+        piece.entry.x, piece.entry.z, piece.entry.h].join(',');
+    const hit = planeCache.get(key);
+    if (hit) return hit;
+
+    const Wo = piece.innerWidth / 2 + spec.wall;
+    const pts = [];
+    const N = 96;
+    for (let k = 0; k <= N; k++) {
+        const s = (piece.planLen * k) / N;
+        const p = planPosAt(piece, s), y = deckYAt(piece, s);
+        const r = [Math.sin(p.h), -Math.cos(p.h)];
+        for (const u of [-Wo, Wo]) pts.push([p.x + r[0] * u, p.z + r[1] * u, y]);
+    }
+    // least squares y = a x + b z + c
+    let Sxx = 0, Sxz = 0, Szz = 0, Sx = 0, Sz = 0, S1 = 0, Sxy = 0, Szy = 0, Sy = 0;
+    for (const [x, z, y] of pts) {
+        Sxx += x * x; Sxz += x * z; Szz += z * z; Sx += x; Sz += z; S1++;
+        Sxy += x * y; Szy += z * y; Sy += y;
+    }
+    const M = [[Sxx, Sxz, Sx], [Sxz, Szz, Sz], [Sx, Sz, S1]];
+    const V = [Sxy, Szy, Sy];
+    const A = M.map((row, i) => [...row, V[i]]);
+    for (let i = 0; i < 3; i++) {
+        let piv = i;
+        for (let j = i + 1; j < 3; j++) if (Math.abs(A[j][i]) > Math.abs(A[piv][i])) piv = j;
+        [A[i], A[piv]] = [A[piv], A[i]];
+        if (Math.abs(A[i][i]) < 1e-12) { A[i][i] = 1; A[i][3] = 0; continue; }
+        for (let j = 0; j < 3; j++) {
+            if (j === i) continue;
+            const f = A[j][i] / A[i][i];
+            for (let k2 = i; k2 < 4; k2++) A[j][k2] -= f * A[i][k2];
+        }
+    }
+    let a = A[0][3] / A[0][0], b = A[1][3] / A[1][1], c = A[2][3] / A[2][2];
+    // drop the plane until the SHALLOWEST point is exactly D under the deck
+    let shallowest = Infinity;
+    for (const [x, z, y] of pts) shallowest = Math.min(shallowest, y - (a * x + b * z + c));
+    c += shallowest - D;
+
+    const out = { a, b, c, at: (x, z) => a * x + b * z + c };
+    if (planeCache.size > 512) planeCache.clear();
+    planeCache.set(key, out);
+    return out;
+}
+
+/**
  * Is this piece EXPORTED LYING ON ITS UNDERSIDE? One predicate, because three
  * things have to agree about it: the shell (whether to clamp the underside at
  * the rim), the boss (whether to build a collar), and the exporter (whether to
  * rotate). They disagreed once and the part balanced on its boss.
  *
- * A curve is excluded because its constant-depth underside is a HELICOID,
- * measured 5.15 mm from its own best-fit plane, and no rotation flattens it.
- * A curve has to have its underside CUT as a plane first — TODO §6.
+ * A CURVE IS INCLUDED NOW. It used to be excluded because a constant-depth
+ * underside under a curve is a HELICOID, 5.15 mm from its own best-fit plane,
+ * and no rotation flattens it. `undersidePlane` cuts the underside AS a plane
+ * instead, so there is nothing left to flatten and a curve lies down like a
+ * straight. Platforms and powered tiles stay out: they are level already.
  */
 export function laysOnUnderside(piece, spec) {
-    return piece.skirtStyle === 'minimal' && !piece.radius
+    return piece.skirtStyle === 'minimal'
         && piece.planLen > 0 && Math.abs(piece.drop ?? 0) > 1e-6
         && collarFits(piece, spec);
 }

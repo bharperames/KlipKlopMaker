@@ -8,7 +8,7 @@
  */
 
 import { signedMeshVolumeMm3 } from './mesh_utils.js';
-import { ridgeOffset, deckYAt, innerWidthAt, collarFits, laysOnUnderside } from './track.js';
+import { ridgeOffset, deckYAt, innerWidthAt, planPosAt, undersidePlane, collarFits, laysOnUnderside } from './track.js';
 
 /** Shoelace signed area of a 2D polygon [[x,y],...]. Positive = CCW. */
 export function signedArea2D(pts) {
@@ -188,10 +188,16 @@ export function channelProfile(o) {
     const {
         innerWidth, wall, railH, floorThk,
         filletR = 2, filletSegs = 4,
-        deckY, rimY, ridge = 0
+        deckY, rimY, rimL = rimY, rimR = rimY, ridge = 0
     } = o;
     const Wi = innerWidth / 2;
     const Wo = Wi + wall;
+    // The underside is a PLANE, and under a curve that plane is at a different
+    // height on the two walls at the same station. `rimL`/`rimR` are its values
+    // at ∓Wo; every other point on the bottom edge is a linear interpolation
+    // between them, which is exact because the surface is a plane. Given one
+    // `rimY` (a viaduct's flat rim) this is the profile it always was.
+    const rimAt = (u) => rimL + ((u + Wo) / (2 * Wo)) * (rimR - rimL);
     const dS = deckY + ridge;          // floor surface rides the washboard
     const railTop = deckY + railH;     // rail crest follows the deck line, not the ridges
     const ceilY = deckY - floorThk;    // flat drumhead underside
@@ -209,8 +215,8 @@ export function channelProfile(o) {
     const cr = Math.min(0.8, Math.max(0.2, (wall - 0.4) / 2));  // rail crest chamfer
     const ce = 0.5;  // bed-edge chamfer
     const pts = [];
-    pts.push([-Wo + ce, rimY]);
-    pts.push([-Wo, rimY + ce]);
+    pts.push([-Wo + ce, rimAt(-Wo + ce)]);
+    pts.push([-Wo, rimAt(-Wo) + ce]);
     pts.push([-Wo, railTop - cr]);
     pts.push([-Wo + cr, railTop]);
     pts.push([-Wi - cr, railTop]);
@@ -230,12 +236,12 @@ export function channelProfile(o) {
     pts.push([Wi + cr, railTop]);
     pts.push([Wo - cr, railTop]);
     pts.push([Wo, railTop - cr]);
-    pts.push([Wo, rimY + ce]);
-    pts.push([Wo - ce, rimY]);
-    pts.push([Wi, rimY]);
+    pts.push([Wo, rimAt(Wo) + ce]);
+    pts.push([Wo - ce, rimAt(Wo - ce)]);
+    pts.push([Wi, rimAt(Wi)]);
     pts.push([Wi, ceilY]);
     pts.push([-Wi, ceilY]);
-    pts.push([-Wi, rimY]);
+    pts.push([-Wi, rimAt(-Wi)]);
     return pts;
 }
 
@@ -572,12 +578,18 @@ export function archStations(piece, spec, supportStations = [], forced = null, p
  * orientation puts it on the bed, and a minimal curve needs print supports
  * under it. That is the trade, and it is why `viaduct` stays the default.
  */
-export function archedRimY(piece, s, spec, supportStations = [], forced = null) {
+export function archedRimY(piece, s, spec, supportStations = [], forced = null, u = 0) {
     const { pad: PAD, margin: MARGIN, pier: PIER, maxRise: ARCH_MAX_RISE } = ARCH;
     const flat = piece.rimY;
     if (piece.skirtStyle === 'minimal') {
-        const D = spec.skirt?.minimalDepthMm ?? 15;
-        const deck = piece.entryDeck - (piece.drop ?? 0) * (piece.planLen ? s / piece.planLen : 0);
+        // ONE PLANE, and `u` is why it takes a lateral offset: under a curve the
+        // plane is at a different height on each wall at the same station, which
+        // is exactly what a constant-depth cut cannot express. See
+        // undersidePlane — for a straight this returns deck − D as before.
+        const pl = undersidePlane(piece, spec);
+        const pos = planPosAt(piece, s);
+        const r = [Math.sin(pos.h), -Math.cos(pos.h)];
+        const deckPlane = pl.at(pos.x + r[0] * u, pos.z + r[1] * u);
         // CLAMPED AT THE RIM ONLY FOR A PIECE THAT PRINTS RIM-DOWN, because
         // then the rim IS its bed contact. A piece that is laid on its own
         // underside wants the opposite: the clamp flattens the last 17 mm, the
@@ -586,7 +598,7 @@ export function archedRimY(piece, s, spec, supportStations = [], forced = null) 
         // matter that the underside then hangs below the piece's grid datum —
         // Brett: "the bottom doesn't have to end up level" — because nothing
         // stands on it. The spacer does that.
-        return laysOnUnderside(piece, spec) ? deck - D : Math.max(flat, deck - D);
+        return laysOnUnderside(piece, spec) ? deckPlane : Math.max(flat, deckPlane);
     }
     const bounds = windowBounds(piece, spec, supportStations, forced);
     if (!bounds.length) return flat;
@@ -624,7 +636,8 @@ export function pieceProfiles(piece, stations, spec, withRidges, supportStations
         floorThk: spec.floorThk,
         filletR: spec.filletR,
         deckY: 0, // origins already carry the deck elevation
-        rimY: archedRimY(piece, st.s, spec, supportStations, forced) - deckYOffset(piece, st),
+        rimL: archedRimY(piece, st.s, spec, supportStations, forced, -(innerWidthAt(piece, st.s) / 2 + spec.wall)) - deckYOffset(piece, st),
+        rimR: archedRimY(piece, st.s, spec, supportStations, forced, innerWidthAt(piece, st.s) / 2 + spec.wall) - deckYOffset(piece, st),
         ridge: withRidges ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) : 0
     }));
 }

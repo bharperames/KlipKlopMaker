@@ -573,10 +573,8 @@ describe('the spacer', () => {
 
     /**
      * A spacer exists to make up a RECESSED seat, and only a piece that is laid
-     * on its own underside has one. A curve still prints rim-down — its
-     * underside is a helicoid, TODO §6 — so its boss reaches the rim like a
-     * viaduct boss and it takes no spacer. The curve variant stays in the
-     * library for when that changes; it is simply not called for yet.
+     * on its own underside has one. Platforms are level: they print rim-down,
+     * their boss reaches the rim like a viaduct boss, and they take none.
      */
     test('every spacer a build asks for is one of the library variants', () => {
         const heights = new Set();
@@ -586,10 +584,11 @@ describe('the spacer', () => {
         }
         expect(heights.size).toBeGreaterThan(0);
         for (const h of heights) expect(spacerVariant(h)).not.toBeNull();
-        // and the ones that take none are the ones that print rim-down
+        // and the ones that take none are the ones that print rim-down: a
+        // platform is level, so its boss reaches the rim and needs no spacer
         for (const { pc } of chain(SPIRAL, 'minimal')) {
             expect(`${pc.type} spacer ${spacerHeightMm(pc) > 0}`)
-                .toBe(`${pc.type} spacer ${!pc.radius && Math.abs(pc.drop) > 1e-6}`);
+                .toBe(`${pc.type} spacer ${Math.abs(pc.drop) > 1e-6}`);
         }
     });
 

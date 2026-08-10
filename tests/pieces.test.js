@@ -410,8 +410,13 @@ describe('standard support parts', () => {
         // each a measurable bite out of the body
         const ringless = analyzeGeometry(buildSpacerGeometry(v.heightMm, SPEC, { rings: 0 }));
         const perRing = (ringless.volumeMm3 - plain.volumeMm3) / v.rings;
+        // BOUNDED BOTH WAYS. A groove on an 18 mm body is ~26 mm3; asserting
+        // only a minimum is what let a cutter through that was a solid of
+        // REVOLUTION rather than a tube, so it ate the core and left a 0.76 mm
+        // shell at each waist. The part stayed watertight, and on screen it
+        // read as three pieces.
         expect(`${v.code} ${v.rings} rings, ${perRing.toFixed(0)} mm3 each`)
-            .toBe(`${v.code} ${v.rings} rings, ${Math.max(perRing, 40).toFixed(0)} mm3 each`);
+            .toBe(`${v.code} ${v.rings} rings, ${Math.min(Math.max(perRing, 15), 45).toFixed(0)} mm3 each`);
     });
 
     test('the two spacers are never the same part', () => {
@@ -724,7 +729,7 @@ describe('the minimal skirt', () => {
      * So there are two heights to check and they are different: the SEAT, a
      * level face the spacer bears on, and the BOTTOM, which is the plane.
      */
-    test.each(['straight', 'lift'])('%s: the boss reaches the underside plane, and seats above it', (type) => {
+    test.each(['straight', 'curveL', 'lift'])('%s: the boss reaches the underside plane, and seats above it', (type) => {
         const { g, pc, support } = built(type);
         const seat = socketMouthY(pc, support.s);
         expect(seat).toBeGreaterThan(pc.rimY + 10);   // well clear of the rim
@@ -810,15 +815,20 @@ describe('the minimal skirt', () => {
             .toBe(`${type} end faces reach ${Math.min(loEnd - lo, 0.05).toFixed(2)} mm from the bed`);
     });
 
-    test('a curve keeps the rim boss, because it still prints rim-down', () => {
-        const { pc, support } = built('curveL');
-        expect(socketMouthY(pc, support.s)).toBe(pc.rimY);
-        expect(printsLyingDown(pc)).toBe(false);
-    });
-
-    test('a curve refuses the tilt, because its underside is a helicoid', () => {
-        const flat = built('curveL'), asked = built('curveL', true);
-        expect(Array.from(asked.g.positions)).toEqual(Array.from(flat.g.positions));
+    /**
+     * A curve's constant-depth underside is a helicoid and no rotation flattens
+     * it — so the underside is CUT as a plane instead (undersidePlane) and
+     * there is nothing left to flatten. This is the test that says the two
+     * halves of that are actually connected.
+     */
+    test('a curve lies down too, now its underside is cut as a plane', () => {
+        const flat = built('curveL'), tilted = built('curveL', true);
+        expect(printsLyingDown(flat.pc)).toBe(true);
+        const down = bedStability(flat.g.positions, flat.g.indices);
+        const up = bedStability(tilted.g.positions, tilted.g.indices);
+        expect(`curve contact ${up.contactMm2.toFixed(0)} mm2, ${up.heightMm.toFixed(0)} mm tall`)
+            .toBe(`curve contact ${Math.max(up.contactMm2, 800).toFixed(0)} mm2, ${Math.min(up.heightMm, 45).toFixed(0)} mm tall`);
+        expect(up.heightMm).toBeLessThan(down.heightMm * 0.7);
     });
 
     /**
