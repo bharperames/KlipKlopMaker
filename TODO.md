@@ -451,10 +451,16 @@ The changes are strictly ordered, because each one unblocks the next:
    15.21, and `minimalDepthMm` is 15.5. `bossOps` and `tiltOntoUnderside`
    share one test for it (`collarFits`), so a shallower depth gets the old
    plain boss and no tilt rather than a broken part.
-7. **Curves.** NOT BUILT. The underside has to be cut as a **tilted plane**
-   rather than at constant depth under the deck, or the surface being laid on
-   the bed is still a helicoid. See §6 — the D = 14 in the old note is wrong,
-   and the reason it is wrong also makes the change simpler than it looked.
+7. **Curves.** DONE. `undersidePlane` cuts the underside as one PLANE rather
+   than at constant depth, so there is no helicoid left to flatten and a curve
+   lies down like a straight: **453 → 875 mm² on the bed, 71 → 39 mm tall**, at
+   a cost of ~7 cm³. It is fitted to the two wall bottom lines and offset so
+   the SHALLOWEST point is `minimalDepthMm` — §6 has why the mean was the wrong
+   end to hold. A straight is untouched by it: its constant-depth underside
+   already IS that plane, so the fit reproduces it with zero residual and one
+   code path serves both. `channelProfile` takes a bottom per wall — the thing
+   a constant-depth cut cannot express — and `tiltOntoUnderside` is now one
+   Rodrigues rotation of the plane's normal onto +Y.
 
 ## 5. Spacer build: the two decisions it needed
 
