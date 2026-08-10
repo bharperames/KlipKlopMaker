@@ -142,11 +142,20 @@ export const SPEC = {
     skirtDepth: 12,
     /**
      * The two underside shapes. `viaduct` is the default and the printable
-     * one; `minimal` keeps only what the joints and the socket need. See
-     * archedRimY for what each costs. 15 mm is set by the key's throat, not
-     * by the socket.
+     * one; `minimal` keeps only what the joints need. See archedRimY.
+     *
+     * 12, and it is not a choice. The underside meets the rim exactly when
+     * the depth equals `skirtDepth`, so the depths that keep every socket
+     * mouth on the 15 mm grid are 12, 27, 42 — and 12 is the shallowest.
+     * There is no argument for adding a grid unit: the socket does not
+     * constrain it at all (the boss keeps its own full-depth pad down to the
+     * rim, which is what puts the mouth on the grid), and the only other
+     * feature down here is the bowtie pocket, whose ceiling is 3 mm under the
+     * deck and whose key is 5.6 tall. At 12 the key still has 3.4 mm of
+     * travel with the pocket fully engaged, after rising its own height to
+     * get there. Height bought past that is height nothing asked for.
      */
-    skirt: { style: 'viaduct', minimalDepthMm: 15 },
+    skirt: { style: 'viaduct', minimalDepthMm: 12 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that

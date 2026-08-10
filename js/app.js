@@ -2519,6 +2519,13 @@ function refreshPrintPartsList() {
         list.appendChild(li);
     });
 
+    // The list was rebuilt from new geometry, so whatever the inspector is
+    // showing is stale — changing the underside style rebuilt every piece and
+    // the viewport kept the old mesh until you clicked something.
+    if (gallery.parts.length && gallery.selectedIndex != null) {
+        selectGalleryPart(Math.min(gallery.selectedIndex, gallery.parts.length - 1));
+    }
+
     const spoolPct = (totalWeight / 1000) * 100;
     const heading = $('printable-parts-heading');
     if (heading) {
@@ -3223,7 +3230,9 @@ function assembleParts() {
             pc.slopeDeg.toFixed(3),
             pc.ridgePitch ? pc.ridgePitch.toFixed(3) : '0',
             pc.waterfall ? pc.waterfall.toFixed(3) : '0',
-            pc.switchType ?? ''
+            pc.switchType ?? '',
+            // the underside is a different solid, not a view setting
+            pc.skirtStyle ?? 'viaduct'
         ];
         // The support contributes ONE bit to the shape now: whether the piece
         // has a socket boss at all. Where the column goes is the jog's problem,

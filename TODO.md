@@ -70,8 +70,11 @@ takes `viaduct` or `minimal`; measured on the built meshes:
 | | straight | curveL |
 |---|---|---|
 | viaduct | 60.2 cm³ | 86.2 cm³ |
-| minimal, D = 12 | 49.5 (−18%) | 69.0 (−20%) |
+| **minimal (D = 12)** | **49.5 (−18%)** | **69.0 (−20%)** |
 | minimal, D = 15 | 52.7 (−12%) | 73.3 (−15%) |
+
+On the demo tower that is 1672 g → **1492 g**, an 11% job (only the track
+parts change; keys, risers and feet are untouched).
 
 - **The saving is 18–20%, not 26–31%.** The Monte-Carlo estimate compared
   against a bare beam. The real part keeps a full-depth pad under the socket
@@ -82,11 +85,14 @@ takes `viaduct` or `minimal`; measured on the built meshes:
   curve, unchanged. Height only drops if the part is also tilted, and see
   below for why a curve cannot be.
 
-**D is not free to choose.** The underside meets the rim exactly when
-D = `skirtDepth`; anything else either cuts below the grid plane at the low
-end or leaves a step. So the grid-preserving depths are 12, 27, 42… and 12 is
-the one worth having. 15 is the default because the key's throat at D = 12 is
-9 mm against a 5.6 mm key — only 3.4 mm to present it — and that is untested.
+**D is not free to choose, and 12 is the answer.** The underside meets the
+rim exactly when D = `skirtDepth`, so the depths that keep every socket mouth
+on the 15 mm grid are 12, 27, 42 — and 12 is the shallowest. Nothing down
+there argues for more: the socket does not constrain it at all (the boss keeps
+its own full-depth pad to the rim, which is what puts the mouth on the grid),
+and the only other feature is the bowtie pocket, whose ceiling is 3 mm under
+the deck and whose key is 5.6 tall. At 12 the key still has 3.4 mm of travel
+with the pocket fully engaged, after rising its own height to get there.
 
 **What it costs:** the arcade, and unsupported printing on curves. A
 straight's constant-depth underside is planar, so it could be laid flat and
