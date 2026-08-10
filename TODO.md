@@ -138,3 +138,55 @@ pieces read as one arcade rather than two. Does nothing for the 30%.
   Probably fine, worth checking against `needsPier`.
 - **The arcade goes away.** If that turns out to matter, Option C recovers the
   look on whatever depth remains.
+
+
+---
+
+## 2. Why the flat plane cannot be raised, and what the arcade is actually for
+
+Brett: "slice a plane parallel to the build plate just below the lowest
+functional part; the helicoid moves to the contour of the top."
+
+Both halves are right, and together they describe **the part that already
+exists**. Today's rim IS a flat plane parallel to the bed, and the helicoid IS
+already on top, in the deck. So the question is only how far the plane can be
+raised, and the answer is **zero**:
+
+| piece | entry deck | exit deck | rim now | highest legal flat plane |
+|---|---|---|---|---|
+| straight | 87 | 57 | 45 | **45** |
+| curveL | 57 | 12 | 0 | **0** |
+
+The **downhill** rib sets it. That rib needs ~12 mm under its own deck for the
+pocket ceiling, the key band and the throat, and the downhill deck is the
+lowest deck on the piece — so `rimY = lowDeck − 12` is already exactly "just
+below the lowest functional feature". Shortening the front, the back and the
+socket independently does not help: they are all referenced to the deck above
+them, and the one at the low end is what the plane has to clear.
+
+Everything above that plane at the **high** end is not there for a feature. It
+is there because a flat plane under a sloping deck has to be as deep as the
+drop — 30 mm on a straight, 45 on a curve. That is geometry, not design.
+
+### And this is what the arcade is for
+
+Any scheme that removes that material creates a downward-facing surface, and
+that surface has to print. Measured on the ramp slope:
+
+- A wall whose **bottom edge ramps** at 11.22° advances **1.01 mm per 0.2 mm
+  layer** — a **78.8° overhang**, against the 45–60° FDM tolerates. That
+  applies to the `minimal` variant as built, on straights as well as curves.
+- The arcade avoids it by making every downward surface either a **vertical
+  pier** or a **circular arch**, which springs vertically and only becomes a
+  bridge near the crown, between two piers.
+
+So the arcade is not decoration and it is not the reason for the deep skirt —
+it is the *maximal* removal of material that stays self-supporting.
+
+### Which leaves one honest question
+
+Is `minimal` (and any "legs only" version beyond it) worth printing **with
+supports**? The underside is not a show surface, so support scars there cost
+nothing but time and a little filament. That is a preference, not a
+constraint, and it is the only thing standing between the current part and
+another ~30% on top of the 18–20% already saved.
