@@ -235,75 +235,6 @@ for (const style of ['viaduct', 'minimal']) {
 }
 
 // ---------------------------------------------------------------------------
-// Same run, second format. The markdown is the source of truth; this renders
-// it, so the two can never disagree.
-const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const inline = (t) => esc(t)
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-const cell = (t) => {
-    const v = inline(t.trim());
-    if (v === '✔') return '<td class="ok">✔</td>';
-    if (v === '✘') return '<td class="bad">✘</td>';
-    return `<td>${v}</td>`;
-};
-
-const body = [];
-let table = null;
-// entries may carry embedded newlines (a heading written with a blank line
-// around it), so flatten before parsing or those lines never match a rule
-for (const raw of md.join('\n').split('\n')) {
-    const line = raw.trimEnd();
-    const isRow = line.startsWith('|');
-    if (!isRow && table) { body.push(`<table>${table.join('')}</table>`); table = null; }
-    if (isRow) {
-        const cells = line.slice(1, -1).split('|');
-        if (cells.every(c => /^\s*-+\s*$/.test(c))) continue;      // the --- rule
-        if (!table) {
-            table = [`<tr>${cells.map(c => `<th>${inline(c.trim())}</th>`).join('')}</tr>`];
-        } else {
-            table.push(`<tr>${cells.map(cell).join('')}</tr>`);
-        }
-        continue;
-    }
-    if (line.startsWith('## ')) body.push(`<h2>${inline(line.slice(3))}</h2>`);
-    else if (line.startsWith('# ')) body.push(`<h1>${inline(line.slice(2))}</h1>`);
-    else if (line) body.push(`<p class="desc">${inline(line)}</p>`);
-}
-if (table) body.push(`<table>${table.join('')}</table>`);
-
-writeFileSync(new URL('../reports/print-audit.md', import.meta.url), md.join('\n') + '\n');
-writeFileSync(new URL('../reports/print-audit.html', import.meta.url), `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Klip Klop Konstructor — Print Suitability Audit</title>
-<style>
-:root { color-scheme: light dark;
-  --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
-  --line:#e4e1d7; --card:#f6f4ec; }
-@media (prefers-color-scheme: dark) { :root {
-  --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
-  --line:#3a3831; --card:#232320; } }
-body { margin:0 auto; max-width:1040px; padding:24px 20px 80px;
-  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
-  background:var(--surface-1); color:var(--text-primary); }
-h1 { font-size:22px; } h2 { font-size:17px; margin:34px 0 6px; }
-.desc { color:var(--text-secondary); max-width:78ch; }
-.wrap { overflow-x:auto; }
-table { border-collapse:collapse; width:100%; font-size:12.5px; margin:8px 0 4px;
-  font-variant-numeric:tabular-nums; }
-th { text-align:left; color:var(--text-secondary); font-weight:600; white-space:nowrap; }
-td,th { padding:4px 8px; border-bottom:1px solid var(--line); }
-tr:nth-child(even) td { background:var(--card); }
-td:first-child { white-space:nowrap; }
-code { background:var(--card); padding:0 4px; border-radius:3px; font-size:12px; }
-.ok { color:#0ca30c; font-weight:700; } .bad { color:#d03b3b; font-weight:700; }
-</style></head><body>
-${body.map(b => b.startsWith('<table') ? `<div class="wrap">${b}</div>` : b).join('\n')}
-</body></html>
-`);
-
-// ---------------------------------------------------------------------------
 // LADDER SIMULATION — how many parts does each candidate riser set cost?
 //
 // `decomposeSupport` reads STANDARD.riserSizes, so this reimplements the same
@@ -321,8 +252,8 @@ function decomposeWith(heightMm, sizes) {
 }
 
 const LADDERS = [
-    ['120·60·30·15 (today)', [120, 60, 30, 15]],
-    ['60·30·15', [60, 30, 15]],
+    ['120·60·30·15 (was)', [120, 60, 30, 15]],
+    ['60·30·15 (today)', [60, 30, 15]],
     ['60·45·30·15', [60, 45, 30, 15]],
     ['30·15', [30, 15]],
     ['15 only', [15]]
@@ -423,3 +354,73 @@ for (const style of ['viaduct', 'minimal']) {
             + `${(Math.max(...all) - Math.min(...all)).toFixed(3)} | ${seam.toFixed(3)} |`);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Same run, second format. The markdown is the source of truth; this renders
+// it, so the two can never disagree.
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+const cell = (t) => {
+    const v = inline(t.trim());
+    if (v === '✔') return '<td class="ok">✔</td>';
+    if (v === '✘') return '<td class="bad">✘</td>';
+    return `<td>${v}</td>`;
+};
+
+const body = [];
+let table = null;
+// entries may carry embedded newlines (a heading written with a blank line
+// around it), so flatten before parsing or those lines never match a rule
+for (const raw of md.join('\n').split('\n')) {
+    const line = raw.trimEnd();
+    const isRow = line.startsWith('|');
+    if (!isRow && table) { body.push(`<table>${table.join('')}</table>`); table = null; }
+    if (isRow) {
+        const cells = line.slice(1, -1).split('|');
+        if (cells.every(c => /^\s*-+\s*$/.test(c))) continue;      // the --- rule
+        if (!table) {
+            table = [`<tr>${cells.map(c => `<th>${inline(c.trim())}</th>`).join('')}</tr>`];
+        } else {
+            table.push(`<tr>${cells.map(cell).join('')}</tr>`);
+        }
+        continue;
+    }
+    if (line.startsWith('## ')) body.push(`<h2>${inline(line.slice(3))}</h2>`);
+    else if (line.startsWith('# ')) body.push(`<h1>${inline(line.slice(2))}</h1>`);
+    else if (line) body.push(`<p class="desc">${inline(line)}</p>`);
+}
+if (table) body.push(`<table>${table.join('')}</table>`);
+
+writeFileSync(new URL('../reports/print-audit.md', import.meta.url), md.join('\n') + '\n');
+writeFileSync(new URL('../reports/print-audit.html', import.meta.url), `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klip Klop Konstructor — Print Suitability Audit</title>
+<style>
+:root { color-scheme: light dark;
+  --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+  --line:#e4e1d7; --card:#f6f4ec; }
+@media (prefers-color-scheme: dark) { :root {
+  --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+  --line:#3a3831; --card:#232320; } }
+body { margin:0 auto; max-width:1040px; padding:24px 20px 80px;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--surface-1); color:var(--text-primary); }
+h1 { font-size:22px; } h2 { font-size:17px; margin:34px 0 6px; }
+.desc { color:var(--text-secondary); max-width:78ch; }
+.wrap { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:12.5px; margin:8px 0 4px;
+  font-variant-numeric:tabular-nums; }
+th { text-align:left; color:var(--text-secondary); font-weight:600; white-space:nowrap; }
+td,th { padding:4px 8px; border-bottom:1px solid var(--line); }
+tr:nth-child(even) td { background:var(--card); }
+td:first-child { white-space:nowrap; }
+code { background:var(--card); padding:0 4px; border-radius:3px; font-size:12px; }
+.ok { color:#0ca30c; font-weight:700; } .bad { color:#d03b3b; font-weight:700; }
+</style></head><body>
+${body.map(b => b.startsWith('<table') ? `<div class="wrap">${b}</div>` : b).join('\n')}
+</body></html>
+`);
+

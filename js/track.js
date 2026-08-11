@@ -72,7 +72,7 @@ export const STANDARD = {
      * out. 120 mm at 6.3:1 is the practical ceiling, and paying one extra
      * riser per tall column is the cheaper side of that trade.
      */
-    riserSizes: [120, 60, 30, 15],
+    riserSizes: [60, 30, 15],
     footHeight: 15
 };
 
@@ -169,7 +169,7 @@ export const SPEC = {
      * will be printed rim-down with supports: 3.7 cm3 lighter on a straight,
      * and none of the above matters when the piece is not standing on it.
      */
-    skirt: { style: 'viaduct', minimalDepthMm: 15.5 },
+    skirt: { style: 'viaduct', minimalDepthMm: 17 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -304,7 +304,7 @@ export const SPEC = {
      * no grid unit under it) would stand a grounded curve on an 18 mm disc
      * instead of on a foot.
      */
-    spacer: { straightMm: 16.59, curveMm: 11.20 },
+    spacer: { curveMm: 11.20 },
     // Bowtie connector key (print-flat butterfly key, Hot-Wheels-style separate
     // connector): pockets recess into full-height end ribs — zero overhangs.
     key: {
@@ -1201,23 +1201,13 @@ export function collarFits(piece, spec) {
     if (piece.skirtStyle !== 'minimal' || !(spec.socket?.collarR > 0)) return false;
     if (!(piece.planLen > 0)) return false;
     const s = massCentreS(piece);
-    const pos = planPosAt(piece, s);
-    const grad = Math.abs(piece.drop ?? 0) / piece.planLen;
-    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
-    const seat = deckYAt(piece, s) - spec.floorThk - grad * rCorner - spec.socket.depth;
+    const seat = rawSeatY(piece, s, spec);
     // measured against the REAL plane, not `deck - D`. Those are the same
     // surface under a straight and 5.3 mm apart under a curve, where the plane
     // is fitted rather than held at constant depth — and a collar built to the
     // wrong one stops short and leaves the boss floating, which is exactly what
     // it did the first time a curve was laid down.
-    const pl = undersidePlane(piece, spec);
-    let highest = -Infinity;
-    for (let k = 0; k < 16; k++) {
-        const a = (2 * Math.PI * k) / 16;
-        highest = Math.max(highest, pl.at(pos.x + Math.cos(a) * spec.socket.collarR,
-            pos.z + Math.sin(a) * spec.socket.collarR));
-    }
-    return seat >= highest;
+    return seat >= planeUnderCollar(piece, s, spec);
 }
 
 /**
@@ -1371,12 +1361,41 @@ export function socketMouthY(piece, s = null, spec = SPEC) {
         return piece.rimY;
     }
     const at = s ?? massCentreS(piece);
-    const f = piece.planLen ? at / piece.planLen : 0;
+    const raw = Math.max(piece.rimY, rawSeatY(piece, at, spec));
+    // AND THEN IT SNAPS DOWN ONTO THE GRID, if there is still room under it.
+    // The seat cannot go UP — the floor over the socket is what sets it — but
+    // it can be dropped to the grid line below by carrying more material under
+    // the piece, which is what `minimalDepthMm` = 17 buys. A straight, a lift
+    // and a switch all land exactly on a grid line that way and need no spacer
+    // at all; a curve's nearest line is 11.2 mm down, which would cost it
+    // another 11 mm of depth everywhere, so it keeps the one spacer left in
+    // the library. Brett: "raise the bottom slightly to snap to whole units...
+    // slightly more material under it, but it keeps it uniform with the others".
+    const snapped = piece.rimY
+        + Math.floor((raw - piece.rimY) / STANDARD.gridMm + 1e-9) * STANDARD.gridMm;
+    return snapped >= planeUnderCollar(piece, at, spec) ? snapped : raw;
+}
+
+/** Where the floor lets the seat sit at the highest — before any snapping. */
+function rawSeatY(piece, s, spec) {
+    const f = piece.planLen ? s / piece.planLen : 0;
     const deck = piece.entryDeck - (piece.drop ?? 0) * f;
     const grad = piece.planLen ? Math.abs(piece.drop ?? 0) / piece.planLen : 0;
     const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
-    return Math.max(piece.rimY,
-        deck - spec.floorThk - grad * rCorner - spec.socket.depth);
+    return deck - spec.floorThk - grad * rCorner - spec.socket.depth;
+}
+
+/** The highest the underside plane reaches anywhere under the collar. */
+function planeUnderCollar(piece, s, spec) {
+    const pos = planPosAt(piece, s);
+    const pl = undersidePlane(piece, spec);
+    let hi = -Infinity;
+    for (let k = 0; k < 16; k++) {
+        const a = (2 * Math.PI * k) / 16;
+        hi = Math.max(hi, pl.at(pos.x + Math.cos(a) * spec.socket.collarR,
+            pos.z + Math.sin(a) * spec.socket.collarR));
+    }
+    return hi;
 }
 
 /**
@@ -1386,10 +1405,6 @@ export function socketMouthY(piece, s = null, spec = SPEC) {
  * above the rim and the mouth lands on the rim itself — they keep the viaduct
  * boss and need nothing. Everything that slopes takes one of the two.
  */
-export function spacerHeightMm(piece) {
-    if (!piece || socketMouthY(piece) - piece.rimY < 0.5) return 0;
-    return piece.radius ? SPEC.spacer.curveMm : SPEC.spacer.straightMm;
-}
 
 /**
  * The two spacers as PARTS: what to engrave on one and how many rings to turn
@@ -1398,13 +1413,26 @@ export function spacerHeightMm(piece) {
  * larger count so the two agree with each other.
  */
 export const SPACER_VARIANTS = [
-    { heightMm: SPEC.spacer.straightMm, rings: 2, code: 'SPS', fits: 'straights and lifts' },
     { heightMm: SPEC.spacer.curveMm, rings: 1, code: 'SPC', fits: 'curves' }
 ];
 
 /** The variant record for a height from spacerHeightMm, or null for none. */
 export const spacerVariant = (heightMm) =>
     SPACER_VARIANTS.find(v => Math.abs(v.heightMm - heightMm) < 0.005) ?? null;
+
+export function spacerHeightMm(piece) {
+    if (!piece) return 0;
+    // whatever the seat is off the grid by, and nothing else. Snapping put
+    // straights, lifts and switches ON the grid, so they ask for none.
+    const rise = socketMouthY(piece) - piece.rimY;
+    const rest = rise - Math.floor(rise / STANDARD.gridMm + 1e-9) * STANDARD.gridMm;
+    if (rest < 0.5) return 0;
+    // and it is a PRINTED PART, so it is the variant's height and not the
+    // remainder to six places. Anything that does not land on a variant is a
+    // piece the library cannot support, and saying 0 would hide that.
+    const v = SPACER_VARIANTS.find(x => Math.abs(x.heightMm - rest) < 0.05);
+    return v ? v.heightMm : rest;
+}
 
 /**
  * Height the riser stack has to make up under a support record — from the

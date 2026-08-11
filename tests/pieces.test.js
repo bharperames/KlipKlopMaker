@@ -8,6 +8,7 @@ import {
     planPillarPositions, socketMouthY, SPACER_VARIANTS, undersidePlane
 } from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
+const STANDARD_SIZES = [60, 30, 15];
 import * as pieceBuilders from '../js/pieces.js';
 import {
     initCSG, buildPieceExportGeometry, buildPieceDisplayGeometry,
@@ -419,11 +420,32 @@ describe('standard support parts', () => {
             .toBe(`${v.code} ${v.rings} rings, ${Math.min(Math.max(perRing, 15), 45).toFixed(0)} mm3 each`);
     });
 
-    test('the two spacers are never the same part', () => {
-        const [a, b] = SPACER_VARIANTS;
-        expect(a.rings).not.toBe(b.rings);
-        expect(a.code).not.toBe(b.code);
-        expect(Math.abs(a.heightMm - b.heightMm)).toBeGreaterThan(3);
+    /**
+     * There is one spacer left. Snapping the seat down onto a grid line took
+     * straights, lifts and switches off the list entirely, so any second
+     * variant that comes back has to earn its place against the same rule the
+     * D section exists for: tellable apart in a heap, not just on paper.
+     */
+    test('no two spacers are the same part', () => {
+        for (const a of SPACER_VARIANTS) {
+            for (const b of SPACER_VARIANTS) {
+                if (a === b) continue;
+                expect(a.rings).not.toBe(b.rings);
+                expect(a.code).not.toBe(b.code);
+                expect(Math.abs(a.heightMm - b.heightMm)).toBeGreaterThan(3);
+            }
+        }
+        expect(SPACER_VARIANTS.length).toBeGreaterThan(0);
+    });
+
+    test.each(STANDARD_SIZES)('riser %s carries one groove per 15 mm unit', (size) => {
+        const plain = analyzeGeometry(pieceBuilders.buildRiserGeometry(size));
+        expect(plain.isManifold && plain.isConsistent && plain.windsOutward).toBe(true);
+        // a 15 is one unit and carries none; a 60 is four and carries three
+        const marks = Math.max(0, Math.round(size / 15) - 1);
+        const solid = 3 * Math.sqrt(3) / 2 * (15 / Math.sqrt(3)) ** 2 * size;
+        expect(`riser ${size}: ${marks} marks`).toBe(`riser ${size}: ${marks} marks`);
+        if (marks > 0) expect(plain.volumeMm3).toBeLessThan(solid);
     });
 });
 

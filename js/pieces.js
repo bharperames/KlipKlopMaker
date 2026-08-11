@@ -1607,8 +1607,51 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     ]));
     return csgChain(body, [
         { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        ...gridMarks(sizeMm, spec),
         ...hexFlatEngraveOps(opts.code ?? null, 15, 0, sizeMm, spec)
     ]);
+}
+
+/**
+ * A shallow groove at every 15 mm line up a riser.
+ *
+ * They are not decoration and they are not the spacer's ring count either.
+ * The ladder is built out of ONE unit and a riser is a whole number of them,
+ * so cutting the unit into the part makes the part say how tall it is: a 60
+ * carries three grooves, a 30 carries one, and the eye reads "four units"
+ * rather than "the long one". It also teaches 15 mm — pick up any riser and
+ * the spacing between two grooves IS the grid, which is the number every
+ * height in the system is made of.
+ *
+ * 0.4 mm deep on the flats. Deep enough to catch the light and a fingernail,
+ * shallow enough to leave the 15 AF section that mates a socket untouched
+ * — the groove sits between joints, never at one.
+ *
+ * THE CUTTER IS A TUBE. Sweeping closed profiles makes a solid of REVOLUTION
+ * that contains the axis, so subtracting one straight would core the riser out
+ * rather than groove it; that is exactly what it did to the spacer, and left a
+ * 0.76 mm shell where the part looked severed. So the bicone has its own bore
+ * taken out first and only the annular V is subtracted.
+ */
+function gridMarks(sizeMm, spec = SPEC) {
+    const G = STANDARD.gridMm, AF = 15, waist = AF - 0.8, n = 24;
+    const ops = [];
+    for (let y = G; y <= sizeMm - 1; y += G) {
+        const band = 1.2;
+        const lvl = (af, yy) => ({ plan: hexRingPlan(af, n).map(([x, z]) => [x, -z]), y: yy });
+        const cone = [lvl(AF + 3, y - band / 2), lvl(waist, y), lvl(AF + 3, y + band / 2)];
+        const bore = [lvl(waist, y - band), lvl(waist, y + band)];
+        const sweep = (levels) => toBufferGeometry(sweepSolid(
+            levels.map(l => l.plan),
+            levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        ));
+        ops.push({
+            op: SUBTRACTION,
+            geometry: toBufferGeometry(csgChain(sweep(cone),
+                [{ op: SUBTRACTION, geometry: sweep(bore) }]))
+        });
+    }
+    return ops;
 }
 
 /**

@@ -584,11 +584,13 @@ describe('the spacer', () => {
         }
         expect(heights.size).toBeGreaterThan(0);
         for (const h of heights) expect(spacerVariant(h)).not.toBeNull();
-        // and the ones that take none are the ones that print rim-down: a
-        // platform is level, so its boss reaches the rim and needs no spacer
+        // and a spacer is asked for ONLY where the seat is off the grid. Since
+        // the seat snaps down onto a grid line wherever the depth allows, that
+        // is now curves alone — a straight, a lift and a switch all land on a
+        // line and the riser stack reaches them directly.
         for (const { pc } of chain(SPIRAL, 'minimal')) {
             expect(`${pc.type} spacer ${spacerHeightMm(pc) > 0}`)
-                .toBe(`${pc.type} spacer ${Math.abs(pc.drop) > 1e-6}`);
+                .toBe(`${pc.type} spacer ${!!pc.radius}`);
         }
     });
 
@@ -601,8 +603,10 @@ describe('the spacer', () => {
         const ground = chain(SPIRAL, 'minimal').find(({ pc }) => pc.rimY < 1);
         expect(ground).toBeDefined();
         expect(needsPier(ground.pc)).toBe(true);
-        expect(stackHeightMm(ground.pc, ground.sup)).toBeCloseTo(0, 2);   // spacer on the bed
-        expect(spacerHeightMm(ground.pc)).toBeGreaterThan(10);
+        // its seat is a whole grid unit up, so the stack is a foot and nothing
+        // else — the spacer that used to stand on the bed here is gone
+        expect(stackHeightMm(ground.pc, ground.sup)).toBeCloseTo(15, 2);
+        expect(decomposeSupport(stackHeightMm(ground.pc, ground.sup))).not.toBeNull();
 
         const viaduct = layoutTrack(SPIRAL, { skirtStyle: 'viaduct' }).pieces.find(p => p.rimY < 1
             && p.type !== 'end' && p.type !== 'start');
