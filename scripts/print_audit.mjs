@@ -29,7 +29,8 @@
  */
 import { layoutTrack, SPEC, STANDARD, GEOMETRY_VERSION, planPillarPositions,
     decomposeSupport, stackHeightMm, spacerHeightMm, spacerVariant, socketMouthY,
-    needsPier, supportsPillar, massCentreS, SPACER_VARIANTS } from '../js/track.js';
+    needsPier, supportsPillar, massCentreS, SPACER_VARIANTS,
+    pieceInFrame, planPosAt, deckYAt, ridgeOffset } from '../js/track.js';
 import { initCSG, buildPieceExportGeometry, buildSwitchExportGeometry, buildKeyGeometry,
     buildGateGeometry, buildSpacerGeometry, buildSupportFootGeometry, buildRiserGeometry,
     buildJogGeometry, buildTowerGeometry, buildPatioGeometry, toBufferGeometry } from '../js/pieces.js';
@@ -301,3 +302,124 @@ code { background:var(--card); padding:0 4px; border-radius:3px; font-size:12px;
 ${body.map(b => b.startsWith('<table') ? `<div class="wrap">${b}</div>` : b).join('\n')}
 </body></html>
 `);
+
+// ---------------------------------------------------------------------------
+// LADDER SIMULATION — how many parts does each candidate riser set cost?
+//
+// `decomposeSupport` reads STANDARD.riserSizes, so this reimplements the same
+// greedy descent against an arbitrary set. It is the same algorithm: take the
+// largest size that fits, repeat, and refuse anything that does not land.
+function decomposeWith(heightMm, sizes) {
+    const units = Math.round(heightMm / STANDARD.gridMm);
+    if (Math.abs(heightMm - units * STANDARD.gridMm) > 0.1 || units < 1) return null;
+    let rest = heightMm - STANDARD.footHeight;
+    const risers = [];
+    for (const size of sizes) {
+        while (rest >= size - 0.1) { risers.push(size); rest -= size; }
+    }
+    return rest > 0.1 ? null : risers;
+}
+
+const LADDERS = [
+    ['120·60·30·15 (today)', [120, 60, 30, 15]],
+    ['60·30·15', [60, 30, 15]],
+    ['60·45·30·15', [60, 45, 30, 15]],
+    ['30·15', [30, 15]],
+    ['15 only', [15]]
+];
+
+out('\n# Riser ladders compared\n');
+out('Every support column in every design above, decomposed against each');
+out('candidate set. **tallest part** is what has to print standing up, and');
+out('**worst column** is how many risers one pier needs at its deepest.');
+out('');
+out('| ladder | unique riser sizes | risers printed | tallest part | worst column | columns it cannot build |');
+out('|---|---|---|---|---|---|');
+for (const [label, sizes] of LADDERS) {
+    let total = 0, worst = 0, fail = 0, cols = 0;
+    for (const [, seq] of LIB) {
+        for (const style of ['viaduct', 'minimal']) {
+            const { pieces } = layoutTrack(seq, { skirtStyle: style });
+            for (const sup of planPillarPositions(pieces)) {
+                const pc = pieces[sup.pieceIndex];
+                if (!supportsPillar(sup) || !needsPier(pc)) continue;
+                const h = stackHeightMm(pc, sup);
+                if (h < 1) continue;
+                cols++;
+                const dec = decomposeWith(h, sizes);
+                if (!dec) { fail++; continue; }
+                total += dec.length;
+                worst = Math.max(worst, dec.length);
+            }
+        }
+    }
+    out(`| ${label} | ${sizes.length} | ${total} over ${cols} columns | ${Math.max(...sizes)} mm | `
+        + `${worst} | ${fail} |`);
+}
+
+// ---------------------------------------------------------------------------
+// THE WALKING SURFACE AT A SEAM — the measurement that matters most.
+//
+// A figure walks across the joint between two pieces. If the floor does not
+// arrive at the same height on both sides it stops, so where the floor sits at
+// an END FACE is the load-bearing dimension of the whole system. Measured off
+// the built mesh in ASSEMBLY orientation (not the print tilt), against the deck
+// line layoutTrack laid out, at several points across the channel.
+//
+// The washboard complicates it on purpose: the ridge pitch is snapped so that
+// a seam lands in a VALLEY, not on a crest. A reading near 0 means the snap is
+// holding; a reading near +ridge.height would mean the seam sits on a ridge and
+// every joint has a step in it.
+const topAt = (g, x, z) => {
+    const P = g.positions, I = g.indices;
+    let best = -Infinity;
+    for (let t = 0; t < I.length; t += 3) {
+        const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+        const ax = P[a], az = P[a + 2], bx = P[b], bz = P[b + 2], cx = P[c], cz = P[c + 2];
+        const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+        if (Math.abs(d) < 1e-12) continue;
+        const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+        const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+        if (l1 < 0 || l2 < 0 || 1 - l1 - l2 < 0) continue;
+        best = Math.max(best, l1 * P[a + 1] + l2 * P[b + 1] + (1 - l1 - l2) * P[c + 1]);
+    }
+    return best;
+};
+
+out('\n# The walking surface at the end faces\n');
+out('Floor height measured off the mesh at each end face, minus the deck line');
+out(`the layout laid out. The washboard rides ${SPEC.ridge.height} mm above the deck line and`);
+out('its pitch is snapped so a seam lands in a VALLEY, so ~0 is right and');
+out(`~${SPEC.ridge.height} would mean every joint has a ridge standing in it.`);
+out('');
+out('| piece | style | entry face | exit face | across-channel spread | ridge at the seam |');
+out('|---|---|---|---|---|---|');
+for (const style of ['viaduct', 'minimal']) {
+    const { pieces } = layoutTrack(SEQ, { skirtStyle: style });
+    const sups = planPillarPositions(pieces);
+    for (const type of ['straight', 'curveL', 'lift']) {
+        const pc = pieces.filter(p => p.type === type).at(-1);
+        const g = buildPieceExportGeometry(pc, { support: sups.find(s => s.pieceIndex === pc.index) });
+        const f = pieceInFrame(pc);
+        // measured against deck + the washboard's own offset at that station,
+        // so this isolates whether the FLOOR is where the layout says, rather
+        // than re-measuring the ridge I happened to sample on
+        const read = (s) => {
+            const p = planPosAt(f, s);
+            const want = deckYAt(f, s) + ridgeOffset(s, f.ridgePitch, SPEC.ridge.height);
+            const right = [Math.sin(p.h), -Math.cos(p.h)];
+            const vals = [];
+            for (let lat = -18; lat <= 18; lat += 6) {
+                const y = topAt(g, p.x + right[0] * lat, p.z + right[1] * lat);
+                if (isFinite(y)) vals.push(y - want);
+            }
+            return vals;
+        };
+        const a = read(0.4), b = read(f.planLen - 0.4);
+        const all = [...a, ...b];
+        const avg = (v) => v.reduce((x, y) => x + y, 0) / v.length;
+        const seam = ridgeOffset(0, f.ridgePitch, SPEC.ridge.height);
+        out(`| ${type} | ${style} | ${avg(a).toFixed(3)} | ${avg(b).toFixed(3)} | `
+            + `${(Math.max(...all) - Math.min(...all)).toFixed(3)} | ${seam.toFixed(3)} |`);
+    }
+}
