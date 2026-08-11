@@ -183,7 +183,9 @@ out(`Grid ${STANDARD.gridMm} mm · foot ${STANDARD.footHeight} · risers `
     + `${STANDARD.riserSizes.join(', ')} · jog ${SPEC.jog.heightMm} · spacers `
     + SPACER_VARIANTS.map(v => `${v.code} ${v.heightMm}`).join(', ') + '\n');
 
+const SWITCH_NODE = { type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] };
 const LIB = [
+    ['switchyard', ['straight', SWITCH_NODE]],
     ['spiral', ['straight', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'curveL', 'straight', 'straight']],
     ['lifts', ['straight', 'curveL', 'curveL', 'lift', 'lift', 'curveR', 'straight']],
     ['flat run', ['straight', 'straight', 'straight']]
@@ -216,14 +218,18 @@ out('|---|---|---|---|---|');
 for (const style of ['viaduct', 'minimal']) {
     const { pieces } = layoutTrack(SEQ, { skirtStyle: style });
     const seen = new Set();
-    for (const pc of pieces) {
-        if (seen.has(pc.type)) continue;
+    const withSwitch = [...pieces,
+        ...layoutTrack(['straight', SWITCH_NODE], { skirtStyle: style }).pieces];
+    for (const pc of withSwitch) {
+        if (seen.has(pc.type) || pc.role === 'branch') continue;
         seen.add(pc.type);
         const mouth = socketMouthY(pc) - pc.rimY;
         const sp = spacerHeightMm(pc);
         const v = spacerVariant(sp);
-        out(`| ${pc.type} | ${style} | ${mouth.toFixed(3)} | ${sp ? `${v?.code} ${sp}` : '—'} | `
-            + `${(mouth - sp).toFixed(3)} |`);
+        const rest = mouth - sp;
+        const onGrid = Math.abs(rest / STANDARD.gridMm - Math.round(rest / STANDARD.gridMm)) < 0.007;
+        out(`| ${pc.type} | ${style} | ${mouth.toFixed(3)} | ${sp ? `${v?.code} ${sp}` : '\u2014'} | `
+            + `${rest.toFixed(3)}${onGrid ? '' : ' **OFF-GRID**'} |`);
     }
 }
 

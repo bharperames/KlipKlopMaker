@@ -37,6 +37,8 @@ Grid 15 mm · foot 15 · risers 120, 60, 30, 15 · jog 15 · spacers SPS 16.59, 
 
 | design | style | supports | off-grid | worst residual | riser count |
 |---|---|---|---|---|---|
+| switchyard | viaduct | 5 | 0 | 0.000 mm | 4 |
+| switchyard | minimal | 6 | 1 | 0.001 mm | 3 |
 | spiral | viaduct | 11 | 0 | 0.000 mm | 33 |
 | spiral | minimal | 12 | 0 | 0.001 mm | 32 |
 | lifts | viaduct | 7 | 0 | 0.000 mm | 7 |
@@ -56,6 +58,7 @@ Grid 15 mm · foot 15 · risers 120, 60, 30, 15 · jog 15 · spacers SPS 16.59, 
 | powered | viaduct | 0.000 | — | 0.000 |
 | elevator | viaduct | 0.000 | — | 0.000 |
 | end | viaduct | 0.000 | — | 0.000 |
+| switchMain | viaduct | 0.000 | — | 0.000 |
 | start | minimal | 0.000 | — | 0.000 |
 | straight | minimal | 16.589 | SPS 16.59 | -0.001 |
 | curveL | minimal | 26.199 | SPC 11.2 | 14.999 |
@@ -64,3 +67,4 @@ Grid 15 mm · foot 15 · risers 120, 60, 30, 15 · jog 15 · spacers SPS 16.59, 
 | powered | minimal | 0.000 | — | 0.000 |
 | elevator | minimal | 0.000 | — | 0.000 |
 | end | minimal | 0.000 | — | 0.000 |
+| switchMain | minimal | 30.606 | SPS 16.59 | 14.016 **OFF-GRID** |
