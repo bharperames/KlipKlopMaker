@@ -1,7 +1,9 @@
 /**
  * PRINT SUITABILITY AUDIT — every printable part, measured off its own mesh.
  *
- * Run from the repo root:  node scripts/print_audit.mjs [> reports/print-audit.md]
+ * Run from the repo root:  node scripts/print_audit.mjs
+ * Writes reports/print-audit.md and reports/print-audit.html (open the latter
+ * in a browser — no server needed, it is self-contained).
  *
  * The parts are exported in the orientation they PRINT in, which for a minimal
  * track piece means already tilted onto its underside. So every number here is
@@ -32,6 +34,11 @@ import { initCSG, buildPieceExportGeometry, buildSwitchExportGeometry, buildKeyG
     buildGateGeometry, buildSpacerGeometry, buildSupportFootGeometry, buildRiserGeometry,
     buildJogGeometry, buildTowerGeometry, buildPatioGeometry, toBufferGeometry } from '../js/pieces.js';
 import { analyzeMesh, bedStability } from '../js/mesh_utils.js';
+import { writeFileSync } from 'node:fs';
+
+// every console.log below is captured so the same run can emit both formats
+const md = [];
+const out = (line = '') => { md.push(line); console.log(line); };
 
 const PLA_G_PER_CM3 = 1.24;
 const LAYER = 0.2;
@@ -124,12 +131,12 @@ function audit(name, geom) {
 await initCSG();
 
 // ---------------------------------------------------------------------------
-const SEQ = ['start', 'straight', 'curveL', 'curveR', 'lift', 'powered', 'straight', 'end'];
+const SEQ = ['start', 'straight', 'curveL', 'curveR', 'lift', 'powered', 'elevator', 'straight', 'end'];
 const rows = [];
 for (const style of ['viaduct', 'minimal']) {
     const { pieces } = layoutTrack(SEQ, { skirtStyle: style });
     const sups = planPillarPositions(pieces);
-    for (const type of ['start', 'straight', 'curveL', 'lift', 'powered', 'end']) {
+    for (const type of ['start', 'straight', 'curveL', 'lift', 'powered', 'elevator', 'end']) {
         const pc = pieces.filter(p => p.type === type).at(-1);
         if (!pc) continue;
         const support = sups.find(s => s.pieceIndex === pc.index);
@@ -137,9 +144,15 @@ for (const style of ['viaduct', 'minimal']) {
             buildPieceExportGeometry(pc, { support, forPrint: true })));
     }
 }
-const sw = layoutTrack([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }]);
-rows.push(audit('switchL (viaduct)', buildSwitchExportGeometry(
-    sw.pieces.find(p => p.role === 'main'), sw.pieces.find(p => p.role === 'branch'), {})));
+for (const style of ['viaduct', 'minimal']) {
+    const sw = layoutTrack([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }],
+        { skirtStyle: style });
+    const sups = planPillarPositions(sw.pieces);
+    const main = sw.pieces.find(p => p.role === 'main');
+    rows.push(audit(`switchL (${style})`, buildSwitchExportGeometry(main,
+        sw.pieces.find(p => p.role === 'branch'),
+        { support: sups.find(s => s.pieceIndex === main.index), forPrint: true })));
+}
 
 rows.push(audit('bowtie_key', buildKeyGeometry()));
 rows.push(audit('gate_paddle', buildGateGeometry(SPEC, { forPrint: true })));
@@ -154,19 +167,19 @@ rows.push(audit('scenery_tower', buildTowerGeometry(100)));
 rows.push(audit('scenery_patio', buildPatioGeometry()));
 
 const f2 = (x) => x.toFixed(x >= 100 ? 0 : x >= 10 ? 1 : 2);
-console.log(`# Print suitability — geometry v${GEOMETRY_VERSION}\n`);
-console.log('| part | ok | cm³ | g | W×D×H mm | 1st layer mm² | contact | slender | ≤25° | 25–45° | unsupported | low island |');
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
+out(`# Print suitability — geometry v${GEOMETRY_VERSION}\n`);
+out('| part | ok | cm³ | g | W×D×H mm | 1st layer mm² | contact | slender | ≤25° | 25–45° | unsupported | low island |');
+out('|---|---|---|---|---|---|---|---|---|---|---|---|');
 for (const r of rows) {
-    console.log(`| ${r.name} | ${r.ok ? '✔' : '✘'} | ${f2(r.volCm3)} | ${f2(r.massG)} | `
+    out(`| ${r.name} | ${r.ok ? '✔' : '✘'} | ${f2(r.volCm3)} | ${f2(r.massG)} | `
         + `${r.w.toFixed(0)}×${r.d.toFixed(0)}×${r.h.toFixed(0)} | ${r.contact.toFixed(0)} | `
         + `${(r.frac * 100).toFixed(0)}% | ${r.slender.toFixed(1)} | ${r.flat.toFixed(0)} | `
         + `${r.steep.toFixed(0)} | ${r.unsupported.toFixed(0)} | ${r.lowIsland.toFixed(0)} |`);
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n# The height ladder\n');
-console.log(`Grid ${STANDARD.gridMm} mm · foot ${STANDARD.footHeight} · risers `
+out('\n# The height ladder\n');
+out(`Grid ${STANDARD.gridMm} mm · foot ${STANDARD.footHeight} · risers `
     + `${STANDARD.riserSizes.join(', ')} · jog ${SPEC.jog.heightMm} · spacers `
     + SPACER_VARIANTS.map(v => `${v.code} ${v.heightMm}`).join(', ') + '\n');
 
@@ -175,8 +188,8 @@ const LIB = [
     ['lifts', ['straight', 'curveL', 'curveL', 'lift', 'lift', 'curveR', 'straight']],
     ['flat run', ['straight', 'straight', 'straight']]
 ];
-console.log('| design | style | supports | off-grid | worst residual | riser count |');
-console.log('|---|---|---|---|---|---|');
+out('| design | style | supports | off-grid | worst residual | riser count |');
+out('|---|---|---|---|---|---|');
 for (const [name, seq] of LIB) {
     for (const style of ['viaduct', 'minimal']) {
         const { pieces } = layoutTrack(seq, { skirtStyle: style });
@@ -193,13 +206,13 @@ for (const [name, seq] of LIB) {
                 + (sup.mode === 'jog' ? SPEC.jog.heightMm : 0) + spacerHeightMm(pc);
             worst = Math.max(worst, Math.abs(built - socketMouthY(pc, sup.s)));
         }
-        console.log(`| ${name} | ${style} | ${sups.length} | ${offGrid} | ${worst.toFixed(3)} mm | ${risers} |`);
+        out(`| ${name} | ${style} | ${sups.length} | ${offGrid} | ${worst.toFixed(3)} mm | ${risers} |`);
     }
 }
 
-console.log('\n## What each piece type asks the ladder for\n');
-console.log('| piece | style | mouth above rim | spacer | remainder the stack must make |');
-console.log('|---|---|---|---|---|');
+out('\n## What each piece type asks the ladder for\n');
+out('| piece | style | mouth above rim | spacer | remainder the stack must make |');
+out('|---|---|---|---|---|');
 for (const style of ['viaduct', 'minimal']) {
     const { pieces } = layoutTrack(SEQ, { skirtStyle: style });
     const seen = new Set();
@@ -209,7 +222,76 @@ for (const style of ['viaduct', 'minimal']) {
         const mouth = socketMouthY(pc) - pc.rimY;
         const sp = spacerHeightMm(pc);
         const v = spacerVariant(sp);
-        console.log(`| ${pc.type} | ${style} | ${mouth.toFixed(3)} | ${sp ? `${v?.code} ${sp}` : '—'} | `
+        out(`| ${pc.type} | ${style} | ${mouth.toFixed(3)} | ${sp ? `${v?.code} ${sp}` : '—'} | `
             + `${(mouth - sp).toFixed(3)} |`);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Same run, second format. The markdown is the source of truth; this renders
+// it, so the two can never disagree.
+const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+const cell = (t) => {
+    const v = inline(t.trim());
+    if (v === '✔') return '<td class="ok">✔</td>';
+    if (v === '✘') return '<td class="bad">✘</td>';
+    return `<td>${v}</td>`;
+};
+
+const body = [];
+let table = null;
+// entries may carry embedded newlines (a heading written with a blank line
+// around it), so flatten before parsing or those lines never match a rule
+for (const raw of md.join('\n').split('\n')) {
+    const line = raw.trimEnd();
+    const isRow = line.startsWith('|');
+    if (!isRow && table) { body.push(`<table>${table.join('')}</table>`); table = null; }
+    if (isRow) {
+        const cells = line.slice(1, -1).split('|');
+        if (cells.every(c => /^\s*-+\s*$/.test(c))) continue;      // the --- rule
+        if (!table) {
+            table = [`<tr>${cells.map(c => `<th>${inline(c.trim())}</th>`).join('')}</tr>`];
+        } else {
+            table.push(`<tr>${cells.map(cell).join('')}</tr>`);
+        }
+        continue;
+    }
+    if (line.startsWith('## ')) body.push(`<h2>${inline(line.slice(3))}</h2>`);
+    else if (line.startsWith('# ')) body.push(`<h1>${inline(line.slice(2))}</h1>`);
+    else if (line) body.push(`<p class="desc">${inline(line)}</p>`);
+}
+if (table) body.push(`<table>${table.join('')}</table>`);
+
+writeFileSync(new URL('../reports/print-audit.md', import.meta.url), md.join('\n') + '\n');
+writeFileSync(new URL('../reports/print-audit.html', import.meta.url), `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Klip Klop Konstructor — Print Suitability Audit</title>
+<style>
+:root { color-scheme: light dark;
+  --surface-1:#fcfcfb; --text-primary:#0b0b0b; --text-secondary:#52514e;
+  --line:#e4e1d7; --card:#f6f4ec; }
+@media (prefers-color-scheme: dark) { :root {
+  --surface-1:#1a1a19; --text-primary:#fff; --text-secondary:#c3c2b7;
+  --line:#3a3831; --card:#232320; } }
+body { margin:0 auto; max-width:1040px; padding:24px 20px 80px;
+  font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif;
+  background:var(--surface-1); color:var(--text-primary); }
+h1 { font-size:22px; } h2 { font-size:17px; margin:34px 0 6px; }
+.desc { color:var(--text-secondary); max-width:78ch; }
+.wrap { overflow-x:auto; }
+table { border-collapse:collapse; width:100%; font-size:12.5px; margin:8px 0 4px;
+  font-variant-numeric:tabular-nums; }
+th { text-align:left; color:var(--text-secondary); font-weight:600; white-space:nowrap; }
+td,th { padding:4px 8px; border-bottom:1px solid var(--line); }
+tr:nth-child(even) td { background:var(--card); }
+td:first-child { white-space:nowrap; }
+code { background:var(--card); padding:0 4px; border-radius:3px; font-size:12px; }
+.ok { color:#0ca30c; font-weight:700; } .bad { color:#d03b3b; font-weight:700; }
+</style></head><body>
+${body.map(b => b.startsWith('<table') ? `<div class="wrap">${b}</div>` : b).join('\n')}
+</body></html>
+`);

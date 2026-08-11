@@ -3359,7 +3359,7 @@ function assembleParts() {
                 kind: 'track',
                 piece: pair.main,
                 support: support,
-                build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support })
+                build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support, forPrint: true })
             });
         } else {
             parts.push({
@@ -5072,7 +5072,7 @@ async function openPrintShop(opts = {}) {
                     const branch = sw.pieces.find(p => p.role === 'branch');
                     if (main && branch) canonical.push({
                         name: 'standard_switch', kind: 'track', count: 0,
-                        build: () => buildSwitchExportGeometry(main, branch, {})
+                        build: () => buildSwitchExportGeometry(main, branch, { forPrint: true })
                     });
                 } catch (e) { console.warn('no standard switch part:', e.message); }
             }

@@ -1103,6 +1103,10 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const frame = pieceFrame(mainPiece);
     mainPiece = pieceInFrame(mainPiece, frame);
     branchPiece = pieceInFrame(branchPiece, frame);
+    // one underside for one solid — see undersidePlane
+    const planeGroup = [mainPiece, branchPiece];
+    mainPiece = { ...mainPiece, planeGroup };
+    branchPiece = { ...branchPiece, planeGroup };
     opts = { ...opts, support: supportInFrame(opts.support, frame) };
     const spec = opts.spec ?? SPEC;
     const stations = supportStations(opts.support, mainPiece);
@@ -1137,7 +1141,8 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...engraveOps(mainPiece, opts.code ?? pieceCode(mainPiece, GEOMETRY_VERSION), spec,
         switchEngraveSpot(mainPiece, branchPiece, spec)));
 
-    return csgChain(shell, ops);
+    const solid = csgChain(shell, ops);
+    return opts.forPrint ? tiltOntoUnderside(solid, mainPiece, spec) : solid;
 }
 
 /**

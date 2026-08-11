@@ -1252,20 +1252,28 @@ const planeCache = new Map();
 
 export function undersidePlane(piece, spec = SPEC) {
     const D = spec.skirt?.minimalDepthMm ?? 15;
-    const key = [piece.type, piece.planLen, piece.radius ?? 0, piece.turn ?? 0,
-        piece.drop, piece.entryDeck, piece.innerWidth, D,
-        piece.entry.x, piece.entry.z, piece.entry.h].join(',');
+    // A SWITCH IS ONE SOLID AND SO NEEDS ONE PLANE. Its two halves are a
+    // straight and a curve, which fit different planes; cut to their own, the
+    // merged part has two undersides and cannot lie on either. `planeGroup`
+    // hands both halves the same sample set, so one plane is fitted to the
+    // whole footprint and both shells, both boss and every rib share it.
+    const group = piece.planeGroup ?? [piece];
+    const sig = (q) => [q.type, q.planLen, q.radius ?? 0, q.turn ?? 0, q.drop,
+        q.entryDeck, q.innerWidth, q.entry.x, q.entry.z, q.entry.h].join(',');
+    const key = group.map(sig).join(';') + `|${D}`;
     const hit = planeCache.get(key);
     if (hit) return hit;
 
-    const Wo = piece.innerWidth / 2 + spec.wall;
     const pts = [];
     const N = 96;
-    for (let k = 0; k <= N; k++) {
-        const s = (piece.planLen * k) / N;
-        const p = planPosAt(piece, s), y = deckYAt(piece, s);
-        const r = [Math.sin(p.h), -Math.cos(p.h)];
-        for (const u of [-Wo, Wo]) pts.push([p.x + r[0] * u, p.z + r[1] * u, y]);
+    for (const q of group) {
+        const Wo = q.innerWidth / 2 + spec.wall;
+        for (let k = 0; k <= N; k++) {
+            const s = (q.planLen * k) / N;
+            const p = planPosAt(q, s), y = deckYAt(q, s);
+            const r = [Math.sin(p.h), -Math.cos(p.h)];
+            for (const u of [-Wo, Wo]) pts.push([p.x + r[0] * u, p.z + r[1] * u, y]);
+        }
     }
     // least squares y = a x + b z + c
     let Sxx = 0, Sxz = 0, Szz = 0, Sx = 0, Sz = 0, S1 = 0, Sxy = 0, Szy = 0, Sy = 0;
@@ -1312,6 +1320,11 @@ export function undersidePlane(piece, spec = SPEC) {
  * straight. Platforms and powered tiles stay out: they are level already.
  */
 export function laysOnUnderside(piece, spec) {
+    // An ELEVATOR never does. Its housing is a solid block from the rim up to
+    // the deck, so its underside is that rim and not the plane — tilted, it
+    // rested on a corner at 0 mm2 of contact. It keeps the rim, the rim boss
+    // and a rim-down print, which is what the block wants anyway.
+    if (piece.isElevator || piece.type === 'elevator') return false;
     return piece.skirtStyle === 'minimal'
         && piece.planLen > 0 && Math.abs(piece.drop ?? 0) > 1e-6
         && collarFits(piece, spec);
