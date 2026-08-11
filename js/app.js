@@ -4513,7 +4513,25 @@ function plateGroup(name) {
     // switch carries a curved branch and draws the same warning, and pairing
     // it with a curve would put the two hardest parts on one plate and lose
     // exactly the attribution this exists for.
+    //
+    // BUT IT IS NOW A CHOICE, because the reason it was always on stopped
+    // being true. It was written for a curve standing 71 mm tall on 1031 mm2
+    // of skirt, where a failure was likely enough to be worth a whole plate.
+    // A curve laid on its own underside is 41 mm tall on 1777 mm2 — the
+    // flattest thing on the build — and isolating it costs eight plates that
+    // are 53% empty, which is 86% of all the free space in the job. The
+    // leftover is a 67 mm margin and every support part fits in it.
+    if (!shop.soloBigParts) return '';
     return /^curve|^switch/.test(name) ? name : '';
+}
+
+/**
+ * Default the choice from how the big parts actually print: on while they
+ * stand rim-down, off once they lie flat. Set explicitly by the user, it
+ * stays set — `soloTouched` is what remembers that.
+ */
+function defaultSoloBigParts() {
+    return state.skirtStyle !== 'minimal';
 }
 
 /**
@@ -4568,7 +4586,10 @@ const MIN_BED_MM2 = 25;
 
 const shop = {
     open: false, renderer: null, scene: null, camera: null, controls: null,
-    raf: 0, items: [], counts: new Map(), plates: [], group: null, built: false, framedFor: 0
+    raf: 0, items: [], counts: new Map(), plates: [], group: null, built: false, framedFor: 0,
+    // see plateGroup / defaultSoloBigParts. `soloTouched` keeps a deliberate
+    // choice from being undone the next time the underside style changes.
+    soloBigParts: true, soloTouched: false
 };
 
 /** Bed outline + grid for one plate, centred on the origin of its own group. */
@@ -5018,6 +5039,8 @@ async function openPrintShop(opts = {}) {
     initShop();
     sizeShop();
     if (!shop.built) {
+        if (!shop.soloTouched) shop.soloBigParts = defaultSoloBigParts();
+        $('shop-solo').checked = shop.soloBigParts;
         $('shop-summary').textContent = 'building part geometry…';
         try {
             await initCSG();
@@ -5216,6 +5239,11 @@ $('shop-export-stl').addEventListener('click', () => shopExport('stl'));
     }
     sel.addEventListener('change', () => shopApplyPreset(sel.value));
 })();
+$('shop-solo').addEventListener('change', () => {
+    shop.soloBigParts = $('shop-solo').checked;
+    shop.soloTouched = true;
+    shopRepack();          // updates #shop-summary itself
+});
 $('shop-zero').addEventListener('click', () => {
     for (const it of shop.items) shop.counts.set(it.name, 0);
     $('shop-preset').selectedIndex = -1;
