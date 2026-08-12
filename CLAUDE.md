@@ -9,6 +9,8 @@ npm test        # all Jest tests (ES modules — uses --experimental-vm-modules)
 npm start       # serve locally (npx serve .)
 node --experimental-vm-modules node_modules/jest/bin/jest.js tests/track.test.js  # single file
 node scripts/generate_reports.mjs   # solve all scenes/ → reports/index.html (run from repo root)
+node scripts/slice_loop.mjs         # build → slice with the real Bambu CLI → feature totals
+node scripts/slice_audit.mjs f.gcode  # read a slice made by hand in the GUI
 ```
 
 ## What this is

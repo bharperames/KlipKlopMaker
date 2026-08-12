@@ -1,0 +1,159 @@
+{
+  "process": "0.20mm Standard @BBL P2S",
+  "rows": [
+    {
+      "name": "start_viaduct",
+      "watertight": true,
+      "massG": 69.9,
+      "filament": 15917,
+      "floating": 186.4,
+      "overhang": 2.5,
+      "bridge": 1472.6,
+      "support": 0,
+      "troublePct": 1.19
+    },
+    {
+      "name": "straight_viaduct",
+      "watertight": true,
+      "massG": 74.6,
+      "filament": 20917,
+      "floating": 2159.1,
+      "overhang": 392.4,
+      "bridge": 2266,
+      "support": 0,
+      "troublePct": 12.2
+    },
+    {
+      "name": "curveR_viaduct",
+      "watertight": true,
+      "massG": 106.9,
+      "filament": 21157,
+      "floating": 2979.9,
+      "overhang": 621.3,
+      "bridge": 3736.8,
+      "support": 0,
+      "troublePct": 17.02
+    },
+    {
+      "name": "lift_viaduct",
+      "watertight": true,
+      "massG": 74.2,
+      "filament": 21021,
+      "floating": 2196.9,
+      "overhang": 402.9,
+      "bridge": 2310.6,
+      "support": 0,
+      "troublePct": 12.37
+    },
+    {
+      "name": "powered_viaduct",
+      "watertight": true,
+      "massG": 52.6,
+      "filament": 13627,
+      "floating": 132.9,
+      "overhang": 19.2,
+      "bridge": 1463.1,
+      "support": 0,
+      "troublePct": 1.12
+    },
+    {
+      "name": "end_viaduct",
+      "watertight": true,
+      "massG": 51.6,
+      "filament": 13821,
+      "floating": 100,
+      "overhang": 4.7,
+      "bridge": 1493,
+      "support": 0,
+      "troublePct": 0.76
+    },
+    {
+      "name": "switchL_viaduct",
+      "watertight": true,
+      "massG": 150.4,
+      "filament": 34881,
+      "floating": 4051,
+      "overhang": 773.5,
+      "bridge": 4439,
+      "support": 0,
+      "troublePct": 13.83
+    },
+    {
+      "name": "start_minimal",
+      "watertight": true,
+      "massG": 69.9,
+      "filament": 15917,
+      "floating": 186.4,
+      "overhang": 2.5,
+      "bridge": 1472.6,
+      "support": 0,
+      "troublePct": 1.19
+    },
+    {
+      "name": "straight_minimal",
+      "watertight": true,
+      "massG": 69,
+      "filament": 16814,
+      "floating": 192.8,
+      "overhang": 38.8,
+      "bridge": 1495.2,
+      "support": 0,
+      "troublePct": 1.38
+    },
+    {
+      "name": "curveR_minimal",
+      "watertight": true,
+      "massG": 106.5,
+      "filament": 17647,
+      "floating": 518,
+      "overhang": 287.3,
+      "bridge": 3017.3,
+      "support": 0,
+      "troublePct": 4.56
+    },
+    {
+      "name": "lift_minimal",
+      "watertight": true,
+      "massG": 69,
+      "filament": 16775,
+      "floating": 200.6,
+      "overhang": 39.1,
+      "bridge": 1496.1,
+      "support": 0,
+      "troublePct": 1.43
+    },
+    {
+      "name": "powered_minimal",
+      "watertight": true,
+      "massG": 56.5,
+      "filament": 14413,
+      "floating": 119,
+      "overhang": 2.4,
+      "bridge": 1463.5,
+      "support": 0,
+      "troublePct": 0.84
+    },
+    {
+      "name": "end_minimal",
+      "watertight": true,
+      "massG": 51.6,
+      "filament": 13821,
+      "floating": 100,
+      "overhang": 4.7,
+      "bridge": 1493,
+      "support": 0,
+      "troublePct": 0.76
+    },
+    {
+      "name": "switchL_minimal",
+      "watertight": true,
+      "massG": 157.5,
+      "filament": 30347,
+      "floating": 1291.1,
+      "overhang": 431.7,
+      "bridge": 3886.5,
+      "support": 0,
+      "troublePct": 5.68
+    }
+  ]
+}
