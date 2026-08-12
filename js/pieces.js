@@ -592,7 +592,7 @@ function jointOps(face, deckY, seamDeckY, rimAt, innerWidth, spec, deckAtDepth =
  * tenon self-align instead of binding on a sharp 90° opening (and absorbs
  * elephant-foot flare on the mating part).
  */
-function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 0) {
+function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 0, roofY = null) {
     const AF = afOverride ?? spec.socket.hexAF;
     const dir = Math.sign(yEnd - yOpen);
     const levels = [
@@ -602,6 +602,20 @@ function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 
         // slip — see SPEC.socket.gripTaperAF
         { y: yEnd, af: AF - taperAF }
     ];
+    // A ROOF ON THE BLIND END, in whatever headroom there is above it.
+    //
+    // A flat ceiling inside a blind hole is the shape a slicer plants support
+    // under, and that support is inside the socket where it can never be got
+    // out. `bossBoreSolids` solves it on a viaduct boss with a 45 deg cone, but
+    // that needs 3.9 mm of clear height and a MINIMAL boss has none: its seat
+    // is defined one socket depth below the floor, so the ceiling is always
+    // ~2 mm under the deck. What is left is to spend the headroom that does
+    // exist — closing at 45 deg over 1.6 mm takes the flat from 9 AF to 5.8,
+    // which is 85 mm2 down to 29, and 5.8 mm is a hole any slicer bridges.
+    if (roofY != null && dir * (roofY - yEnd) > 0.2) {
+        const rise = Math.abs(roofY - yEnd);
+        levels.push({ y: roofY, af: Math.max(0.6, AF - taperAF - 2 * rise) });
+    }
     const profiles = levels.map(l => hexPlan(l.af).map(([x, z]) => [cx + x, -(cz + z)]));
     const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
     return toBufferGeometry(sweepSolid(profiles, stations));
@@ -756,11 +770,23 @@ function bossOps(piece, spec, support) {
             });
         }
     }
+    // the roof is only worth building where the 45 deg BORE cannot be: on a
+    // viaduct boss the bore replaces the ceiling entirely and a roof under it
+    // would just be a second, redundant cut
+    const socketTop = mouthY + spec.socket.depth;
+    const rCorner = spec.socket.hexAF / 2 / Math.cos(Math.PI / 6);
+    const roofY = bossUnderside
+        ? Math.max(socketTop, Math.min(socketTop + spec.socket.hexAF / 2,
+            // the LOWEST floor underside across the socket, either way the
+            // deck runs — a lift climbs, so its downhill corner is -rCorner
+            Math.min(bossUnderside(rCorner), bossUnderside(-rCorner)) - 0.4))
+        : null;
     ops.push({
         op: SUBTRACTION,
         // the track's socket alone is cut undersize — see socket.trackShrinkAF
-        geometry: hexSocketSolid(bx, bz, mouthY - 0.5, mouthY + spec.socket.depth, spec,
-            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0), spec.socket.gripTaperAF ?? 0)
+        geometry: hexSocketSolid(bx, bz, mouthY - 0.5, socketTop, spec,
+            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0), spec.socket.gripTaperAF ?? 0,
+            roofY)
     });
     // Core the boss out above the socket: only the socket walls carry the
     // tenon, so a solid post is ~6.6 cm3 doing nothing. The bore continues the

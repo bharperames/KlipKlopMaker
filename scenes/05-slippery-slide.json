@@ -8,11 +8,6 @@
     "curveL",
     "straight"
   ],
-  "params": {
-    "slopeDeg": 11.2167,
-    "innerWidth": 48,
-    "curveRadius": 143.64
-  },
   "surface": "dusty",
   "walker": {
     "alphaDeg": 18,
