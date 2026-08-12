@@ -79,7 +79,12 @@ building, gait physics simulation, and watertight STL/3MF export.
   the walking surface as a fin across the washboard. `tests/pieces.test.js`
   checks the floor is the highest thing in the channel; it is a surface check,
   not a per-feature one, so the next feature to get this wrong is caught too.
-- **Print-friendliness is a contract**: parts print rim-down with no supports.
+- **Print-friendliness is a contract**, and the orientation is part of the
+  part. A `viaduct` piece prints RIM-DOWN on its arcade with no supports. A
+  `minimal` piece is exported already TILTED onto its own underside
+  (`tiltOntoUnderside`, gated by `laysOnUnderside`) — do not re-orient it in
+  the slicer, that is the reason it is that shape. Platforms, powered tiles
+  and elevators are flat or block-bottomed and stay rim-down in both styles.
   Never add geometry that protrudes past an end face or floats above the bed
   (the original dovetail tab failed in the slicer as a floating cantilever) —
   joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`

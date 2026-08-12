@@ -5,7 +5,8 @@
 import { jest } from '@jest/globals';
 import {
     layoutTrack, pieceInFrame, SPEC, GEOMETRY_VERSION, innerWidthAt, deckYAt, planPosAt,
-    planPillarPositions, socketMouthY, SPACER_VARIANTS, undersidePlane
+    planPillarPositions, socketMouthY, SPACER_VARIANTS, undersidePlane,
+    pieceFrame as pieceFrameOf
 } from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
 const STANDARD_SIZES = [60, 30, 15];
@@ -813,6 +814,35 @@ describe('the minimal skirt', () => {
      * Anything built to a different notion of the underside fails one or the
      * other, whichever way it is wrong.
      */
+    /**
+     * AND THE SWITCH, which is the piece the invariant was written for. Its two
+     * halves are a straight and a curve that fit DIFFERENT planes, so it is the
+     * one part where "everything agrees where the underside is" can fail
+     * without any single builder being wrong — see undersidePlane's planeGroup.
+     */
+    test('a switch merges to ONE underside, not one per half', () => {
+        const sw = layoutTrack([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }],
+            { skirtStyle: 'minimal' });
+        const main = sw.pieces.find(p => p.role === 'main');
+        const branch = sw.pieces.find(p => p.role === 'branch');
+        const support = planPillarPositions(sw.pieces).find(s => s.pieceIndex === main.index);
+        const g = buildSwitchExportGeometry(main, branch, { support });
+        expectWatertight(g, 'minimal switch');
+        const mf = pieceInFrame(main), bf = pieceInFrame(branch, pieceFrameOf(main));
+        const pl = undersidePlane({ ...mf, planeGroup: [mf, bf] });
+        let deepest = 0;
+        const P = g.positions;
+        for (let i = 0; i < P.length; i += 3) {
+            deepest = Math.min(deepest, P[i + 1] - pl.at(P[i], P[i + 2]));
+        }
+        expect(`switch deepest vertex ${deepest.toFixed(2)} mm below its plane`)
+            .toBe(`switch deepest vertex ${Math.max(deepest, -0.01).toFixed(2)} mm below its plane`);
+        // and laid down on that plane it lands on it — the untilted build
+        // rests on nothing, which is the point of the tilt
+        const down = buildSwitchExportGeometry(main, branch, { support, forPrint: true });
+        expect(bedStability(down.positions, down.indices).contactMm2).toBeGreaterThan(1500);
+    });
+
     test.each(['straight', 'curveL', 'lift'])('%s: every feature agrees where the underside is', (type) => {
         const { g, pc, support } = built(type);
         const pl = undersidePlane(pc);

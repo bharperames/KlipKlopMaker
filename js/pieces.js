@@ -1608,7 +1608,12 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     return csgChain(body, [
         { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
         ...gridMarks(sizeMm, spec),
-        ...hexFlatEngraveOps(opts.code ?? null, 15, 0, sizeMm, spec)
+        // BETWEEN two grid marks, not across one. hexFlatEngraveOps centres the
+        // block on the span it is given, and given the whole shaft that centre
+        // is sizeMm/2 — which on a 30 and a 60 is exactly where a groove runs,
+        // so the code came out bisected. It gets the band above the last mark
+        // instead: 14 mm on any marked riser, against a 5.9 mm block.
+        ...hexFlatEngraveOps(opts.code ?? null, 15, lastGridMark(sizeMm) + 1, sizeMm, spec)
     ]);
 }
 
@@ -1633,6 +1638,12 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
  * 0.76 mm shell where the part looked severed. So the bicone has its own bore
  * taken out first and only the annular V is subtracted.
  */
+/** Height of the topmost grid mark on a riser, or 0 if it carries none. */
+function lastGridMark(sizeMm) {
+    const G = STANDARD.gridMm;
+    return Math.max(0, Math.floor((sizeMm - 1) / G) * G);
+}
+
 function gridMarks(sizeMm, spec = SPEC) {
     const G = STANDARD.gridMm, AF = 15, waist = AF - 0.8, n = 24;
     const ops = [];
