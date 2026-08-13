@@ -3601,6 +3601,22 @@ function initGallery() {
 
     $('print-part-shading').addEventListener('change', () => { gallery.style = $('print-part-shading').value; applyGalleryStyle(); });
     $('print-part-rotate').addEventListener('change', () => { gallery.controls.autoRotate = $('print-part-rotate').checked; });
+    // AUTO-SPIN YIELDS THE MOMENT YOU TOUCH THE PART. OrbitControls fires
+    // `start` on the first pointer-down or wheel tick of a gesture, so one
+    // listener covers dragging, pinching and zooming alike — no need to guess
+    // at which events count as "interacting".
+    //
+    // The CHECKBOX is cleared with the flag, not just the flag. They are
+    // allowed to disagree exactly once and it is the bug directly above from
+    // the other side: a box still ticked while the part sits motionless, and
+    // two clicks needed to get spin back because the first one only restates
+    // what the box already claims.
+    gallery.controls.addEventListener('start', () => {
+        if (!gallery.controls.autoRotate) return;
+        gallery.controls.autoRotate = false;
+        const box = $('print-part-rotate');
+        if (box) box.checked = false;
+    });
     paintModeButton('print-part-mode', gallery.mode);
     $('print-part-mode').addEventListener('click', () => cycleRenderMode(gallery, 'print-part-mode', applyGalleryStyle));
     $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').value; applyGalleryStyle(); });
