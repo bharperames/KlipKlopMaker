@@ -173,16 +173,42 @@ each hugging one wall.)
 
 **So the recommendation is to stop.** Every geometric lever has now been
 measured and every one is neutral or negative. What is left is not a defect:
-support material is 0.0 mm, the part prints, and the residual is ~570 mm of
-perimeter laid at a shallow overhang on the UNDERSIDE of the deck, which is
-hidden in use.
+support material is 0.0 mm, and the residual is ~570 mm of perimeter laid at a
+shallow overhang on the UNDERSIDE of the deck, which is hidden in use.
 
-The one open question is physical, not geometric, and only Brett can answer it
-because he has the printed curve: **does any of that droop telegraph through
-the 2 mm floor to the WALKING SURFACE?** That is the only place it could matter,
-because that surface is the gait. If the walking surface is clean, the
-"floating regions" warning should be documented as expected for a 90° curve and
-left alone.
+### The print evidence, which says the same thing from the other side
+
+Brett has printed a **viaduct** curve (Aug 2026). What actually failed on it:
+
+- failures were **exclusively on the arched skirts** — the arcade — and were
+  made worse by a wall-thinning change that has since been undone;
+- the deck underside on that part is the same complex curve, and drew the same
+  floating-cantilever warnings, and **was not affected**;
+- **the walking surface was not affected.**
+
+That is an independent confirmation of §4 and §3(c): the arcade is where the
+cost is real, and the ceiling warnings are noise. Two lines of evidence,
+measurement and plastic, agreeing.
+
+### What is actually untested
+
+**No `minimal` piece has ever been printed.** The gcode this whole
+investigation was built on (`curveR_1_PLA_3h2m.gcode`) is a minimal curve that
+was sliced and never run — it matches the loop's minimal slice to within 4 mm
+of filament, which is how the loop was validated, but it is not a print.
+
+So the style the numbers favour by 4-10x is the one with zero physical
+evidence behind it. That, not the ceiling, is the open risk. `--keep` on
+`slice_loop.mjs` writes a ready-to-print 3MF and gcode for exactly this:
+
+```
+node scripts/slice_loop.mjs straight minimal --keep test-parts/minimal_trial
+node scripts/slice_loop.mjs curveR   minimal --keep test-parts/minimal_trial
+```
+
+Print the straight first — it is 69 g against the curve's 106 g and it tests
+the tilted underside, the bed contact and the grid-snapped seat without the
+spacer. The curve needs SPC 11.20 under it.
 
 ---
 

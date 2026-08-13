@@ -51,6 +51,10 @@ const BASELINE = path.join(ROOT, 'reports', 'slice-baseline.json');
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 const SAVE = argv.includes('--save');
+// Where to leave the 3MF and the gcode. Without this the loop is a
+// measurement and throws its output away; with it, the same run produces
+// something you can actually put on a printer.
+const KEEP = flag('keep', null);
 const PROCESS = flag('process', '0.20mm Standard @BBL P2S');
 const MACHINE = flag('machine', 'Bambu Lab P2S 0.4 nozzle');
 const FILAMENT = flag('filament', 'Bambu PLA Matte @BBL P2S');
@@ -131,6 +135,7 @@ function write3MF(name, g) {
 }
 
 let achievedLayer = 0;
+const kept = [];
 
 /** Filament laid down per extrusion FEATURE. Retractions are not extrusion. */
 function features(gcode) {
@@ -163,6 +168,13 @@ function slice(name, g) {
         return { name, failed: why };
     }
     const gcode = fs.readFileSync(path.join(out, 'plate_1.gcode'), 'utf8');
+    if (KEEP) {
+        const dir = path.resolve(ROOT, KEEP);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.copyFileSync(f3mf, path.join(dir, `${name}.3mf`));
+        fs.copyFileSync(path.join(out, 'plate_1.gcode'), path.join(dir, `${name}.gcode`));
+        kept.push(path.join(path.relative(ROOT, dir), `${name}.gcode`));
+    }
     // What the slicer says it DID, not what we asked for. See flatten() above.
     achievedLayer = parseFloat(/^; layer_height = ([0-9.]+)/m.exec(gcode)?.[1] ?? '0');
     const tot = features(gcode);
@@ -235,6 +247,10 @@ for (const r of rows) {
 console.log('\nfloating/overhang/bridge/support are mm of filament in that feature class.');
 console.log('Floating vertical shell has a benign floor — read the header of this file.');
 
+if (kept.length) {
+    console.log(`\nready to print (sliced at ${achievedLayer} mm, ${FILAMENT}):`);
+    for (const f of kept) console.log(`  ${f}`);
+}
 if (SAVE) {
     fs.mkdirSync(path.dirname(BASELINE), { recursive: true });
     fs.writeFileSync(BASELINE, JSON.stringify({ process: PROCESS, rows }, null, 2) + '\n');
