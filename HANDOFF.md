@@ -9,8 +9,11 @@ before trusting any earlier number.
 
 ## 1. Where things stand
 
-Clean tree, **357 tests passing**. `viaduct` is still `SPEC.skirt.style`;
-`minimal` is opt-in in the Underside selector and is the variant this is about.
+Clean tree, **357 tests passing**. **`minimal` is now `SPEC.skirt.style`** — the
+default underside — on the evidence in §4 and the print evidence in §6.
+`viaduct` remains fully supported, one selection away in the Underside control,
+and is what the three arcade tests in `tests/geometry.test.js` now pin
+explicitly rather than inheriting.
 
 A `minimal` piece is exported **already tilted onto its own underside**
 (`tiltOntoUnderside`, gated by `laysOnUnderside`). Do not re-orient it in the
@@ -111,7 +114,7 @@ Two things fall out of this table that nobody had looked at:
 
 - **`minimal` is dramatically better than `viaduct` everywhere it differs** —
   a straight is 1.38% against 12.20%. The arcade is by far the bigger generator
-  of floating shell, and `viaduct` is still the DEFAULT style.
+  of floating shell. **This table is why `minimal` is now the default style.**
 - Only the **curve (4.56%) and the switch (5.68%)** stand out among `minimal`
   pieces; everything else sits near 1%. The curve's excess over a straight is
   about 570 mm of filament.

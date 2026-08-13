@@ -7,7 +7,8 @@
  * (flat string arrays) load unchanged — a string is a valid tree node.
  */
 
-import { SIMPLE_TYPES, isSwitchNode, STANDARD, GEOMETRY_VERSION, isStandardParams } from './track.js';
+import { SIMPLE_TYPES, isSwitchNode, STANDARD, GEOMETRY_VERSION, isStandardParams,
+    normaliseSkirtStyle } from './track.js';
 
 const major = (v) => String(v).split('.')[0];
 import { FRICTION_PRESETS, DEFAULT_WALKER } from './physics.js';
@@ -39,7 +40,7 @@ export function serializeScene(state, meta = {}) {
         // Which underside the pieces are built with. A scene saved with
         // `minimal` must come back as `minimal` — it is a different printed
         // part, not a view setting.
-        skirtStyle: state.skirtStyle === 'minimal' ? 'minimal' : 'viaduct',
+        skirtStyle: normaliseSkirtStyle(state.skirtStyle),
         surface: state.muKey,
         walker: { ...state.walker },
         ...(meta.expect || state.expect ? { expect: meta.expect ?? state.expect } : {})
@@ -114,7 +115,7 @@ export function deserializeScene(obj) {
         slopeDeg: +STANDARD.slopeDeg.toFixed(4),
         innerWidth: STANDARD.innerWidth,
         curveRadius: +STANDARD.curveRadius.toFixed(2),
-        skirtStyle: obj.skirtStyle === 'minimal' ? 'minimal' : 'viaduct',
+        skirtStyle: normaliseSkirtStyle(obj.skirtStyle),
         geometryOfFile: obj.geometry ?? null,
         // Same MAJOR mates — that is the promise the export README makes, and
         // an exact-string check broke it the first time a MINOR shipped.

@@ -24,7 +24,7 @@ import {
     layoutTrack, stationsForPiece, appendSpiralTier, resolveRidePath,
     getContainer, nodeAt, isSwitchNode, pathKey, openContainers, planPillarPositions, supportsPillar, needsPier, SIMPLE_TYPES,
     planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame, innerWidthAt,
-    spacerHeightMm, spacerVariant, SPACER_VARIANTS
+    spacerHeightMm, spacerVariant, SPACER_VARIANTS, normaliseSkirtStyle
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
 import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
@@ -68,7 +68,7 @@ const state = {
     innerWidth: STANDARD.innerWidth,
     curveRadius: +STANDARD.curveRadius.toFixed(2),
     muKey: 'washboard',
-    skirtStyle: 'viaduct',
+    skirtStyle: SPEC.skirt.style,
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
     renderMode: localStorage.getItem('klipklop-render-mode') || 'solid',
@@ -124,7 +124,7 @@ function restoreSnapshot(s) {
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
     state.muKey = s.muKey;
-    state.skirtStyle = s.skirtStyle === 'minimal' ? 'minimal' : 'viaduct';
+    state.skirtStyle = normaliseSkirtStyle(s.skirtStyle);
     state.walker = s.walker;
     state.name = s.name;
     state.activeEndKey = s.activeEndKey ?? '[]';
@@ -172,7 +172,7 @@ function applyScene(scene) {
     state.innerWidth = s.innerWidth;
     state.curveRadius = s.curveRadius;
     state.muKey = s.muKey;
-    state.skirtStyle = s.skirtStyle === 'minimal' ? 'minimal' : 'viaduct';
+    state.skirtStyle = normaliseSkirtStyle(s.skirtStyle);
     state.walker = s.walker;
     state.name = s.name;
     state.activeEndKey = '[]';
@@ -3263,7 +3263,7 @@ function assembleParts() {
             pc.waterfall ? pc.waterfall.toFixed(3) : '0',
             pc.switchType ?? '',
             // the underside is a different solid, not a view setting
-            pc.skirtStyle ?? 'viaduct'
+            pc.skirtStyle ?? SPEC.skirt.style
         ];
         // The support contributes ONE bit to the shape now: whether the piece
         // has a socket boss at all. Where the column goes is the jog's problem,
@@ -5220,7 +5220,7 @@ window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideS
                  get gallery() { return gallery; } };
 $('in-skirt').addEventListener('change', () => {
     recordEdit('skirt');
-    state.skirtStyle = $('in-skirt').value === 'minimal' ? 'minimal' : 'viaduct';
+    state.skirtStyle = normaliseSkirtStyle($('in-skirt').value);
     rebuild();                    // clears shop.built for us
 });
 

@@ -150,7 +150,19 @@ building, gait physics simulation, and watertight STL/3MF export.
 
 `npx serve -l 3311 .` then run the Playwright smoke script pattern (see git
 history / scratchpad): load page, assert zero console errors, exercise
-build → simulate → export, and confirm `#export-log` shows only "✔ watertight".
+build → simulate → export.
+
+Do NOT look for `#export-log` — the div is still in `index.html` with its CSS,
+but nothing in `js/` has written to it since export moved into the Print shop,
+so it reads empty and a smoke test that waits on it passes for the wrong
+reason. Drive `#btn-print-shop`, wait for "building part geometry…" to clear
+AND for `#shop-list input[type=number]` to exist, re-fire `change` on
+`#shop-preset` to populate quantities, then click `#shop-export` and assert on
+the `download` event (a `..._Nplates_3mf.zip`). Watertightness is not reported
+in the UI at all — `tests/pieces.test.js` and `analyzeMesh` are what enforce
+it. The shop's part list also states each part's size, which is the quickest
+check of which underside is in force: a minimal curve is 41 mm tall and a
+viaduct curve 71 mm.
 - **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
   and supports stack from five reusable riser designs. Never change STANDARD

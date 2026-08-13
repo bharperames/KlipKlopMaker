@@ -169,7 +169,25 @@ export const SPEC = {
      * will be printed rim-down with supports: 3.7 cm3 lighter on a straight,
      * and none of the above matters when the piece is not standing on it.
      */
-    skirt: { style: 'viaduct', minimalDepthMm: 17 },
+    /*
+     * MINIMAL IS THE DEFAULT UNDERSIDE, on slicer evidence.
+     *
+     * Sliced through `scripts/slice_loop.mjs`, the arcade is the single biggest
+     * generator of unsupported perimeter in the library: a viaduct straight
+     * spends 12.20% of its filament on floating shell and overhang wall against
+     * a minimal straight's 1.38%, and a viaduct curve 17.02% against 4.56%. It
+     * is also what actually failed in plastic — the one part printed off this
+     * repo was a viaduct curve, and its failures were exclusively on the arched
+     * skirts, while the deck underside it shares with the minimal part came out
+     * clean despite drawing the same warnings.
+     *
+     * A minimal piece is also shorter (41 mm against 71 on a curve), sits on
+     * more bed (1777 mm2 against 1031) and costs no extra plastic — 106 g
+     * either way. What it costs is a spacer under a curve, and having never
+     * been printed: see HANDOFF.md. `viaduct` remains fully supported and is
+     * one selection away in the Underside control.
+     */
+    skirt: { style: 'minimal', minimalDepthMm: 17 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -1309,6 +1327,20 @@ export function undersidePlane(piece, spec = SPEC) {
  * instead, so there is nothing left to flatten and a curve lies down like a
  * straight. Platforms and powered tiles stay out: they are level already.
  */
+/**
+ * The one place that says what an unrecognised underside means.
+ *
+ * Nine sites used to spell this `x === 'minimal' ? 'minimal' : 'viaduct'`,
+ * which silently hard-codes the default into every load path: the day the
+ * default moved, a saved state with no `skirtStyle` would still have come back
+ * viaduct. A style that IS named is always honoured — a scene saved as
+ * `viaduct` is a different printed part and must reload as one — and only an
+ * absent or unknown one falls through to the default.
+ */
+export function normaliseSkirtStyle(v, spec = SPEC) {
+    return v === 'viaduct' || v === 'minimal' ? v : spec.skirt.style;
+}
+
 export function laysOnUnderside(piece, spec) {
     // An ELEVATOR never does. Its housing is a solid block from the rim up to
     // the deck, so its underside is that rim and not the plane — tilted, it

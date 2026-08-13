@@ -213,7 +213,10 @@ describe('skirt arch windows print without support', () => {
             ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
             ['lift', 'straight', 'curveR']
         ]) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
+            // riding the default. `minimal` is the default underside now and has
+            // no arches at all, which made these three assert against a flat rim.
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
             const supports = planPillarPositions(pieces);
             for (const pc of pieces) {
                 const sup = supports.find(s => s.pieceIndex === pc.index);
@@ -257,7 +260,10 @@ describe('skirt arch windows print without support', () => {
             ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
             ['lift', 'straight', 'curveR']
         ]) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
+            // riding the default. `minimal` is the default underside now and has
+            // no arches at all, which made these three assert against a flat rim.
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
             const supports = planPillarPositions(pieces);
             for (const pc of pieces) {
                 const sup = supports.find(s => s.pieceIndex === pc.index);
@@ -313,7 +319,10 @@ describe('skirt arch windows print without support', () => {
             ['straight', 'straight', 'curveL', 'curveL', 'straight'],
             ['lift', 'straight', 'curveR']
         ]) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
+            // riding the default. `minimal` is the default underside now and has
+            // no arches at all, which made these three assert against a flat rim.
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
             const supports = planPillarPositions(pieces);
             for (const pc of pieces) {
                 const sup = supports.find(s => s.pieceIndex === pc.index);
@@ -335,7 +344,10 @@ describe('skirt arch windows print without support', () => {
         // on the bed for the full pier width.
         const { archedRimY, windowBounds, ARCH } = await import('../js/geometry.js');
         const { SPEC, layoutTrack } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+        // pins the style for the same reason as the two tests above — piers and
+        // arches only exist on a viaduct underside
+        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'],
+            { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
         for (const pc of pieces) {
             const pads = [pc.planLen / 2];
             const bounds = windowBounds(pc, SPEC, pads);

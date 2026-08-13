@@ -287,13 +287,25 @@ describe('planPillarPositions', () => {
 
     test('a jog costs the stack exactly one grid unit, so it still decomposes', () => {
         const seq = ['straight', ...Array(8).fill('curveL'), 'straight'];
-        const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
-        for (const sup of planPillarPositions(pieces)) {
-            const pc = pieces.find(p => p.index === sup.pieceIndex);
-            if (!needsPier(pc)) continue;
-            const h = stackHeightMm(pc, sup);
-            expect(pc.rimY - h).toBe(sup.mode === 'jog' ? SPEC.jog.heightMm : 0);
-            expect(`${pc.name} decomposes`).toBe(`${pc.name} ${decomposeSupport(h) ? 'decomposes' : 'OFF-GRID'}`);
+        // BOTH UNDERSIDES, because they reach the grid by different routes and
+        // only one of them used to be the default. A viaduct boss runs down to
+        // the rim, so the stack starts at the rim and a jog is the only thing
+        // between the two. A minimal piece recesses its seat into a sloping
+        // underside, and the SPACER carries whatever that recess adds — so the
+        // rim says nothing about the stack there. What has to hold either way
+        // is the part that matters: the height still decomposes onto the grid.
+        for (const skirtStyle of ['viaduct', 'minimal']) {
+            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle });
+            for (const sup of planPillarPositions(pieces)) {
+                const pc = pieces.find(p => p.index === sup.pieceIndex);
+                if (!needsPier(pc)) continue;
+                const h = stackHeightMm(pc, sup);
+                if (skirtStyle === 'viaduct') {
+                    expect(pc.rimY - h).toBe(sup.mode === 'jog' ? SPEC.jog.heightMm : 0);
+                }
+                expect(`${pc.name} ${skirtStyle} decomposes`).toBe(
+                    `${pc.name} ${skirtStyle} ${decomposeSupport(h) ? 'decomposes' : 'OFF-GRID'}`);
+            }
         }
     });
 
