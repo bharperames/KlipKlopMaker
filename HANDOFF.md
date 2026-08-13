@@ -143,27 +143,46 @@ Two levers were tested and are not worth pulling:
 
 ---
 
-## 6. What is left, and it is a judgement call, not a bug
+## 6. RIBS DO NOT WORK — measured, not argued
 
-The remaining ~570 mm is intrinsic to laying a 90° helicoid on a plane. The
-only candidate that survives the measurements is **radial bridge-ribs**: thin
-fins running ACROSS the channel (the advancing perimeter runs along the arc, so
-it crosses them), spaced ~10 mm along the arc, each with a flat bottom parallel
-to the underside plane so the rib is itself a bridge anchored on both skirt
-walls. Costed off the ceiling map at roughly **3–4 g on a 106 g part**.
+The last candidate standing was **radial bridge-ribs**: thin fins running
+ACROSS the channel (the advancing perimeter runs along the arc, so it crosses
+them), each with a flat bottom parallel to the underside plane so the rib is
+itself a bridge anchored on both skirt walls. It was prototyped at mesh level
+and sliced. It makes things **worse at every pitch**:
 
-Before building it, note what it is being weighed against: support material is
-already zero, the part prints, and the cost is putting structure back under the
-deck — which is the thing an earlier session deliberately deleted (mullions,
-bulkheads, brackets; CLAUDE.md "nothing internal"). **This is Brett's call, not
-a defect to be fixed silently.** If it goes ahead, `slice_loop.mjs` will say
-whether it worked in twenty seconds.
+| ribs | filament | floating | overhang | trouble |
+|---|---|---|---|---|
+| none (baseline) | 17 647 | 518.0 | 287.3 | **805.3** |
+| 19 @ 10 mm | 18 830 | 566.0 | 313.9 | 879.8 |
+| 38 @ 5 mm | 19 937 | 557.7 | 343.8 | 901.4 |
+| 64 @ 3 mm | 21 511 | 712.5 | 382.1 | 1094.6 |
 
-Terracing the ceiling into flat treads was worked out and rejected on
+The reason is simple once seen: a rib only touches the advancing perimeter over
+its own 0.8 mm thickness, so at 10 mm pitch it catches 8% of that perimeter's
+length — while every rib contributes a full set of new perimeters and its own
+floating bottom edge. Tightening the pitch adds cost faster than it adds
+support. To actually land the perimeter you would need a pitch near one
+extrusion width, which is a solid cavity, which is ~50 g.
+
+Terracing the ceiling into flat treads was rejected earlier on the same kind of
 measurement: with honest connected-component analysis only 27% of tread area at
 0.6 mm steps lands on a band reaching BOTH walls, so 73% cantilevers. (A naive
 per-level touch test says 93% and is wrong — one level is often two patches,
 each hugging one wall.)
+
+**So the recommendation is to stop.** Every geometric lever has now been
+measured and every one is neutral or negative. What is left is not a defect:
+support material is 0.0 mm, the part prints, and the residual is ~570 mm of
+perimeter laid at a shallow overhang on the UNDERSIDE of the deck, which is
+hidden in use.
+
+The one open question is physical, not geometric, and only Brett can answer it
+because he has the printed curve: **does any of that droop telegraph through
+the 2 mm floor to the WALKING SURFACE?** That is the only place it could matter,
+because that surface is the gait. If the walking surface is clean, the
+"floating regions" warning should be documented as expected for a 90° curve and
+left alone.
 
 ---
 
@@ -181,7 +200,8 @@ each hugging one wall.)
   bore needs 3.90 mm of headroom and has −1.07.
 - **Refitting the underside plane** — §3(b). Within 5.5% of optimal already.
 - **Layer height, and reducing the tilt** — §5.
-- **Terracing the ceiling** — §6.
+- **Terracing the ceiling**, and **radial bridge-ribs** at 10/5/3 mm pitch — §6.
+  The ribs were prototyped and sliced; they are worse at every pitch.
 
 ---
 
