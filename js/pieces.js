@@ -2140,3 +2140,216 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
     }
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// Calibration SECTIONS — a printed XY cross-section, measured by camera
+// ---------------------------------------------------------------------------
+
+/**
+ * Five layers of the mating profiles, flat, for measuring with a camera
+ * instead of calipers.
+ *
+ * WHY A SECTION AND NOT A PART. Calipers on a 26 mm coupon measure one chord
+ * at a time, by hand, with the operator's feel in the number. A 1 mm section
+ * lies dead flat on an ArUco sheet, and one photograph gives every dimension
+ * at once, to the sheet's own scale, repeatably and without anyone's opinion
+ * in it. This is the "tolerance coupon" of the printing community: a graded
+ * set of holes and islands that characterises a printer and filament pair.
+ *
+ * THE PROFILES ARE THE SHIPPED ONES. Every outline here comes from the same
+ * plan function the real part is swept from — `bowtieKeyPlan`,
+ * `bowtiePocketPlan`, `hexPlan`, `circlePlan` — so the card cannot drift from
+ * the geometry it is certifying.
+ *
+ * HOLES AND ISLANDS BOTH, because they carry opposite error. A hole prints
+ * small and an island prints large, by roughly the same amount and for the
+ * same reason, so measuring only one of them tells you half of a fit.
+ *
+ * THE REFERENCE SQUARES ARE NOT DECORATION. Two exact squares, 10.000 and
+ * 20.000 mm, appear as both a hole and an island. They are how the camera
+ * checks its OWN scale: if the 20 mm reference reads 20.14, every other
+ * number on the card carries that same 0.7% and the ArUco fit is what needs
+ * fixing, not the printer.
+ *
+ * A CAVEAT WORTH PRINTING NEXT TO THE NUMBERS: seen from above, a hole's
+ * silhouette is its NARROWEST layer and an island's is its WIDEST, and on a
+ * five-layer part that is the squished first layer in both cases. So this
+ * measures the first layer, elephant foot included, while the surfaces that
+ * actually mate on a track piece are at mid-height. Slice the section with
+ * the same first-layer settings and compensation as production or the offset
+ * is not the production one.
+ */
+export const SECTION = {
+    thicknessMm: 1.0,          // five 0.2 mm layers: liftable, still a section
+    gapMm: 7,                  // between shapes: wide enough that two holes
+                               // never share a wall thin enough to distort
+    cardMarginMm: 9,
+    maxCardWidthMm: 200        // inside a 256 mm bed with room to place it
+};
+
+/**
+ * The nominal outlines, in one place, so geometry and manifest agree.
+ *
+ * A GRADED SERIES, not just the functional sizes. Printed error is not one
+ * number: a hole's shrinkage depends on its diameter, because the same
+ * over-extrusion at the perimeter eats a larger fraction of a small hole, and
+ * corner geometry matters too — a hex loses its points before a circle loses
+ * its rim. Measuring Ø2 through Ø16 and AF 6 through AF 15 gives an error CURVE
+ * to interpolate the real features against, instead of one point and a hope.
+ * The sizes that actually mate (socket AF 9, tenon AF 8.6, riser AF 15, gate
+ * bore Ø4) are IN the series, so they are read off the same curve.
+ */
+function sectionFeatures(spec = SPEC) {
+    const K = spec.key, S = spec.socket;
+    const fit = K.fitClearanceMm ?? spec.jointClearanceMm;
+    const tenonAF = S.hexAF - 2 * spec.jointClearanceMm;
+    const square = (mm) => [[-mm / 2, -mm / 2], [mm / 2, -mm / 2], [mm / 2, mm / 2], [-mm / 2, mm / 2]];
+    const f = [];
+
+    // --- the shapes that actually mate, drawn by the shipped plan functions
+    f.push({ id: 'pocket', kind: 'hole', group: 'fit', label: 'key pocket',
+        nominal: { acrossTips: 2 * (K.tipHalf + fit), acrossNeck: 2 * (K.neckHalf + fit) },
+        plan: bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
+            clearance: fit, depthClearance: K.depthClearanceMm ?? fit }) });
+    f.push({ id: 'key', kind: 'island', group: 'fit', label: 'bowtie key',
+        nominal: { acrossTips: 2 * K.tipHalf, acrossNeck: 2 * K.neckHalf },
+        plan: bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: 0 }) });
+
+    // --- reference squares: how the camera checks its own scale
+    for (const mm of [20, 10]) {
+        f.push({ id: `ref_hole_${mm}`, kind: 'hole', group: 'reference',
+            label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
+        f.push({ id: `ref_island_${mm}`, kind: 'island', group: 'reference',
+            label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
+    }
+
+    // --- round series. Ø4 is the gate bore and pin.
+    const ROUND = [2, 3, 4, 5, 6, 8, 10, 12, 16];
+    for (const d of ROUND) {
+        f.push({ id: `round_hole_${d}`, kind: 'hole', group: 'round',
+            label: `round hole Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
+            mates: d === 2 * GATE.boreR ? 'gate bore' : null });
+    }
+    for (const d of [4, 6, 10, 16]) {
+        f.push({ id: `round_island_${d}`, kind: 'island', group: 'round',
+            label: `round island Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
+            mates: d === 2 * GATE.pinR ? 'gate pin' : null });
+    }
+
+    // --- hex series. AF 8.6 is the tenon, 9 the socket, 15 the riser shaft.
+    const HEX = [6, 8, tenonAF, S.hexAF, 10, 12, 15];
+    for (const af of HEX) {
+        const tag = String(+af.toFixed(1)).replace('.', 'p');
+        f.push({ id: `hex_hole_${tag}`, kind: 'hole', group: 'hex',
+            label: `hex hole AF ${+af.toFixed(2)}`, nominal: { acrossFlats: +af.toFixed(3) },
+            plan: hexPlan(af),
+            mates: af === S.hexAF ? 'socket' : af === tenonAF ? 'tenon clearance' : null });
+    }
+    for (const af of [tenonAF, S.hexAF, 15]) {
+        const tag = String(+af.toFixed(1)).replace('.', 'p');
+        f.push({ id: `hex_island_${tag}`, kind: 'island', group: 'hex',
+            label: `hex island AF ${+af.toFixed(2)}`, nominal: { acrossFlats: +af.toFixed(3) },
+            plan: hexPlan(af),
+            mates: af === tenonAF ? 'tenon' : af === 15 ? 'riser shaft' : null });
+    }
+    return f;
+}
+
+/** Plan bbox, so the packer can give each shape a cell that fits it. */
+function planExtent(plan) {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of plan) {
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+        z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+    }
+    return { w: x1 - x0, d: z1 - z0, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2 };
+}
+
+/**
+ * The card (every hole) and the islands (each its own free chip), plus the
+ * manifest a measuring script reads.
+ *
+ * Holes are packed into rows GROUPED BY SERIES and ordered by size, because a
+ * photograph is read by a human before it is read by a script: a row that runs
+ * small to large is obviously a series, and a missing or bridged-over hole is
+ * visible at a glance instead of needing the manifest to notice.
+ *
+ * Positions come back in CARD COORDINATES with +X right and +Y away, which is
+ * what the rectified photograph shows — NOT the app's Y-up frame.
+ */
+export function buildCalibrationSection(spec = SPEC) {
+    const T = SECTION.thicknessMm, GAP = SECTION.gapMm, M = SECTION.cardMarginMm;
+    const feats = sectionFeatures(spec);
+    const holes = feats.filter(f => f.kind === 'hole');
+    const islands = feats.filter(f => f.kind === 'island');
+
+    // pack holes into rows, one row per group, wrapping at the card width
+    const rows = [];
+    for (const group of ['fit', 'reference', 'round', 'hex']) {
+        const inGroup = holes.filter(f => f.group === group);
+        if (!inGroup.length) continue;
+        let row = [], wide = 0;
+        for (const f of inGroup) {
+            const e = planExtent(f.plan);
+            if (row.length && wide + e.w + GAP > SECTION.maxCardWidthMm - 2 * M) {
+                rows.push(row); row = []; wide = 0;
+            }
+            row.push({ f, e }); wide += e.w + GAP;
+        }
+        if (row.length) rows.push(row);
+    }
+
+    // lay the rows out, centred, deepest row setting the row pitch
+    let z = 0;
+    const placed = [];
+    for (const row of rows) {
+        const rowW = row.reduce((a, r) => a + r.e.w + GAP, -GAP);
+        const rowD = Math.max(...row.map(r => r.e.d));
+        let x = -rowW / 2;
+        for (const { f, e } of row) {
+            const cx = x + e.w / 2 - e.cx, cz = z + rowD / 2 - e.cz;
+            placed.push({ f, cx, cz });
+            x += e.w + GAP;
+        }
+        z += rowD + GAP;
+    }
+    const totalD = z - GAP;
+    // recentre in depth so the card is symmetric about the origin
+    for (const p of placed) p.cz -= totalD / 2;
+
+    const halfW = Math.max(...placed.map(p => p.cx + planExtent(p.f.plan).w / 2)) + M;
+    const halfD = totalD / 2 + M;
+    const card = extrudePolygonY(
+        [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], 0, T);
+    const ops = placed.map(({ f, cx, cz }) => {
+        f.centre = [+cx.toFixed(3), +(-cz).toFixed(3)];
+        return { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(
+            f.plan.map(([x, zz]) => [cx + x, cz + zz]), -1, T + 1)) };
+    });
+    const parts = [{ name: 'section_card', geometry: csgChain(toBufferGeometry(card), ops) }];
+    for (const f of islands) {
+        f.centre = [0, 0];                 // each island is its own free chip
+        parts.push({ name: `section_${f.id}`,
+            geometry: toBufferGeometry(extrudePolygonY(f.plan, 0, T)) });
+    }
+
+    return {
+        parts,
+        manifest: {
+            geometryVersion: GEOMETRY_VERSION,
+            thicknessMm: T,
+            cardSizeMm: [+(2 * halfW).toFixed(2), +(2 * halfD).toFixed(2)],
+            note: 'Outlines are nominal mm in card coordinates. A hole reads its '
+                + 'narrowest layer and an island its widest, and on a 5 layer part '
+                + 'that is the first layer in both cases — elephant foot included.',
+            aruco: { dict: 'DICT_4X4_50', markerIds: [0, 1, 2, 3], markerSizeMm: 30,
+                sheet: 'A4', source: 'FossilRecord tooth_cv/aruco.py' },
+            features: feats.map(f => ({
+                id: f.id, kind: f.kind, group: f.group, label: f.label,
+                nominal: f.nominal, mates: f.mates ?? null,
+                centreMm: f.centre ?? [0, 0],
+                outlineMm: f.plan.map(([x, zz]) => [+x.toFixed(4), +(-zz).toFixed(4)])
+            }))
+        }
+    };
+}

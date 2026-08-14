@@ -41,7 +41,7 @@ import {
     buildSpacerGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
-    sectionGeometry, supportStations, GATE, buildCalibrationCoupons, CALIBRATION
+    sectionGeometry, supportStations, GATE, buildCalibrationCoupons, CALIBRATION, buildCalibrationSection, SECTION
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
@@ -5299,6 +5299,35 @@ async function exportCalibrationPlate() {
         }
         files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(items));
 
+        // --- and the XY SECTION: five layers of the same profiles, flat, to be
+        // photographed on an ArUco sheet instead of measured by hand. Its own
+        // plate because it is a ten minute print and the coupons are an hour.
+        const sec = buildCalibrationSection(SPEC);
+        const secItems = sec.parts.map(p => {
+            const raw = p.geometry;
+            const mesh = recenter(raw.positions && raw.indices
+                ? { positions: new Float32Array(raw.positions), indices: new Uint32Array(raw.indices) }
+                : toArraysFromBG(raw));
+            return { name: p.name, mesh, count: 1, ...bedFootprint(mesh.positions) };
+        });
+        const secPlates = packPlates(secItems.map(({ name, w, d, h }) => ({ name, w, d, h, count: 1 })));
+        const secByName = new Map(secItems.map(it => [it.name, it]));
+        secPlates.plates.forEach((p, i) => {
+            const objs = p.items.map(it => {
+                const src = secByName.get(it.name);
+                return { name: `${it.name}_${it.copy}`, meshKey: it.name,
+                    positions: src.mesh.positions, indices: src.mesh.indices,
+                    at: [it.x, it.y, 0], rot: it.rot };
+            });
+            const stem = secPlates.plates.length > 1 ? `section_plate_${i + 1}` : 'section_plate';
+            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
+        });
+        // the placement the camera needs, alongside the nominal outlines
+        sec.manifest.plate = secPlates.plates.flatMap(p => p.items.map(it =>
+            ({ name: it.name, xMm: +it.x.toFixed(3), yMm: +it.y.toFixed(3), rotDeg: it.rot ?? 0 })));
+        files['SECTION_NOMINALS.json'] = fflate.strToU8(JSON.stringify(sec.manifest, null, 2) + '\n');
+        files['SECTION_README.md'] = fflate.strToU8(sectionReadme(sec));
+
         const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -5355,6 +5384,62 @@ function calibrationSheet(items) {
     L.push('', 'A hole prints smaller than drawn and a post larger, and by how much',
         'depends on the plastic around it — so measure each feature on ITS OWN coupon',
         'rather than assuming one offset covers the plate.', '');
+    return L.join('\n');
+}
+
+/**
+ * How to actually take the measurement, next to the numbers it produces.
+ * The ArUco constants are FossilRecord's, because that is the pipeline that
+ * will read the photograph — a sheet drawn to different constants measures
+ * nothing.
+ */
+function sectionReadme(sec) {
+    const m = sec.manifest;
+    const L = [];
+    L.push(`# XY section — measured by camera, not calipers`, '');
+    L.push(`Five layers (${m.thicknessMm.toFixed(1)} mm) of the same profiles the track is`,
+        'built from. Print `section_plate.3mf`, lift it off the bed, lay it on the',
+        'ArUco sheet and photograph it square-on.', '');
+    L.push('## The sheet', '');
+    L.push(`- dictionary \`${m.aruco.dict}\`, marker ids ${m.aruco.markerIds.join(', ')} `
+        + `(TL, TR, BR, BL), ${m.aruco.markerSizeMm} mm, on ${m.aruco.sheet}`);
+    L.push(`- these are ${m.aruco.source}'s constants — \`detect_aruco_markers\` returns`,
+        '  the corners and a pixels-per-mm, and that scale is what turns a contour',
+        '  into millimetres');
+    L.push('', `## What is on it — card ${m.cardSizeMm[0]} x ${m.cardSizeMm[1]} mm`, '');
+    L.push('| series | holes | islands |');
+    L.push('|---|---|---|');
+    for (const g of ['fit', 'reference', 'round', 'hex']) {
+        const size = (f) => Object.values(f.nominal).map(v => (+v).toFixed(2)).join('/');
+        const h = m.features.filter(f => f.group === g && f.kind === 'hole').map(size);
+        const i = m.features.filter(f => f.group === g && f.kind === 'island').map(size);
+        if (!h.length && !i.length) continue;
+        L.push(`| ${g} | ${h.join(', ') || '—'} | ${i.join(', ') || '—'} |`);
+    }
+    L.push('', 'A GRADED SERIES, not just the sizes that mate. Printed error is not one',
+        'number: the same over-extrusion eats a larger fraction of a small hole than a',
+        'large one, and a hex loses its points before a circle loses its rim. Measuring',
+        'the series gives an error CURVE to read the real features off, instead of one',
+        'point and a hope. The sizes that actually mate are IN the series and flagged',
+        '`mates` in the JSON — socket AF 9, tenon AF 8.6, riser shaft AF 15, gate bore',
+        'Ø4 — so they come off the same curve as everything else.', '');
+    L.push('HOLES AND ISLANDS BOTH, because they carry opposite error: a hole prints',
+        'small and an island prints large, by about the same amount, so measuring one',
+        'of them tells you half of a fit.', '');
+    L.push('The two REFERENCE SQUARES (10.000 and 20.000 mm, one of each kind) are how',
+        'the camera checks its own scale. If the 20 mm reference reads 20.14, every',
+        'other number carries that same 0.7% and it is the marker fit that needs',
+        'fixing, not the printer.', '');
+    L.push('## The caveat that decides whether the numbers transfer', '');
+    L.push('Seen from above a hole shows its NARROWEST layer and an island its WIDEST,',
+        'and on a five-layer part that is the squished first layer in both cases. So',
+        'this measures the first layer with elephant foot in it, while the surfaces',
+        'that actually mate on a track piece are at mid height. Slice the section with',
+        'the same first-layer settings and elephant-foot compensation as production,',
+        'or the offset you measure is not the one your parts have.', '');
+    L.push('`SECTION_NOMINALS.json` carries every outline as nominal mm in card',
+        'coordinates plus where each part sits on the plate, so a script can match',
+        'a measured contour to its feature without anyone typing a number.', '');
     return L.join('\n');
 }
 

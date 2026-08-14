@@ -1494,3 +1494,75 @@ describe('calibration coupons', () => {
         expect(vol).toBeLessThan(60000);
     }, 240000);
 });
+
+describe('calibration section card', () => {
+    /**
+     * The section is measured by camera, so the failure that matters is not a
+     * broken mesh but a card that LOOKS fine and measures something else: two
+     * holes packed close enough to share a distorted wall, a duplicate id, or a
+     * shape whose manifest centre is not where the geometry actually put it.
+     */
+    test('every section part is a watertight slab of the stated thickness', async () => {
+        const { buildCalibrationSection, SECTION } = await import('../js/pieces.js');
+        await initCSG();
+        const { analyzeMesh: am } = await import('../js/mesh_utils.js');
+        const { parts } = buildCalibrationSection();
+        expect(parts.length).toBeGreaterThan(5);
+        for (const p of parts) {
+            // NOT expectWatertight: it floors volume at 100 mm3, and these are
+            // 1 mm chips — the Ø4 gate pin disc is 12.6 mm3 and is meant to be.
+            const g = p.geometry;
+            const pos = g.positions ?? g.attributes.position.array;
+            const ix = g.indices ?? (g.index ? g.index.array
+                : Uint32Array.from({ length: pos.length / 3 }, (_, i) => i));
+            const r = am(pos, ix);
+            expect(`${p.name} ${r.isManifold && r.isConsistent && r.windsOutward && r.volumeMm3 > 5
+                ? 'solid' : 'BROKEN'}`).toBe(`${p.name} solid`);
+            let y0 = Infinity, y1 = -Infinity;
+            for (let i = 1; i < pos.length; i += 3) { y0 = Math.min(y0, pos[i]); y1 = Math.max(y1, pos[i]); }
+            expect(`${p.name} ${(y1 - y0).toFixed(3)}`).toBe(`${p.name} ${SECTION.thicknessMm.toFixed(3)}`);
+        }
+    }, 240000);
+
+    test('no two holes are packed close enough to share a distorted wall', async () => {
+        const { buildCalibrationSection, SECTION } = await import('../js/pieces.js');
+        await initCSG();
+        const { manifest } = buildCalibrationSection();
+        const holes = manifest.features.filter(f => f.kind === 'hole').map(f => {
+            let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+            for (const [x, y] of f.outlineMm) {
+                x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+                y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+            }
+            return { id: f.id, x0: x0 + f.centreMm[0], x1: x1 + f.centreMm[0],
+                y0: y0 + f.centreMm[1], y1: y1 + f.centreMm[1] };
+        });
+        for (let i = 0; i < holes.length; i++) {
+            for (let j = i + 1; j < holes.length; j++) {
+                const a = holes[i], b = holes[j];
+                const gap = Math.max(a.x0 - b.x1, b.x0 - a.x1, a.y0 - b.y1, b.y0 - a.y1);
+                expect(`${a.id} vs ${b.id}: ${gap >= 2 ? 'clear' : `${gap.toFixed(2)} mm`}`)
+                    .toBe(`${a.id} vs ${b.id}: clear`);
+            }
+        }
+        expect(new Set(manifest.features.map(f => f.id)).size).toBe(manifest.features.length);
+    }, 240000);
+
+    /**
+     * The sizes that mate have to BE in the series, or the curve has to be
+     * extrapolated to the only numbers anybody cares about.
+     */
+    test('the mating sizes appear in the graded series', async () => {
+        const { buildCalibrationSection, GATE } = await import('../js/pieces.js');
+        await initCSG();
+        const { manifest } = buildCalibrationSection();
+        const af = manifest.features.filter(f => f.group === 'hex').map(f => f.nominal.acrossFlats);
+        const dia = manifest.features.filter(f => f.group === 'round').map(f => f.nominal.diameter);
+        const near = (list, v) => list.some(x => Math.abs(x - v) < 1e-6);
+        expect(`socket ${near(af, SPEC.socket.hexAF) ? 'in' : 'MISSING'}`).toBe('socket in');
+        expect(`tenon ${near(af, SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm) ? 'in' : 'MISSING'}`)
+            .toBe('tenon in');
+        expect(`riser shaft ${near(af, 15) ? 'in' : 'MISSING'}`).toBe('riser shaft in');
+        expect(`gate bore ${near(dia, 2 * GATE.boreR) ? 'in' : 'MISSING'}`).toBe('gate bore in');
+    }, 240000);
+});

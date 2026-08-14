@@ -158,6 +158,21 @@ building, gait physics simulation, and watertight STL/3MF export.
   own thinness. Nominals for the measurement sheet are read off `SPEC`, and
   `tests/pieces.test.js` asserts that (and that every coupon sits on the bed —
   one balanced on a corner prints skewed and every reading off it is fiction).
+- **The XY section is measured by camera, not calipers.**
+  `buildCalibrationSection` emits five layers (1.0 mm) of the same plan
+  functions the parts are swept from — `bowtieKeyPlan`, `bowtiePocketPlan`,
+  `hexPlan`, `circlePlan` — as a card of holes plus free island chips, with
+  `SECTION_NOMINALS.json` carrying every outline in card coordinates so a
+  script can match a measured contour without anyone typing a number. It is a
+  GRADED series (Ø2–16, AF 6–15) because printed error is a curve, not a
+  number, and the sizes that mate are IN the series rather than extrapolated
+  to. Holes AND islands, because they carry opposite error. Two exact
+  reference squares let the camera check its own scale. The ArUco constants
+  are FossilRecord's (`tooth_cv/aruco.py`, DICT_4X4_50, ids 0-3, 30 mm, A4) —
+  a sheet drawn to different ones measures nothing. Caveat that decides
+  whether the numbers transfer: from above a hole shows its narrowest layer
+  and an island its widest, which on a 5-layer part is the squished first
+  layer, so slice it with production's first-layer settings.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 

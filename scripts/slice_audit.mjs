@@ -38,11 +38,17 @@ function auditGcode(file) {
     for (const line of lines) {
         if (line.startsWith('; FEATURE:')) { feature = line.slice(11).trim(); continue; }
         // Bambu does not emit ;Z: — track the Z of the layer-change move
-        // itself, and note it writes `Z.4` rather than `Z0.4`
-        if (/^G1 [^;]*\sZ[0-9.]/.test(line)) {
-            const zm = /\sZ([0-9.]+)/.exec(line);
-            if (zm) z = parseFloat(zm[1]);
-        }
+        // itself, and note it writes `Z.4` rather than `Z0.4`.
+        //
+        // AND THE LAYER CHANGE IS OFTEN Z-ONLY: `G1 Z.2`, with no X or Y. The
+        // obvious pattern wants whitespace before the Z, which that line does
+        // not have once `G1 ` is consumed — so every bare layer change was
+        // missed and its extrusions were filed under the PREVIOUS layer. It
+        // read as a part floating 0.4 mm above the bed that was in fact sitting
+        // on it. Totals per feature never depended on Z, but every per-layer
+        // table did.
+        const zm = /^G1\s[^;]*?Z([0-9.]+)/.exec(line);
+        if (zm) z = parseFloat(zm[1]);
         if (!line.startsWith('G1 ')) continue;
         const m = /\sE(-?[0-9.]+)/.exec(line);
         if (!m) continue;
