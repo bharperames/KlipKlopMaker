@@ -1353,3 +1353,82 @@ describe('the key can actually be fitted', () => {
     });
 
 });
+
+describe('calibration coupons', () => {
+    /**
+     * The coupons exist to be MEASURED, so the two things that would silently
+     * ruin a measurement are what get asserted: that each one is a real solid,
+     * and that it actually lies on the bed. A coupon balanced on a corner
+     * prints skewed and every caliper reading off it is fiction — which is
+     * exactly what the gate bearing did the first time, at 0 mm2 of contact,
+     * because it was tilted onto a plane fitted to the switch's main half
+     * alone instead of the `planeGroup` the shell was cut with.
+     */
+    const src = async () => {
+        const { layoutTrack: lay, planPillarPositions: plan } = await import('../js/track.js');
+        const { pieces } = lay(['start', 'straight', 'straight', 'curveR', 'straight', 'end']);
+        const sups = plan(pieces);
+        let piece = null, support = null;
+        for (const p of pieces.filter(p => p.type === 'straight')) {
+            const s = sups.find(x => x.pieceIndex === p.index);
+            if (s && s.mode !== 'none') { piece = p; support = s; break; }
+        }
+        const sw = lay([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }]);
+        return { piece, support,
+            switchMain: sw.pieces.find(p => p.role === 'main'),
+            switchBranch: sw.pieces.find(p => p.role === 'branch') };
+    };
+
+    test('every coupon is watertight and sits on the bed', async () => {
+        const { buildCalibrationCoupons } = await import('../js/pieces.js');
+        const { bedStability } = await import('../js/mesh_utils.js');
+        await initCSG();
+        const coupons = buildCalibrationCoupons(await src());
+        expect(coupons.length).toBeGreaterThanOrEqual(6);
+        for (const c of coupons) {
+            const g = c.build();
+            expectWatertight(g, c.name);
+            const p = g.positions ?? g.attributes.position.array;
+            const ix = g.indices ?? (g.index ? g.index.array : null);
+            const bed = bedStability(p, ix ?? Uint32Array.from({ length: p.length / 3 }, (_, i) => i));
+            expect(`${c.name} bed ${bed.contactMm2 > 20 ? 'sits' : 'PERCHES'}`)
+                .toBe(`${c.name} bed sits`);
+        }
+    }, 240000);
+
+    /**
+     * The nominals are the sheet's whole content, so they must come off SPEC
+     * rather than being typed into the coupon list — a hardcoded 24.00 would
+     * keep certifying the old key the day the bowtie changed.
+     */
+    test('nominals track SPEC rather than being hardcoded', async () => {
+        const { buildCalibrationCoupons } = await import('../js/pieces.js');
+        await initCSG();
+        const s = await src();
+        const base = buildCalibrationCoupons(s);
+        const keyOf = (set) => set.find(c => c.name === 'cal_key')
+            .measures.find(([l]) => l === 'across the tips')[1];
+        expect(keyOf(base)).toBeCloseTo(2 * SPEC.key.tipHalf, 6);
+        const wider = { ...SPEC, key: { ...SPEC.key, tipHalf: SPEC.key.tipHalf + 1 } };
+        expect(keyOf(buildCalibrationCoupons(s, wider))).toBeCloseTo(2 * (SPEC.key.tipHalf + 1), 6);
+    }, 240000);
+
+    /**
+     * A coupon that does not carry the feature it is named for is worse than
+     * no coupon: it certifies a fit nobody printed. The pocket is a void in
+     * the end face, so the coupon must be measurably hollow there.
+     */
+    test('the joint coupon really contains a pocket', async () => {
+        const { buildCalibrationCoupons } = await import('../js/pieces.js');
+        const { analyzeMesh: am } = await import('../js/mesh_utils.js');
+        await initCSG();
+        const s = await src();
+        const joint = buildCalibrationCoupons(s).find(c => c.name === 'cal_joint_female');
+        const g = joint.build();
+        const vol = am(g.positions, g.indices).volumeMm3;
+        // the pocket alone is ~9 x 12 x 24 mm of absence; a coupon that solid
+        // would be well over 20 cm3, so a sane hollow is the check
+        expect(vol).toBeGreaterThan(1000);
+        expect(vol).toBeLessThan(20000);
+    }, 240000);
+});

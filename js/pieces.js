@@ -1894,3 +1894,187 @@ export function mergeSolids(solids) {
     }
     return { positions, indices };
 }
+
+// ---------------------------------------------------------------------------
+// Calibration coupons
+// ---------------------------------------------------------------------------
+
+/**
+ * A small plate of parts carrying ONLY the surfaces that touch something else,
+ * so a fit can be measured with calipers in an hour instead of after a 3 hour
+ * track piece.
+ *
+ * THE COUPONS ARE CUT FROM THE REAL PARTS, not drawn to match them. A pocket
+ * redrawn "the same" would have to reproduce the flank clearance, the detent,
+ * the grip taper and the seat land, and the day one of those changed the
+ * coupon would keep certifying the old number. So `truncate()` builds the
+ * actual piece and subtracts everything outside a band of it: whatever the
+ * real joint is, that is what gets measured.
+ *
+ * AND THEY KEEP THE PLASTIC AROUND THE FEATURE. A hole's printed size depends
+ * on how much material surrounds it — the same drawing comes out a quarter of
+ * a millimetre apart in a slender part and a massive one — so a coupon thinned
+ * down for print speed would measure its own thinness rather than the fit.
+ * Each coupon keeps the real part's full section and its real print
+ * orientation, and is shortened only in extent. Brett: "you can make it as
+ * thick as need be."
+ */
+const CAL = {
+    jointKeepMm: 26,     // enough rib to hold the pocket and its surround
+    socketKeepMm: 44,    // a band centred on the boss
+    gateKeepMm: 34       // a block around the gate pin bore
+};
+
+/**
+ * Everything outside `[dFrom, dTo]` measured forward from `face`, as cutters.
+ * Two boxes rather than an intersection, because csgChain only adds and
+ * subtracts — and a box big enough to swallow a track piece is cheaper than
+ * teaching it a third operation.
+ */
+function bandCutters(face, dFrom, dTo, spec) {
+    const BIG = 400, LO = -400, HI = 400;
+    const box = (a, b) => toBufferGeometry(extrudePolygonY(
+        planToWorld([[-BIG, a], [BIG, a], [BIG, b], [-BIG, b]], face), LO, HI));
+    return [
+        { op: SUBTRACTION, geometry: box(-BIG, dFrom) },
+        { op: SUBTRACTION, geometry: box(dTo, BIG) }
+    ];
+}
+
+/**
+ * A band of a real track piece, in the orientation it prints in.
+ *
+ * Built UNTILTED so the cut can be stated in the piece's own plan — where the
+ * joint is at d=0 and the boss is at its mass centre — and tilted afterwards
+ * with the same `tiltOntoUnderside` the shipped part uses. Cutting after the
+ * tilt would mean chasing those stations through a Rodrigues rotation for no
+ * gain.
+ */
+function truncatePiece(piece, support, dFrom, dTo, spec) {
+    const q = pieceInFrame(piece, pieceFrame(piece));
+    const solid = buildPieceExportGeometry(piece, { support, spec, forPrint: false });
+    const cut = csgChain(toBufferGeometry(solid), bandCutters(q.entry, dFrom, dTo, spec));
+    return tiltOntoUnderside(cut, q, spec);
+}
+
+/**
+ * The coupon set, with what to measure on each and the number it should come
+ * out at. The nominals are READ OFF THE SPEC rather than typed in here, so a
+ * measurement sheet cannot quietly go stale the way a hardcoded table would.
+ *
+ * @param {object} src  { piece, support, switchMain, switchBranch } — laid out
+ *   by the caller, because this module never lays out track.
+ */
+export function buildCalibrationCoupons(src, spec = SPEC) {
+    const K = spec.key, S = spec.socket;
+    const tenonAF = S.hexAF - 2 * spec.jointClearanceMm;
+    const fit = K.fitClearanceMm ?? spec.jointClearanceMm;
+    const out = [];
+
+    if (src.piece) {
+        out.push({
+            name: 'cal_joint_female',
+            count: 2,
+            note: 'The end rib of a real track piece, with its key pocket. Two of '
+                + 'them plus the key make a seam you can feel.',
+            build: () => truncatePiece(src.piece, src.support, -1, CAL.jointKeepMm, spec),
+            measures: [
+                ['pocket mouth, across the neck', 2 * (K.neckHalf + fit)],
+                ['pocket mouth, across the tips', 2 * (K.tipHalf + fit)],
+                ['pocket depth into the face', K.depth + (K.depthClearanceMm ?? fit)],
+                ['rib thickness', K.ribThk],
+                ['channel width between rails', src.piece.innerWidth]
+            ]
+        });
+    }
+    out.push({
+        name: 'cal_key',
+        count: 2,
+        note: 'The shipped bowtie key, unchanged. Two so one can stay a reference '
+            + 'while the other is fitted.',
+        build: () => buildKeyGeometry(spec, { code: partCode('KEY', GEOMETRY_VERSION) }),
+        measures: [
+            ['across the neck', 2 * K.neckHalf],
+            ['across the tips', 2 * K.tipHalf],
+            ['depth', K.depth],
+            ['height', K.height - 2 * spec.jointClearanceMm]
+        ]
+    });
+    if (src.piece && src.support) {
+        out.push({
+            name: 'cal_socket',
+            count: 1,
+            note: 'A band of a real piece around its socket boss — the socket as it '
+                + 'is printed in track, surrounded by track-thickness plastic.',
+            build: () => {
+                const q = pieceInFrame(src.piece, pieceFrame(src.piece));
+                const c = src.support.s ?? q.planLen / 2;
+                return truncatePiece(src.piece, src.support,
+                    Math.max(-1, c - CAL.socketKeepMm / 2), c + CAL.socketKeepMm / 2, spec);
+            },
+            measures: [
+                ['socket across flats', S.hexAF],
+                ['socket depth from its mouth', S.depth]
+            ]
+        });
+    }
+    out.push({
+        name: 'cal_post_15',
+        count: 1,
+        note: 'One grid unit of hex post: the tenon that goes into the socket above '
+            + 'and the socket that takes the tenon below. Mates with cal_socket.',
+        build: () => buildRiserGeometry(15, spec, { code: partCode('R15', GEOMETRY_VERSION) }),
+        measures: [
+            ['tenon across flats', tenonAF],
+            ['shaft across flats', 15],
+            ['socket in the base, across flats', S.hexAF],
+            ['height, shoulder to shoulder', 15]
+        ]
+    });
+    out.push({
+        name: 'cal_gate_paddle',
+        count: 1,
+        note: 'The shipped gate paddle. Its hub, split pin and vane are the gate\'s '
+            + 'moving touch points.',
+        build: () => buildGateGeometry(spec, { forPrint: true }),
+        measures: [
+            ['vane thickness', GATE.vaneThk],
+            ['hub diameter', 2 * GATE.hubR],
+            ['pin diameter', 2 * GATE.pinR],
+            ['pin slot width', GATE.pinSlot],
+            ['blade length', GATE.len]
+        ]
+    });
+    if (src.switchMain && src.switchBranch) {
+        out.push({
+            name: 'cal_gate_bearing',
+            count: 1,
+            note: 'The block of a real switch around the gate pin bore — the fixed '
+                + 'half of the gate bearing. Takes cal_gate_paddle\'s pin.',
+            build: () => {
+                const frame = pieceFrame(src.switchMain);
+                let main = pieceInFrame(src.switchMain, frame);
+                let branch = pieceInFrame(src.switchBranch, frame);
+                // ONE UNDERSIDE FOR ONE SOLID, and the coupon has to fit the
+                // same plane the shell was cut with. Tilted onto a plane
+                // fitted to the main half alone — which is what you get by
+                // forgetting `planeGroup` — the block came off the bed
+                // entirely: 0 mm2 of contact, balanced on one corner.
+                const planeGroup = [main, branch];
+                main = { ...main, planeGroup };
+                branch = { ...branch, planeGroup };
+                const pin = gatePinPosition(main, branch);
+                const solid = buildSwitchExportGeometry(src.switchMain, src.switchBranch,
+                    { spec, forPrint: false });
+                const cut = csgChain(toBufferGeometry(solid), bandCutters(main.entry,
+                    Math.max(-1, pin.s - CAL.gateKeepMm / 2), pin.s + CAL.gateKeepMm / 2, spec));
+                return tiltOntoUnderside(cut, main, spec);
+            },
+            measures: [
+                ['gate bore diameter', 2 * GATE.boreR],
+                ['boss diameter around the bore', 2 * GATE.bossR]
+            ]
+        });
+    }
+    return out;
+}

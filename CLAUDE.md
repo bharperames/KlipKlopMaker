@@ -143,6 +143,17 @@ building, gait physics simulation, and watertight STL/3MF export.
   `decomposeSupport(stackHeightMm(piece, support))` still lands on the grid.
   A piece's part signature must NOT key on support mode/station/side — the mesh
   is identical either way, and keying on it listed one curve as four.
+- **Calibration coupons are CUT from the real parts, never redrawn.**
+  `buildCalibrationCoupons` builds the actual piece and subtracts everything
+  outside a band of it, so whatever the joint really is, that is what gets
+  measured — a redrawn pocket would have to reproduce the flank clearance, the
+  detent, the grip taper and the seat land, and would keep certifying the old
+  number the day one changed. They also keep the part's FULL SECTION and print
+  orientation and are shortened only in extent: a hole's printed size depends
+  on the plastic around it, so a coupon thinned for print speed measures its
+  own thinness. Nominals for the measurement sheet are read off `SPEC`, and
+  `tests/pieces.test.js` asserts that (and that every coupon sits on the bed —
+  one balanced on a corner prints skewed and every reading off it is fiction).
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 

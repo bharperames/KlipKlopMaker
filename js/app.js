@@ -41,7 +41,7 @@ import {
     buildSpacerGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
-    sectionGeometry, supportStations, GATE
+    sectionGeometry, supportStations, GATE, buildCalibrationCoupons
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
@@ -5228,6 +5228,133 @@ async function shopExport(format = '3mf') {
     }
 }
 
+/**
+ * One plate of coupons carrying only the surfaces that touch something else,
+ * plus the sheet to write the caliper readings onto.
+ *
+ * BUILT FROM THE CANONICAL STANDARD, never from the open design. A coupon cut
+ * from a custom-parameter piece would certify a track nobody else can print
+ * (see isStandardParams), and the whole point of a calibration number is that
+ * it transfers. The one thing it does take from the design is the underside
+ * style, because a joint printed lying on its underside and the same joint
+ * printed rim-down are different measurements.
+ */
+async function exportCalibrationPlate() {
+    const btn = $('shop-export-cal');
+    if (btn) btn.disabled = true;
+    try {
+        await initCSG();
+        const { pieces } = layoutTrack(
+            ['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
+            { skirtStyle: state.skirtStyle });
+        const sups = planPillarPositions(pieces);
+        // a straight that actually carries a boss, so the socket coupon has one
+        let piece = null, support = null;
+        for (const p of pieces.filter(p => p.type === 'straight')) {
+            const s = sups.find(x => x.pieceIndex === p.index);
+            if (s && s.mode !== 'none') { piece = p; support = s; break; }
+        }
+        if (!piece) piece = pieces.find(p => p.type === 'straight');
+        const sw = layoutTrack(
+            [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }],
+            { skirtStyle: state.skirtStyle });
+
+        const coupons = buildCalibrationCoupons({
+            piece, support,
+            switchMain: sw.pieces.find(p => p.role === 'main'),
+            switchBranch: sw.pieces.find(p => p.role === 'branch')
+        }, SPEC);
+
+        const items = coupons.map(c => {
+            // The builders are a mix: a swept solid comes back as raw arrays,
+            // anything through CSG comes back as a BufferGeometry. The parts
+            // list upstream only ever sees one or the other per entry, so it
+            // gets away with picking; a set drawn from six different builders
+            // does not.
+            const raw = c.build();
+            const mesh = recenter(raw.positions && raw.indices
+                ? { positions: new Float32Array(raw.positions), indices: new Uint32Array(raw.indices) }
+                : toArraysFromBG(raw));
+            return { ...c, mesh, ...bedFootprint(mesh.positions),
+                vol: analyzeMesh(mesh.positions, mesh.indices).volumeMm3 };
+        });
+        const { plates } = packPlates(items.map(({ name, w, d, h, count }) =>
+            ({ name, w, d, h, count })));
+        const byName = new Map(items.map(it => [it.name, it]));
+
+        const files = {};
+        for (const p of plates) {
+            const objs = p.items.map(it => {
+                const src = byName.get(it.name);
+                return { name: `${it.name}_${it.copy}`, meshKey: it.name,
+                    positions: src.mesh.positions, indices: src.mesh.indices,
+                    at: [it.x, it.y, 0], rot: it.rot };
+            });
+            const stem = plates.length > 1
+                ? `calibration_plate_${String(p.index).padStart(2, '0')}` : 'calibration_plate';
+            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
+        }
+        files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(items));
+
+        const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `klipklop_calibration_geo${GEOMETRY_VERSION.replace(/\./g, '-')}` +
+            `_${state.skirtStyle}.zip`;
+        a.click();
+        const g = items.reduce((s, it) => s + printedWeightG(it.vol, 'track') * it.count, 0);
+        toast(`⬇ calibration plate · ${items.reduce((s, it) => s + it.count, 0)} coupons · ≈${Math.round(g)} g`);
+    } catch (err) {
+        console.error(err);
+        toast(`Calibration export failed: ${err.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+/**
+ * The sheet you write on. Nominals come off SPEC via the coupon builders, so
+ * this cannot drift from what was actually exported, and the FIT PAIRS table
+ * is the one that answers the question being asked: a measured delta on its
+ * own says the printer is off, but a delta against the designed clearance says
+ * which way to move the number.
+ */
+function calibrationSheet(items) {
+    const L = [];
+    L.push(`# Calibration measurements — geometry v${GEOMETRY_VERSION}`, '');
+    L.push(`Underside style: **${state.skirtStyle}**. Printed at the Klip Klop Standard`,
+        '(slope 11.217°, curve R 143.64, channel 48) regardless of the open design.', '');
+    L.push('Coupons are cut from the real parts and keep their full section and',
+        'print orientation, so these numbers transfer to a whole track piece.', '');
+    L.push('| coupon | qty | feature | nominal mm | measured mm | delta |');
+    L.push('|---|---|---|---|---|---|');
+    for (const it of items) {
+        it.measures.forEach(([label, nom], i) => {
+            L.push(`| ${i === 0 ? it.name : ''} | ${i === 0 ? it.count : ''} | ${label} `
+                + `| ${nom.toFixed(2)} | | |`);
+        });
+    }
+    const K = SPEC.key, S = SPEC.socket;
+    const fit = K.fitClearanceMm ?? SPEC.jointClearanceMm;
+    L.push('', '## Fit pairs — what the clearance is meant to be', '');
+    L.push('| pair | male mm | female mm | designed clearance | measured clearance |');
+    L.push('|---|---|---|---|---|');
+    L.push(`| key tips in pocket | ${(2 * K.tipHalf).toFixed(2)} | ${(2 * (K.tipHalf + fit)).toFixed(2)} `
+        + `| ${(2 * fit).toFixed(2)} | |`);
+    L.push(`| key neck in pocket | ${(2 * K.neckHalf).toFixed(2)} | ${(2 * (K.neckHalf + fit)).toFixed(2)} `
+        + `| ${(2 * fit).toFixed(2)} | |`);
+    L.push(`| hex tenon in socket | ${(S.hexAF - 2 * SPEC.jointClearanceMm).toFixed(2)} | ${S.hexAF.toFixed(2)} `
+        + `| ${(2 * SPEC.jointClearanceMm).toFixed(2)} | |`);
+    L.push(`| gate pin in bore | ${(2 * GATE.pinR).toFixed(2)} | ${(2 * GATE.boreR).toFixed(2)} `
+        + `| ${(2 * (GATE.boreR - GATE.pinR)).toFixed(2)} — the pin is a split C and grips | |`);
+    L.push('', '## Notes', '');
+    for (const it of items) L.push(`- **${it.name}** — ${it.note}`);
+    L.push('', 'A hole prints smaller than drawn and a post larger, and by how much',
+        'depends on the plastic around it — so measure each feature on ITS OWN coupon',
+        'rather than assuming one offset covers the plate.', '');
+    return L.join('\n');
+}
+
 window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verification
 // Headless verification needs to see what actually made it into the scene, not
 // just that no exception was thrown — the joint guide's tracks went missing
@@ -5246,6 +5373,7 @@ $('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all
 $('shop-close').addEventListener('click', () => closePrintShop());
 $('shop-export').addEventListener('click', () => shopExport('3mf'));
 $('shop-export-stl').addEventListener('click', () => shopExport('stl'));
+$('shop-export-cal').addEventListener('click', () => exportCalibrationPlate());
 (() => {
     const sel = $('shop-preset');
     for (const set of EXPORT_SETS) {
