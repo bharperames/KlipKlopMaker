@@ -173,6 +173,14 @@ building, gait physics simulation, and watertight STL/3MF export.
   whether the numbers transfer: from above a hole shows its narrowest layer
   and an island its widest, which on a 5-layer part is the squished first
   layer, so slice it with production's first-layer settings.
+  The **ladder card** is the other half and is a HAND test: a separate,
+  thicker part (`SECTION.ladderThicknessMm` = 3) carrying each joint's female
+  feature cut at a sweep of per-side clearances, with the real male part as a
+  chip at real engagement height. Push the chip down the row; the first rung it
+  enters IS the clearance that shape needs. It exists because a photograph
+  reads a clearance to about 0.18 mm while fingers do better, and because a
+  1 mm hole is a knife-edge gauge rather than a joint. Calibration is
+  MATERIAL-SPECIFIC — every number measured so far is PLA.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 

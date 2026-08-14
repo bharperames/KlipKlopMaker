@@ -2199,7 +2199,27 @@ export const SECTION = {
      * and those are the layers a real part mates on. The bowtie key has
      * carried the same 0.5 mm chamfer for the same reason.
      */
-    chamferMm: 0.4
+    chamferMm: 0.4,
+    /**
+     * THE FIT TEST IS A SEPARATE, THICKER CARD. A 1 mm hole is a knife-edge
+     * gauge, not a joint: the male part barely engages, so "fits" comes down to
+     * how hard you pushed. 3 mm gives fifteen layers of real flank contact and
+     * still prints in minutes. The camera card stays at 1 mm, because parallax
+     * through a hole grows with thickness and that is the one measurement thin
+     * helps — the two jobs want opposite things, so they get two parts.
+     */
+    ladderThicknessMm: 3.0,
+    /**
+     * Per-side clearance, swept. You push the chip down the row and the first
+     * rung it enters IS the clearance that shape needs, read off the part
+     * rather than inferred from a photograph to +-0.18 mm. Brett's accidental
+     * zero-clearance pairs proved hexes need clearance and circles do not; this
+     * is the same experiment done on purpose and swept.
+     *
+     * 0.20 is the shipped hex (tenon 8.6 in socket 9.0) and 0.12 the shipped
+     * bowtie, so both land inside the ladder rather than off its end.
+     */
+    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
 };
 
 /**
@@ -2250,6 +2270,46 @@ function sectionFeatures(spec = SPEC) {
             label: `round island Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
             mates: d === 2 * GATE.pinR ? 'gate pin' : null });
     }
+
+    // --- CLEARANCE LADDERS: one male chip, the female cut at a sweep of
+    // per-side clearances. The bowtie cavity is the KEY's own outline grown by
+    // the clearance (a true normal offset), not the half-pocket a single rib
+    // carries — an assembled seam presents the whole bowtie, and that is what
+    // the key has to enter.
+    for (const c of SECTION.ladderSteps) {
+        const tag = String(Math.round(c * 100)).padStart(2, '0');
+        const ship = (v) => Math.abs(c - v) < 1e-9;
+        f.push({ id: `lad_hex_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
+            label: `hex +${c.toFixed(2)}/side`, clearancePerSide: c,
+            nominal: { acrossFlats: +(tenonAF + 2 * c).toFixed(3) },
+            plan: hexPlan(tenonAF + 2 * c),
+            mates: ship(0.20) ? 'shipped socket 9.00' : null });
+        f.push({ id: `lad_pin_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
+            label: `gate bore +${c.toFixed(2)}/side`, clearancePerSide: c,
+            nominal: { diameter: +(2 * (GATE.pinR + c)).toFixed(3) },
+            plan: circlePlan(GATE.pinR + c),
+            mates: ship(0) ? 'shipped bore Ø4.00' : null });
+        f.push({ id: `lad_key_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
+            label: `bowtie cavity +${c.toFixed(2)}/side`, clearancePerSide: c,
+            nominal: { acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) },
+            plan: insetPolygon(bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
+                depth: K.depth, tipChamfer: K.tipChamfer }), -c),
+            mates: ship(0.12) ? 'shipped pocket' : null });
+    }
+    // the three chips you push down the ladders — the REAL parts, at real
+    // engagement height, so the test is the joint and not a model of it
+    f.push({ id: 'chip_tenon', kind: 'island', group: 'ladder', card: 'ladder',
+        label: 'hex tenon chip', heightMm: spec.socket.depth,
+        nominal: { acrossFlats: tenonAF }, plan: hexPlan(tenonAF) });
+    f.push({ id: 'chip_pin', kind: 'island', group: 'ladder', card: 'ladder',
+        label: 'gate pin chip', heightMm: spec.socket.depth,
+        nominal: { diameter: 2 * GATE.pinR }, plan: circlePlan(GATE.pinR) });
+    f.push({ id: 'chip_key', kind: 'island', group: 'ladder', card: 'ladder',
+        label: 'bowtie key chip (as shipped)',
+        heightMm: K.height - 2 * spec.jointClearanceMm,
+        nominal: { acrossTips: 2 * K.tipHalf },
+        plan: bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
+            depth: K.depth, tipChamfer: K.tipChamfer }) });
 
     // --- hex series. AF 8.6 is the tenon, 9 the socket, 15 the riser shaft.
     const HEX = [6, 8, tenonAF, S.hexAF, 10, 12, 15];
@@ -2317,59 +2377,68 @@ function planExtent(plan) {
 export function buildCalibrationSection(spec = SPEC) {
     const T = SECTION.thicknessMm, GAP = SECTION.gapMm, M = SECTION.cardMarginMm;
     const feats = sectionFeatures(spec);
-    const holes = feats.filter(f => f.kind === 'hole');
-    const islands = feats.filter(f => f.kind === 'island');
 
-    // pack holes into rows, one row per group, wrapping at the card width
-    const rows = [];
-    for (const group of ['fit', 'reference', 'round', 'hex']) {
-        const inGroup = holes.filter(f => f.group === group);
-        if (!inGroup.length) continue;
-        let row = [], wide = 0;
-        for (const f of inGroup) {
-            const e = planExtent(f.plan);
-            if (row.length && wide + e.w + GAP > SECTION.maxCardWidthMm - 2 * M) {
-                rows.push(row); row = []; wide = 0;
+    /** Pack one card's holes into rows and cut them, returning the solid. */
+    const buildCard = (holes, thickness, order) => {
+        const rows = [];
+        for (const group of order) {
+            const inGroup = holes.filter(f => f.group === group);
+            if (!inGroup.length) continue;
+            let row = [], wide = 0;
+            for (const f of inGroup) {
+                const e = planExtent(f.plan);
+                if (row.length && wide + e.w + GAP > SECTION.maxCardWidthMm - 2 * M) {
+                    rows.push(row); row = []; wide = 0;
+                }
+                row.push({ f, e }); wide += e.w + GAP;
             }
-            row.push({ f, e }); wide += e.w + GAP;
+            if (row.length) rows.push(row);
         }
-        if (row.length) rows.push(row);
-    }
-
-    // lay the rows out, centred, deepest row setting the row pitch
-    let z = 0;
-    const placed = [];
-    for (const row of rows) {
-        const rowW = row.reduce((a, r) => a + r.e.w + GAP, -GAP);
-        const rowD = Math.max(...row.map(r => r.e.d));
-        let x = -rowW / 2;
-        for (const { f, e } of row) {
-            const cx = x + e.w / 2 - e.cx, cz = z + rowD / 2 - e.cz;
-            placed.push({ f, cx, cz });
-            x += e.w + GAP;
+        let z = 0;
+        const placed = [];
+        for (const row of rows) {
+            const rowW = row.reduce((a, r) => a + r.e.w + GAP, -GAP);
+            const rowD = Math.max(...row.map(r => r.e.d));
+            let x = -rowW / 2;
+            for (const { f, e } of row) {
+                placed.push({ f, cx: x + e.w / 2 - e.cx, cz: z + rowD / 2 - e.cz });
+                x += e.w + GAP;
+            }
+            z += rowD + GAP;
         }
-        z += rowD + GAP;
-    }
-    const totalD = z - GAP;
-    // recentre in depth so the card is symmetric about the origin
-    for (const p of placed) p.cz -= totalD / 2;
+        const totalD = z - GAP;
+        for (const p of placed) p.cz -= totalD / 2;
+        const halfW = Math.max(...placed.map(p => p.cx + planExtent(p.f.plan).w / 2)) + M;
+        const halfD = totalD / 2 + M;
+        const slab = chamferedSlab(
+            [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], thickness, false);
+        const ops = placed.map(({ f, cx, cz }) => {
+            f.centre = [+cx.toFixed(3), +(-cz).toFixed(3)];
+            // the CUTTER is chamfered the other way, so the hole is widest at
+            // the bottom and its narrowest section is a normal layer
+            return { op: SUBTRACTION, geometry: toBufferGeometry(
+                chamferedSlab(f.plan.map(([x, zz]) => [cx + x, cz + zz]), thickness, true)) };
+        });
+        return { geometry: csgChain(toBufferGeometry(slab), ops),
+                 size: [+(2 * halfW).toFixed(2), +(2 * halfD).toFixed(2)] };
+    };
 
-    const halfW = Math.max(...placed.map(p => p.cx + planExtent(p.f.plan).w / 2)) + M;
-    const halfD = totalD / 2 + M;
-    const card = chamferedSlab(
-        [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], T, false);
-    const ops = placed.map(({ f, cx, cz }) => {
-        f.centre = [+cx.toFixed(3), +(-cz).toFixed(3)];
-        // the CUTTER is chamfered the other way, so the hole is widest at the
-        // bottom and its narrowest section is a normal layer
-        return { op: SUBTRACTION, geometry: toBufferGeometry(
-            chamferedSlab(f.plan.map(([x, zz]) => [cx + x, cz + zz]), T, true)) };
-    });
-    const parts = [{ name: 'section_card', geometry: csgChain(toBufferGeometry(card), ops) }];
-    for (const f of islands) {
+    const isLadder = (f) => f.card === 'ladder';
+    const metro = buildCard(feats.filter(f => f.kind === 'hole' && !isLadder(f)), T,
+        ['fit', 'reference', 'round', 'hex']);
+    const ladder = buildCard(feats.filter(f => f.kind === 'hole' && isLadder(f)),
+        SECTION.ladderThicknessMm, ['ladder']);
+
+    const parts = [
+        { name: 'section_card', geometry: metro.geometry },
+        { name: 'ladder_card', geometry: ladder.geometry }
+    ];
+    for (const f of feats.filter(f => f.kind === 'island')) {
         f.centre = [0, 0];                 // each island is its own free chip
+        // a LADDER chip is the real part at real engagement height, so it can be
+        // held and pushed; a metrology chip stays a section
         parts.push({ name: `section_${f.id}`,
-            geometry: toBufferGeometry(chamferedSlab(f.plan, T, false)) });
+            geometry: toBufferGeometry(chamferedSlab(f.plan, f.heightMm ?? T, false)) });
     }
 
     return {
@@ -2377,15 +2446,22 @@ export function buildCalibrationSection(spec = SPEC) {
         manifest: {
             geometryVersion: GEOMETRY_VERSION,
             thicknessMm: T,
-            cardSizeMm: [+(2 * halfW).toFixed(2), +(2 * halfD).toFixed(2)],
+            ladderThicknessMm: SECTION.ladderThicknessMm,
+            cardSizeMm: metro.size,
+            ladderCardSizeMm: ladder.size,
             note: 'Outlines are nominal mm in card coordinates. A hole reads its '
                 + 'narrowest layer and an island its widest, and on a 5 layer part '
-                + 'that is the first layer in both cases — elephant foot included.',
+                + 'that is the first layer in both cases — elephant foot included. '
+                + 'The ladder card is a HAND test, not a camera one: push each chip '
+                + 'down its row and the first rung it enters is the clearance that '
+                + 'shape needs.',
             aruco: { dict: 'DICT_4X4_50', markerIds: [0, 1, 2, 3], markerSizeMm: 30,
                 sheet: 'A4', source: 'FossilRecord tooth_cv/aruco.py' },
             features: feats.map(f => ({
                 id: f.id, kind: f.kind, group: f.group, label: f.label,
-                nominal: f.nominal, mates: f.mates ?? null,
+                card: f.card ?? 'section', nominal: f.nominal, mates: f.mates ?? null,
+                clearancePerSide: f.clearancePerSide ?? null,
+                heightMm: f.heightMm ?? (isLadder(f) ? SECTION.ladderThicknessMm : T),
                 centreMm: f.centre ?? [0, 0],
                 outlineMm: f.plan.map(([x, zz]) => [+x.toFixed(4), +(-zz).toFixed(4)])
             }))

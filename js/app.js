@@ -5430,7 +5430,27 @@ function sectionReadme(sec) {
         'the camera checks its own scale. If the 20 mm reference reads 20.14, every',
         'other number carries that same 0.7% and it is the marker fit that needs',
         'fixing, not the printer.', '');
-    L.push('## Which layer you are actually measuring', '');
+    L.push('## The ladder card — the fit test, read by hand', '');
+    L.push(`Separate part, ${m.ladderThicknessMm.toFixed(1)} mm thick rather than `
+        + `${m.thicknessMm.toFixed(1)}, because a 1 mm hole is a knife-edge gauge and not`,
+        'a joint — the male part barely engages, so "fits" comes down to how hard you',
+        'pushed. The chips are the REAL parts at real engagement height, so what is being',
+        'tested is the joint rather than a model of it.', '');
+    L.push('**Push each chip along its row and note the first rung it enters. That rung is',
+        'the clearance that shape needs.** No camera and no inference: a photograph reads',
+        'clearances to about 0.18 mm, and your fingers do better than that.', '');
+    L.push('| chip | rungs, per-side clearance mm |');
+    L.push('|---|---|');
+    for (const [chip, pre] of [['hex tenon 8.60', 'lad_hex'], ['gate pin Ø4.00', 'lad_pin'],
+                               ['bowtie key', 'lad_key']]) {
+        const rungs = m.features.filter(f => f.id.startsWith(pre))
+            .map(f => (f.mates ? `**${f.clearancePerSide.toFixed(2)}**` : f.clearancePerSide.toFixed(2)));
+        L.push(`| ${chip} | ${rungs.join(' · ')} |`);
+    }
+    L.push('', 'Bold rungs are what ships today. The bowtie cavity is the KEY\'s own outline',
+        'grown by the clearance — an assembled seam presents the whole bowtie, not the',
+        'half-pocket a single rib carries, so that is what the chip has to enter.', '');
+    L.push('', '## Which layer you are actually measuring', '');
     L.push('Seen from above an island shows its WIDEST layer and a hole its NARROWEST,',
         'and layer 1 is the odd one out at both ends. The slicer deflates it on',
         'purpose: with `elefant_foot_compensation = 0.15` a 20.000 mm square is',

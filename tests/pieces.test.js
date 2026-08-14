@@ -1506,7 +1506,7 @@ describe('calibration section card', () => {
         const { buildCalibrationSection, SECTION } = await import('../js/pieces.js');
         await initCSG();
         const { analyzeMesh: am } = await import('../js/mesh_utils.js');
-        const { parts } = buildCalibrationSection();
+        const { parts, manifest } = buildCalibrationSection();
         expect(parts.length).toBeGreaterThan(5);
         for (const p of parts) {
             // NOT expectWatertight: it floors volume at 100 mm3, and these are
@@ -1520,7 +1520,14 @@ describe('calibration section card', () => {
                 ? 'solid' : 'BROKEN'}`).toBe(`${p.name} solid`);
             let y0 = Infinity, y1 = -Infinity;
             for (let i = 1; i < pos.length; i += 3) { y0 = Math.min(y0, pos[i]); y1 = Math.max(y1, pos[i]); }
-            expect(`${p.name} ${(y1 - y0).toFixed(3)}`).toBe(`${p.name} ${SECTION.thicknessMm.toFixed(3)}`);
+            // NOT one thickness any more: the ladder card is thicker than the
+            // metrology card because a 1 mm hole cannot test a fit, and a ladder
+            // chip is the real part at real engagement height.
+            const want = p.name === 'ladder_card' ? SECTION.ladderThicknessMm
+                : p.name === 'section_card' ? SECTION.thicknessMm
+                : (manifest.features.find(f => `section_${f.id}` === p.name)?.heightMm
+                   ?? SECTION.thicknessMm);
+            expect(`${p.name} ${(y1 - y0).toFixed(3)}`).toBe(`${p.name} ${want.toFixed(3)}`);
         }
     }, 240000);
 
@@ -1528,7 +1535,10 @@ describe('calibration section card', () => {
         const { buildCalibrationSection, SECTION } = await import('../js/pieces.js');
         await initCSG();
         const { manifest } = buildCalibrationSection();
-        const holes = manifest.features.filter(f => f.kind === 'hole').map(f => {
+        // ONE CARD AT A TIME. Two holes at the same coordinates on DIFFERENT
+        // cards are not close together, they are on different pieces of plastic.
+        for (const card of ['section', 'ladder']) {
+        const holes = manifest.features.filter(f => f.kind === 'hole' && f.card === card).map(f => {
             let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
             for (const [x, y] of f.outlineMm) {
                 x0 = Math.min(x0, x); x1 = Math.max(x1, x);
@@ -1544,6 +1554,7 @@ describe('calibration section card', () => {
                 expect(`${a.id} vs ${b.id}: ${gap >= 2 ? 'clear' : `${gap.toFixed(2)} mm`}`)
                     .toBe(`${a.id} vs ${b.id}: clear`);
             }
+        }
         }
         expect(new Set(manifest.features.map(f => f.id)).size).toBe(manifest.features.length);
     }, 240000);
