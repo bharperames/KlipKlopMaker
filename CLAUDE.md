@@ -203,6 +203,29 @@ building, gait physics simulation, and watertight STL/3MF export.
   MATERIAL-SPECIFIC — every number measured so far is PLA.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
+- **THREE FITS ARE CONFIRMED IN PLASTIC AND MUST NOT BE "IMPROVED".** Measured
+  by hand off PETG prints, August 2026:
+  · **hex tenon in socket** (0.20 mm/side) — "very nice and tight" pillar into
+    pillar, and "about just right" tenon into the track boss. The interlock
+    standard is right as drawn.
+  · **gate pin in its bore** (0.00 mm/side, the split C grips) — "a great fit,
+    perfect".
+  · **zero-clearance round and square pairs** on the calibration card — disks
+    and the 20 mm square drop into their own-size holes snugly, so ordinary
+    features print on size and there is NO global XY offset to compensate.
+  The ONLY loose joint is the bowtie key in its pocket, and the clearance
+  ladder says the drawn clearance is already right (nominal key: will not enter
+  0.00, extremely snug at 0.05, good tight fit at 0.10 AND 0.12, loose from
+  0.15 — and 0.12 ships). So do not reach for `fitClearanceMm`, `printComp`, or
+  a global `xy_hole_compensation`: a key widened on card evidence shipped for
+  one commit and would have jammed every pocket in the field.
+  **What is actually wrong is CLAMPING, not clearance.** Brett: "the biggest
+  problem I have had connecting ramps is that the key won't keep them tight
+  together and any exposed seam stops the klipklop." A bowtie in two half
+  pockets LOCATES the pieces; nothing draws them together. The lever is the
+  flare wedging as the key is driven up — i.e. `seatGripMm`, which is 0.03 and
+  far too small to clamp — with `seatLandMm` kept so the ceiling still sets
+  deck flushness. That is a POCKET change and helps new pieces only.
 
 ## Browser verification
 
