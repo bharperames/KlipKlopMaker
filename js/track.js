@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.0.0';
+export const GEOMETRY_VERSION = '2.1.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -404,7 +404,39 @@ export const SPEC = {
          * of the complaint was the detent, not the flanks. Comparing a printed
          * part against a drawn one is what made it look like a rake problem.
          */
-        printComp: { neckMm: 0, tipMm: 0 },
+        /**
+         * THE KEY IS DRAWN OVERSIZE, and only the key.
+         *
+         * A printed key/pocket seam came out loose in PLA and looser in PETG.
+         * Measured off the calibration card, the key prints 0.33 mm under what
+         * an island of its size should, while the POCKET prints normally for a
+         * hole (-0.06 against its family) — so the joint opens by roughly the
+         * key's own deficit. Across five photographs the tip-to-tip clearance
+         * read 0.887 mm mean against 0.596 modelled: +0.29 mm of slack that was
+         * never drawn. The cause is the bowtie's acute tips, the sharpest
+         * convex corners in the library and the only shape that loses this
+         * much — the disks, squares and hexes all mate at zero clearance by
+         * hand.
+         *
+         * `tipMm` widens the key across the tips by 2x this, closing that gap.
+         * It compensates the KEY ONLY: `bowtiePocketPlan` never sees it, so
+         * every track piece already printed keeps its pocket and stays valid,
+         * and the fix costs a reprint of the one part that is cheap to reprint.
+         * Brett: "ideally we would fix this by enlarging the key slightly to
+         * not invalidate the parts printed."
+         *
+         * This reverses a previous conclusion, deliberately. The old note said
+         * the key must NOT be pre-distorted because the slot distorts with it —
+         * true of the RAKE (printed flares 0.392 key against 0.383 slot) and
+         * NOT true of absolute size, which is what a fit is made of. Rake
+         * cancelling was read as the fit taking care of itself; it does not.
+         *
+         * `neckMm` stays 0: the neck was never measured short, and moving both
+         * would change the flare that the rake evidence says is already right.
+         * The number to trust over this one is the clearance ladder read by
+         * hand in the material being printed.
+         */
+        printComp: { neckMm: 0, tipMm: 0.15 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that

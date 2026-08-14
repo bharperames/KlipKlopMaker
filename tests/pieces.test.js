@@ -1324,31 +1324,50 @@ describe('the key can actually be fitted', () => {
             .toBe(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood);
     });
 
-    test('the key is NOT pre-distorted, because the slot distorts with it', async () => {
-        // Measured, the key prints with a shallower rake than it is drawn with:
-        // the nozzle fills its concave waist and rounds its convex tips. That
-        // looked like a reason to draw it pre-distorted, and it was wrong —
-        // the SLOT does exactly the same thing, so the two stay parallel and
-        // the errors cancel. Printed flares came out 0.392 for the key and
-        // 0.383 for the slot.
+    test('the key IS drawn oversize, and only the key', async () => {
+        // THIS TEST USED TO ASSERT THE OPPOSITE, and the reversal is the point.
         //
-        // Kept as a test because the key's numbers ALONE are convincing and
-        // point the wrong way. Comparing a printed part against a drawn one is
-        // what made this look like a rake problem.
+        // What it said: the key prints with a shallower rake than it is drawn
+        // with — the nozzle fills its concave waist and rounds its convex tips
+        // — but the SLOT does the same, so the two stay parallel and the errors
+        // cancel. That is still TRUE, and the flare numbers below still hold.
+        //
+        // What was wrong was reading "the rake cancels" as "the fit takes care
+        // of itself". Rake is a ratio; a fit is made of absolute sizes, and
+        // those do NOT cancel. Measured off the calibration card, the key comes
+        // out 0.33 mm under what an island of its size should while the pocket
+        // prints normally for a hole, and across five photographs the tip-to-tip
+        // clearance read 0.887 mm against 0.596 modelled. Printed in PETG the
+        // seam was loose enough to feel.
+        //
+        // So the key is now drawn oversize — and ONLY the key. The pocket is
+        // untouched, so every piece already printed keeps its slot and stays
+        // valid, and the correction costs a reprint of the cheapest part.
         const { SPEC } = await import('../js/track.js');
+        const { bowtieKeyPlan, bowtiePocketPlan } = await import('../js/geometry.js');
         const K = SPEC.key;
-        expect(K.printComp.neckMm).toBe(0);
-        expect(K.printComp.tipMm).toBe(0);
+        expect(K.printComp.tipMm).toBeGreaterThan(0);
+        expect(K.printComp.neckMm).toBe(0);      // the neck was never short
 
+        const span = (poly) => Math.max(...poly.map(([x]) => x)) - Math.min(...poly.map(([x]) => x));
+        const keyAt = (tip) => span(bowtieKeyPlan({ neckHalf: K.neckHalf - K.printComp.neckMm,
+            tipHalf: K.tipHalf + tip, depth: K.depth, tipChamfer: K.tipChamfer }));
+        // the compensation widens the key, and by about twice what it says
+        expect(keyAt(K.printComp.tipMm) - keyAt(0)).toBeGreaterThan(0.2);
+
+        // THE POCKET MUST NOT MOVE. This is what keeps printed track valid, so
+        // it is asserted rather than trusted: the pocket plan takes no
+        // compensation argument at all, and building it twice proves it.
+        const pocket = () => span(bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
+            depth: K.depth, clearance: K.fitClearanceMm, depthClearance: K.depthClearanceMm }));
+        expect(pocket()).toBeCloseTo(24.596, 3);
+
+        // the rake evidence that still stands, and is why neckMm stays 0
         const keyFlarePrinted = ((23.45 / 2) - (16.40 / 2)) / K.depth;      // measured
         const slotFlarePrinted = ((23.90 / 2) - (16.85 / 2)) / (K.depth + 0.2);
         expect(Math.abs(keyFlarePrinted - slotFlarePrinted)).toBeLessThan(0.02);
-
-        // and the gap that leaves is even end to end, which is what a flank
-        // fit needs — it is the SIZE of it that was wrong, not its shape
         const gapNear = (16.85 - 16.40) / 2, gapFar = (23.90 - 23.45) / 2;
         expect(Math.abs(gapNear - gapFar)).toBeLessThan(0.05);
-        // drawn 0.2 measured 0.225, so drawing less is the whole correction
         expect(K.fitClearanceMm).toBeLessThan(0.2);
     });
 

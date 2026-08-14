@@ -1,7 +1,7 @@
 {
   "format": "klipklop-scene",
   "version": 2,
-  "geometry": "2.0.0",
+  "geometry": "2.1.0",
   "name": "Perpetual Spiral Track",
   "description": "A closed loop perpetual motion track utilizing powered lifts and turns.",
   "sequence": [
