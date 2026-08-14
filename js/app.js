@@ -5430,13 +5430,21 @@ function sectionReadme(sec) {
         'the camera checks its own scale. If the 20 mm reference reads 20.14, every',
         'other number carries that same 0.7% and it is the marker fit that needs',
         'fixing, not the printer.', '');
-    L.push('## The caveat that decides whether the numbers transfer', '');
-    L.push('Seen from above a hole shows its NARROWEST layer and an island its WIDEST,',
-        'and on a five-layer part that is the squished first layer in both cases. So',
-        'this measures the first layer with elephant foot in it, while the surfaces',
-        'that actually mate on a track piece are at mid height. Slice the section with',
-        'the same first-layer settings and elephant-foot compensation as production,',
-        'or the offset you measure is not the one your parts have.', '');
+    L.push('## Which layer you are actually measuring', '');
+    L.push('Seen from above an island shows its WIDEST layer and a hole its NARROWEST,',
+        'and layer 1 is the odd one out at both ends. The slicer deflates it on',
+        'purpose: with `elefant_foot_compensation = 0.15` a 20.000 mm square is',
+        'programmed 19.700 on the first layer and 20.000 on every layer above it',
+        '(measured in the gcode, not assumed). The squish against the bed then spreads',
+        'it back by an amount nobody knows — that is the whole reason for measuring.', '');
+    L.push('So the section does NOT rest on those two cancelling. Every shape here is',
+        `chamfered ${SECTION.chamferMm} mm on its underside — islands inward, holes`,
+        'outward — which insets the bottom two layers by more than either effect can',
+        'move them. What the camera sees is the normal layers above, and those are the',
+        'layers a real part mates on. The bowtie key has carried the same chamfer for',
+        'the same reason since long before this card existed.', '');
+    L.push('It does mean the card cannot tell you how big your elephant foot is. If you',
+        'want that number, print one square WITHOUT the chamfer and compare.', '');
     L.push('`SECTION_NOMINALS.json` carries every outline as nominal mm in card',
         'coordinates plus where each part sits on the plate, so a script can match',
         'a measured contour to its feature without anyone typing a number.', '');

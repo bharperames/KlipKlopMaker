@@ -2184,7 +2184,22 @@ export const SECTION = {
     gapMm: 7,                  // between shapes: wide enough that two holes
                                // never share a wall thin enough to distort
     cardMarginMm: 9,
-    maxCardWidthMm: 200        // inside a 256 mm bed with room to place it
+    maxCardWidthMm: 200,       // inside a 256 mm bed with room to place it
+    /**
+     * A CHAMFER ON THE BOTTOM, so the first layers cannot be what the camera
+     * measures. Seen from above an island shows its widest layer and a hole its
+     * narrowest, and layer 1 is the odd one out at both ends: the slicer
+     * deflates it on purpose (`elefant_foot_compensation`, 0.15 mm per side in
+     * the P2S Standard profile — measured, a 20.000 mm square is programmed
+     * 19.700 on layer 1 and 20.000 above it) and the squish against the bed
+     * then spreads it back by an unknown amount. Whether those two cancel is
+     * exactly the thing nobody knows, so the section must not REST on the
+     * answer. Chamfered 0.4 mm the bottom two layers are inset by more than
+     * either effect, the silhouette is governed by the normal layers above,
+     * and those are the layers a real part mates on. The bowtie key has
+     * carried the same 0.5 mm chamfer for the same reason.
+     */
+    chamferMm: 0.4
 };
 
 /**
@@ -2255,6 +2270,28 @@ function sectionFeatures(spec = SPEC) {
     return f;
 }
 
+/**
+ * A slab whose BOTTOM is chamfered away, so its first layers are inset by more
+ * than any elephant foot and the silhouette belongs to the normal layers above.
+ *
+ * `outward` builds a CUTTER instead: the same taper the other way, so a hole
+ * comes out widest at the bed and its narrowest section is a normal layer too.
+ * A cutter also has to start below the slab, or the boolean meets a coplanar
+ * face at y = 0.
+ */
+function chamferedSlab(plan, thickness, outward) {
+    const C = SECTION.chamferMm;
+    const lip = insetPolygon(plan, outward ? -C : C);
+    const flip = (p) => p.map(([x, z]) => [x, -z]);
+    const levels = outward
+        ? [[-1, lip], [0, lip], [C, plan], [thickness + 1, plan]]
+        : [[0, lip], [C, plan], [thickness, plan]];
+    return sweepSolid(
+        levels.map(([, p]) => flip(p)),
+        levels.map(([y]) => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+    );
+}
+
 /** Plan bbox, so the packer can give each shape a cell that fits it. */
 function planExtent(plan) {
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -2319,18 +2356,20 @@ export function buildCalibrationSection(spec = SPEC) {
 
     const halfW = Math.max(...placed.map(p => p.cx + planExtent(p.f.plan).w / 2)) + M;
     const halfD = totalD / 2 + M;
-    const card = extrudePolygonY(
-        [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], 0, T);
+    const card = chamferedSlab(
+        [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], T, false);
     const ops = placed.map(({ f, cx, cz }) => {
         f.centre = [+cx.toFixed(3), +(-cz).toFixed(3)];
-        return { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(
-            f.plan.map(([x, zz]) => [cx + x, cz + zz]), -1, T + 1)) };
+        // the CUTTER is chamfered the other way, so the hole is widest at the
+        // bottom and its narrowest section is a normal layer
+        return { op: SUBTRACTION, geometry: toBufferGeometry(
+            chamferedSlab(f.plan.map(([x, zz]) => [cx + x, cz + zz]), T, true)) };
     });
     const parts = [{ name: 'section_card', geometry: csgChain(toBufferGeometry(card), ops) }];
     for (const f of islands) {
         f.centre = [0, 0];                 // each island is its own free chip
         parts.push({ name: `section_${f.id}`,
-            geometry: toBufferGeometry(extrudePolygonY(f.plan, 0, T)) });
+            geometry: toBufferGeometry(chamferedSlab(f.plan, T, false)) });
     }
 
     return {
