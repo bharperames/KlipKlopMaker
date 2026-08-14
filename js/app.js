@@ -41,7 +41,7 @@ import {
     buildSpacerGeometry,
     buildFigureGeometries, buildKeyGeometry, buildGateGeometry,
     buildTowerGeometry, buildPalmIslandGeometries, buildPatioGeometry, mergeSolids,
-    sectionGeometry, supportStations, GATE, buildCalibrationCoupons
+    sectionGeometry, supportStations, GATE, buildCalibrationCoupons, CALIBRATION
 } from './pieces.js';
 import {
     extrudeOutlineX, bodySideOutline, pendulumSideOutline, FIGURE, figureVolumeEstimate,
@@ -5244,9 +5244,12 @@ async function exportCalibrationPlate() {
     if (btn) btn.disabled = true;
     try {
         await initCSG();
+        // SHORT TILES. The ramp coupon is a whole tile rib to rib rather than
+        // a band cut out of a long one, so the layout is laid out at the
+        // coupon length — see CALIBRATION.rampTileLenMm.
         const { pieces } = layoutTrack(
             ['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
-            { skirtStyle: state.skirtStyle });
+            { skirtStyle: state.skirtStyle, tileLen: CALIBRATION.rampTileLenMm });
         const sups = planPillarPositions(pieces);
         // a straight that actually carries a boss, so the socket coupon has one
         let piece = null, support = null;

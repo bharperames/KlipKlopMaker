@@ -143,12 +143,16 @@ building, gait physics simulation, and watertight STL/3MF export.
   `decomposeSupport(stackHeightMm(piece, support))` still lands on the grid.
   A piece's part signature must NOT key on support mode/station/side — the mesh
   is identical either way, and keying on it listed one curve as four.
-- **Calibration coupons are CUT from the real parts, never redrawn.**
-  `buildCalibrationCoupons` builds the actual piece and subtracts everything
-  outside a band of it, so whatever the joint really is, that is what gets
-  measured — a redrawn pocket would have to reproduce the flank clearance, the
-  detent, the grip taper and the seat land, and would keep certifying the old
-  number the day one changed. They also keep the part's FULL SECTION and print
+- **Calibration coupons come from the real builders, never redrawn.** A
+  redrawn pocket would have to reproduce the flank clearance, the detent, the
+  grip taper and the seat land, and would keep certifying the old number the
+  day one changed. Prefer a WHOLE SHORT TILE over a band cut out of a long one:
+  `cal_ramp` is laid out at `CALIBRATION.rampTileLenMm` (65) so it arrives rib
+  to rib carrying a pocket at each end and the socket between, with no cut
+  faces at all. A mid-piece band has two open bridged ends and they printed
+  badly. Only where a whole part will not do — the gate bearing — is a band cut
+  out, and then it gets its cut face closed with a plain wall and is capped at
+  the deck so no thin proud rail is left behind. They also keep the part's FULL SECTION and print
   orientation and are shortened only in extent: a hole's printed size depends
   on the plastic around it, so a coupon thinned for print speed measures its
   own thinness. Nominals for the measurement sheet are read off `SPEC`, and

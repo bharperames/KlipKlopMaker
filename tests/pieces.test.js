@@ -1366,7 +1366,9 @@ describe('calibration coupons', () => {
      */
     const src = async () => {
         const { layoutTrack: lay, planPillarPositions: plan } = await import('../js/track.js');
-        const { pieces } = lay(['start', 'straight', 'straight', 'curveR', 'straight', 'end']);
+        const { CALIBRATION } = await import('../js/pieces.js');
+        const { pieces } = lay(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
+            { tileLen: CALIBRATION.rampTileLenMm });
         const sups = plan(pieces);
         let piece = null, support = null;
         for (const p of pieces.filter(p => p.type === 'straight')) {
@@ -1384,7 +1386,7 @@ describe('calibration coupons', () => {
         const { bedStability } = await import('../js/mesh_utils.js');
         await initCSG();
         const coupons = buildCalibrationCoupons(await src());
-        expect(coupons.length).toBeGreaterThanOrEqual(6);
+        expect(coupons.length).toBeGreaterThanOrEqual(5);
         for (const c of coupons) {
             const g = c.build();
             expectWatertight(g, c.name);
@@ -1475,20 +1477,20 @@ describe('calibration coupons', () => {
 
     /**
      * A coupon that does not carry the feature it is named for is worse than
-     * no coupon: it certifies a fit nobody printed. The pocket is a void in
-     * the end face, so the coupon must be measurably hollow there.
+     * no coupon: it certifies a fit nobody printed. The ramp coupon has to be
+     * measurably hollow — a pocket in each end face and a socket between.
      */
-    test('the joint coupon really contains a pocket', async () => {
+    test('the ramp coupon really contains its pockets', async () => {
         const { buildCalibrationCoupons } = await import('../js/pieces.js');
         const { analyzeMesh: am } = await import('../js/mesh_utils.js');
         await initCSG();
         const s = await src();
-        const joint = buildCalibrationCoupons(s).find(c => c.name === 'cal_joint_female');
+        const joint = buildCalibrationCoupons(s).find(c => c.name === 'cal_ramp');
         const g = joint.build();
         const vol = am(g.positions, g.indices).volumeMm3;
         // the pocket alone is ~9 x 12 x 24 mm of absence; a coupon that solid
         // would be well over 20 cm3, so a sane hollow is the check
         expect(vol).toBeGreaterThan(1000);
-        expect(vol).toBeLessThan(20000);
+        expect(vol).toBeLessThan(60000);
     }, 240000);
 });

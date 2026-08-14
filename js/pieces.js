@@ -1920,14 +1920,34 @@ export function mergeSolids(solids) {
  * thick as need be."
  */
 const CAL = {
-    jointKeepMm: 26,     // enough rib to hold the pocket and its surround
-    socketKeepMm: 44,    // a band centred on the boss
     gateKeepMm: 34,      // a block around the gate pin bore, along the piece
     gateWidthMm: 15      // and across it, inward from the hinge wall
 };
 
 /**
+ * The ramp coupon is a WHOLE SHORT TILE, not a band cut out of a long one.
+ *
+ * It began as two separate coupons — an end rib for the pocket, a mid-piece
+ * band for the socket — and both paid for it at their cut faces: a band taken
+ * out of the middle of a piece has TWO of them, open and bridged, and they
+ * printed badly. A tile laid out short has none. It arrives rib to rib, so one
+ * part carries a key pocket at each end AND the socket between them, every
+ * face is a face the real part has, and there is nothing artificial to print.
+ *
+ * Only the LENGTH is off-Standard. Slope, channel, rib, pocket, boss and
+ * socket are all built by the shipped builders from the same SPEC, so every
+ * surface being measured is the surface that ships. 65 mm is the shortest that
+ * still clears the collar of both end ribs (5.7 mm each side at the Standard
+ * slope); below about 55 the boss starts to crowd the entry rib.
+ *
+ * Exported because the CALLER lays the tile out — this module never lays out
+ * track — and both sides have to agree on the number.
+ */
+export const CALIBRATION = { rampTileLenMm: 65 };
+
+/**
  * Everything outside `[dFrom, dTo]` measured forward from `face`, as cutters.
+ * Only the gate bearing needs these now — the ramp coupon is a whole tile.
  * Two boxes rather than an intersection, because csgChain only adds and
  * subtracts — and a box big enough to swallow a track piece is cheaper than
  * teaching it a third operation.
@@ -1954,22 +1974,6 @@ function sideCutters(face, pxFrom, pxTo) {
 }
 
 /**
- * A band of a real track piece, in the orientation it prints in.
- *
- * Built UNTILTED so the cut can be stated in the piece's own plan — where the
- * joint is at d=0 and the boss is at its mass centre — and tilted afterwards
- * with the same `tiltOntoUnderside` the shipped part uses. Cutting after the
- * tilt would mean chasing those stations through a Rodrigues rotation for no
- * gain.
- */
-function truncatePiece(piece, support, dFrom, dTo, spec) {
-    const q = pieceInFrame(piece, pieceFrame(piece));
-    const solid = buildPieceExportGeometry(piece, { support, spec, forPrint: false });
-    const cut = csgChain(toBufferGeometry(solid), bandCutters(q.entry, dFrom, dTo, spec));
-    return tiltOntoUnderside(cut, q, spec);
-}
-
-/**
  * The coupon set, with what to measure on each and the number it should come
  * out at. The nominals are READ OFF THE SPEC rather than typed in here, so a
  * measurement sheet cannot quietly go stale the way a hardcoded table would.
@@ -1985,17 +1989,21 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
 
     if (src.piece) {
         out.push({
-            name: 'cal_joint_female',
-            count: 2,
-            note: 'The end rib of a real track piece, with its key pocket. Two of '
-                + 'them plus the key make a seam you can feel.',
-            build: () => truncatePiece(src.piece, src.support, -1, CAL.jointKeepMm, spec),
+            name: 'cal_ramp',
+            count: 1,
+            note: 'A whole short ramp tile: a key pocket at EACH end and the socket '
+                + 'between them. Rib to rib, so it has no cut faces — only its length '
+                + 'is off-Standard, every mating surface is the shipped one.',
+            build: () => buildPieceExportGeometry(src.piece,
+                { support: src.support, spec, forPrint: true }),
             measures: [
-                ['pocket mouth, across the neck', 2 * (K.neckHalf + fit)],
-                ['pocket mouth, across the tips', 2 * (K.tipHalf + fit)],
+                ['pocket mouth, across the neck (each end)', 2 * (K.neckHalf + fit)],
+                ['pocket mouth, across the tips (each end)', 2 * (K.tipHalf + fit)],
                 ['pocket depth into the face', K.depth + (K.depthClearanceMm ?? fit)],
                 ['rib thickness', K.ribThk],
-                ['channel width between rails', src.piece.innerWidth]
+                ['channel width between rails', src.piece.innerWidth],
+                ['socket across flats', S.hexAF],
+                ['socket depth from its mouth', S.depth]
             ]
         });
     }
@@ -2012,24 +2020,6 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
             ['height', K.height - 2 * spec.jointClearanceMm]
         ]
     });
-    if (src.piece && src.support) {
-        out.push({
-            name: 'cal_socket',
-            count: 1,
-            note: 'A band of a real piece around its socket boss — the socket as it '
-                + 'is printed in track, surrounded by track-thickness plastic.',
-            build: () => {
-                const q = pieceInFrame(src.piece, pieceFrame(src.piece));
-                const c = src.support.s ?? q.planLen / 2;
-                return truncatePiece(src.piece, src.support,
-                    Math.max(-1, c - CAL.socketKeepMm / 2), c + CAL.socketKeepMm / 2, spec);
-            },
-            measures: [
-                ['socket across flats', S.hexAF],
-                ['socket depth from its mouth', S.depth]
-            ]
-        });
-    }
     out.push({
         name: 'cal_post_15',
         count: 1,
