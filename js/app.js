@@ -5386,7 +5386,9 @@ function calibrationSheet(items) {
         + `| ${(2 * (GATE.boreR - GATE.pinR)).toFixed(2)} — the pin is a split C and grips | |`);
     L.push('', '## Notes', '');
     for (const it of items) L.push(`- **${it.name}** — ${it.note}`);
-    L.push('', 'A hole prints smaller than drawn and a post larger, and by how much',
+    L.push('', '## When you load these', '');
+    L.push(...BAMBU_CONFIG_NOTE.split('\n'), '');
+    L.push('A hole prints smaller than drawn and a post larger, and by how much',
         'depends on the plastic around it — so measure each feature on ITS OWN coupon',
         'rather than assuming one offset covers the plate.', '');
     return L.join('\n');
@@ -5528,6 +5530,21 @@ function toArraysFromBG(g) {
     return { positions, indices };
 }
 
+/**
+ * Bambu 2.8.2+ shows an information dialog on load — it is expected, and the
+ * README says so, because the alternative is every printer of these files
+ * wondering whether their download is corrupt.
+ */
+const BAMBU_CONFIG_NOTE =
+`Loading these in BambuStudio 2.8.2 or later shows:
+
+    "The 3mf file has invalid config, load geometry data only"
+
+That is expected and nothing is wrong. These files carry GEOMETRY ONLY — no
+embedded filament or process settings — so the slicer keeps whatever profile
+you have selected instead of overriding it. Click through it and slice
+normally.`;
+
 function exportReadme(joints, switchCount, plateManifest = null, unstable = []) {
     const sceneryLines = state.scenery.length
         ? state.scenery.map(s => `  - ${s.kind} at (${s.x}, ${s.z}) mm`).join('\n')
@@ -5629,6 +5646,9 @@ ${sceneryLines}
 TUNING
 Use the app's Troubleshooting matrix. Test one straight tile first, at the
 design slope of ${state.slopeDeg}°, before committing to a whole tower.
+
+WHEN YOU LOAD THESE
+${BAMBU_CONFIG_NOTE}
 `;
 }
 

@@ -143,6 +143,15 @@ building, gait physics simulation, and watertight STL/3MF export.
   `decomposeSupport(stackHeightMm(piece, support))` still lands on the grid.
   A piece's part signature must NOT key on support mode/station/side — the mesh
   is identical either way, and keying on it listed one curve as four.
+- **Our 3MF carries GEOMETRY ONLY, and that is the point.** BambuStudio 2.8.2+
+  greets it with *"The 3mf file has invalid config, load geometry data only"* —
+  an informational dialog, not an error. Bambu's own 3MFs embed ~53 KB of
+  `Metadata/project_settings.config`; ours has no `Metadata/` at all, so the
+  slicer keeps whatever filament and process the user has selected. Verified on
+  2.8.2.60: the same file slices to 1h10m09s / 42.41 g against 2.07's 1h10m /
+  42.39 g, and object names survive (they come from `<object name>`). Do NOT
+  silence the dialog by writing a config — it would pin a filament into the
+  file, override the user's preset, and go stale with the next Bambu release.
 - **Calibration coupons come from the real builders, never redrawn.** A
   redrawn pocket would have to reproduce the flank clearance, the detent, the
   grip taper and the seat land, and would keep certifying the old number the
