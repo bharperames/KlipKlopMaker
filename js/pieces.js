@@ -27,7 +27,7 @@ import {
 } from './track.js';
 import {
     textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm,
-    pieceCode, partCode
+    pieceCode, partCode, isEngravable
 } from './engrave.js';
 import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
@@ -2242,7 +2242,7 @@ function sectionFeatures(spec = SPEC) {
     const f = [];
 
     // --- the shapes that actually mate, drawn by the shipped plan functions
-    f.push({ id: 'pocket', kind: 'hole', group: 'fit', label: 'key pocket',
+    f.push({ id: 'pocket', kind: 'hole', group: 'fit', label: 'key pocket', tag: 'KEY',
         nominal: { acrossTips: 2 * (K.tipHalf + fit), acrossNeck: 2 * (K.neckHalf + fit) },
         plan: bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
             clearance: fit, depthClearance: K.depthClearanceMm ?? fit }) });
@@ -2252,7 +2252,7 @@ function sectionFeatures(spec = SPEC) {
 
     // --- reference squares: how the camera checks its own scale
     for (const mm of [20, 10]) {
-        f.push({ id: `ref_hole_${mm}`, kind: 'hole', group: 'reference',
+        f.push({ id: `ref_hole_${mm}`, kind: 'hole', group: 'reference', tag: String(mm),
             label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
         f.push({ id: `ref_island_${mm}`, kind: 'island', group: 'reference',
             label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
@@ -2261,7 +2261,7 @@ function sectionFeatures(spec = SPEC) {
     // --- round series. Ø4 is the gate bore and pin.
     const ROUND = [2, 3, 4, 5, 6, 8, 10, 12, 16];
     for (const d of ROUND) {
-        f.push({ id: `round_hole_${d}`, kind: 'hole', group: 'round',
+        f.push({ id: `round_hole_${d}`, kind: 'hole', group: 'round', tag: String(d),
             label: `round hole Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
             mates: d === 2 * GATE.boreR ? 'gate bore' : null });
     }
@@ -2276,26 +2276,27 @@ function sectionFeatures(spec = SPEC) {
     // the clearance (a true normal offset), not the half-pocket a single rib
     // carries — an assembled seam presents the whole bowtie, and that is what
     // the key has to enter.
-    for (const c of SECTION.ladderSteps) {
-        const tag = String(Math.round(c * 100)).padStart(2, '0');
-        const ship = (v) => Math.abs(c - v) < 1e-9;
-        f.push({ id: `lad_hex_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
-            label: `hex +${c.toFixed(2)}/side`, clearancePerSide: c,
-            nominal: { acrossFlats: +(tenonAF + 2 * c).toFixed(3) },
-            plan: hexPlan(tenonAF + 2 * c),
-            mates: ship(0.20) ? 'shipped socket 9.00' : null });
-        f.push({ id: `lad_pin_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
-            label: `gate bore +${c.toFixed(2)}/side`, clearancePerSide: c,
-            nominal: { diameter: +(2 * (GATE.pinR + c)).toFixed(3) },
-            plan: circlePlan(GATE.pinR + c),
-            mates: ship(0) ? 'shipped bore Ø4.00' : null });
-        f.push({ id: `lad_key_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder',
-            label: `bowtie cavity +${c.toFixed(2)}/side`, clearancePerSide: c,
-            nominal: { acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) },
-            plan: insetPolygon(bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
-                depth: K.depth, tipChamfer: K.tipChamfer }), -c),
-            mates: ship(0.12) ? 'shipped pocket' : null });
-    }
+    // FAMILY-MAJOR, so each chip has an unbroken row of its own. Ordered by
+    // clearance instead, the three shapes interleave and testing one chip means
+    // skipping every third hole — which is exactly the kind of thing that only
+    // shows up when you look at the plate.
+    const rung = (pre, group, mk, nom, shipped) => {
+        for (const c of SECTION.ladderSteps) {
+            const tag = String(Math.round(c * 100)).padStart(2, '0');
+            f.push({ id: `${pre}_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder', tag,
+                label: `${group} +${c.toFixed(2)}/side`, clearancePerSide: c,
+                nominal: nom(c), plan: mk(c),
+                mates: Math.abs(c - shipped) < 1e-9 ? 'ships today' : null });
+        }
+    };
+    rung('lad_hex', 'hex', (c) => hexPlan(tenonAF + 2 * c),
+        (c) => ({ acrossFlats: +(tenonAF + 2 * c).toFixed(3) }), 0.20);
+    rung('lad_pin', 'gate bore', (c) => circlePlan(GATE.pinR + c),
+        (c) => ({ diameter: +(2 * (GATE.pinR + c)).toFixed(3) }), 0);
+    rung('lad_key', 'bowtie cavity', (c) => insetPolygon(bowtieKeyPlan({
+            neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer }), -c),
+        (c) => ({ acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) }), 0.12);
+
     // the three chips you push down the ladders — the REAL parts, at real
     // engagement height, so the test is the joint and not a model of it
     f.push({ id: 'chip_tenon', kind: 'island', group: 'ladder', card: 'ladder',
@@ -2315,7 +2316,7 @@ function sectionFeatures(spec = SPEC) {
     const HEX = [6, 8, tenonAF, S.hexAF, 10, 12, 15];
     for (const af of HEX) {
         const tag = String(+af.toFixed(1)).replace('.', 'p');
-        f.push({ id: `hex_hole_${tag}`, kind: 'hole', group: 'hex',
+        f.push({ id: `hex_hole_${tag}`, kind: 'hole', group: 'hex', tag: String(+af.toFixed(2)),
             label: `hex hole AF ${+af.toFixed(2)}`, nominal: { acrossFlats: +af.toFixed(3) },
             plan: hexPlan(af),
             mates: af === S.hexAF ? 'socket' : af === tenonAF ? 'tenon clearance' : null });
@@ -2412,13 +2413,31 @@ export function buildCalibrationSection(spec = SPEC) {
         const halfD = totalD / 2 + M;
         const slab = chamferedSlab(
             [[-halfW, -halfD], [halfW, -halfD], [halfW, halfD], [-halfW, halfD]], thickness, false);
-        const ops = placed.map(({ f, cx, cz }) => {
+        const ops = [];
+        for (const { f, cx, cz } of placed) {
             f.centre = [+cx.toFixed(3), +(-cz).toFixed(3)];
             // the CUTTER is chamfered the other way, so the hole is widest at
             // the bottom and its narrowest section is a normal layer
-            return { op: SUBTRACTION, geometry: toBufferGeometry(
-                chamferedSlab(f.plan.map(([x, zz]) => [cx + x, cz + zz]), thickness, true)) };
-        });
+            ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(
+                chamferedSlab(f.plan.map(([x, zz]) => [cx + x, cz + zz]), thickness, true)) });
+            // A LABEL, because the rungs are meant to be indistinguishable.
+            // Adjacent ladder steps differ by 0.05 mm per side — that is the
+            // point of a ladder and it is also why an unlabelled card cannot be
+            // used: you cannot tell which hole accepted the chip. Engraved
+            // rather than embossed so nothing stands proud of a card that has
+            // to lie flat, and cut into the TOP face where you are looking.
+            // Safe for the camera too: an engraved groove stays dark, while a
+            // hole reads as white paper through it, so labels never register as
+            // features.
+            if (!f.tag || !isEngravable(f.tag)) continue;
+            const capHeight = Math.min(2.6, SECTION.gapMm - 3.4);
+            const size = blockSizeMm([f.tag], { capHeight, strokeMm: spec.engrave.minFeature });
+            const e = planExtent(f.plan);
+            ops.push(...engraveFlatOps([f.tag],
+                [cx - size.widthMm / 2, thickness, cz + e.d / 2 + 1.2 + size.heightMm],
+                [1, 0, 0], [0, 0, -1], spec,
+                { capHeight, depth: Math.min(0.4, thickness * 0.35) }));
+        }
         return { geometry: csgChain(toBufferGeometry(slab), ops),
                  size: [+(2 * halfW).toFixed(2), +(2 * halfD).toFixed(2)] };
     };
@@ -2458,7 +2477,7 @@ export function buildCalibrationSection(spec = SPEC) {
             aruco: { dict: 'DICT_4X4_50', markerIds: [0, 1, 2, 3], markerSizeMm: 30,
                 sheet: 'A4', source: 'FossilRecord tooth_cv/aruco.py' },
             features: feats.map(f => ({
-                id: f.id, kind: f.kind, group: f.group, label: f.label,
+                id: f.id, kind: f.kind, group: f.group, label: f.label, tag: f.tag ?? null,
                 card: f.card ?? 'section', nominal: f.nominal, mates: f.mates ?? null,
                 clearancePerSide: f.clearancePerSide ?? null,
                 heightMm: f.heightMm ?? (isLadder(f) ? SECTION.ladderThicknessMm : T),
