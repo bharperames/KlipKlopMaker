@@ -5241,6 +5241,7 @@ async function shopExport(format = '3mf') {
  */
 async function exportCalibrationPlate() {
     const btn = $('shop-export-cal');
+    const combined = !!$('shop-cal-one')?.checked;
     if (btn) btn.disabled = true;
     try {
         await initCSG();
@@ -5281,50 +5282,54 @@ async function exportCalibrationPlate() {
             return { ...c, mesh, ...bedFootprint(mesh.positions),
                 vol: analyzeMesh(mesh.positions, mesh.indices).volumeMm3 };
         });
-        const { plates } = packPlates(items.map(({ name, w, d, h, count }) =>
-            ({ name, w, d, h, count })));
-        const byName = new Map(items.map(it => [it.name, it]));
-
-        const files = {};
-        for (const p of plates) {
-            const objs = p.items.map(it => {
-                const src = byName.get(it.name);
-                return { name: `${it.name}_${it.copy}`, meshKey: it.name,
-                    positions: src.mesh.positions, indices: src.mesh.indices,
-                    at: [it.x, it.y, 0], rot: it.rot };
-            });
-            const stem = plates.length > 1
-                ? `calibration_plate_${String(p.index).padStart(2, '0')}` : 'calibration_plate';
-            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
-        }
-        files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(items));
-
-        // --- and the XY SECTION: five layers of the same profiles, flat, to be
-        // photographed on an ArUco sheet instead of measured by hand. Its own
-        // plate because it is a ten minute print and the coupons are an hour.
+        // --- the XY SECTION is built here too, because "one job" packs both
+        // sets through the SAME packer and the coupons must be in hand first.
         const sec = buildCalibrationSection(SPEC);
         const secItems = sec.parts.map(p => {
             const raw = p.geometry;
             const mesh = recenter(raw.positions && raw.indices
                 ? { positions: new Float32Array(raw.positions), indices: new Uint32Array(raw.indices) }
                 : toArraysFromBG(raw));
-            return { name: p.name, mesh, count: 1, ...bedFootprint(mesh.positions) };
+            return { name: p.name, mesh, count: 1, ...bedFootprint(mesh.positions),
+                vol: analyzeMesh(mesh.positions, mesh.indices).volumeMm3 };
         });
-        const secPlates = packPlates(secItems.map(({ name, w, d, h }) => ({ name, w, d, h, count: 1 })));
-        const secByName = new Map(secItems.map(it => [it.name, it]));
-        secPlates.plates.forEach((p, i) => {
-            const objs = p.items.map(it => {
-                const src = secByName.get(it.name);
-                return { name: `${it.name}_${it.copy}`, meshKey: it.name,
-                    positions: src.mesh.positions, indices: src.mesh.indices,
-                    at: [it.x, it.y, 0], rot: it.rot };
+
+        const files = {};
+        const byName = new Map([...items, ...secItems].map(it => [it.name, it]));
+        const emit = (packed, stem1, stemN) => {
+            packed.plates.forEach((p) => {
+                const objs = p.items.map(it => {
+                    const src = byName.get(it.name);
+                    return { name: `${it.name}_${it.copy}`, meshKey: it.name,
+                        positions: src.mesh.positions, indices: src.mesh.indices,
+                        at: [it.x, it.y, 0], rot: it.rot };
+                });
+                const stem = packed.plates.length > 1
+                    ? `${stemN}_${String(p.index).padStart(2, '0')}` : stem1;
+                files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
             });
-            const stem = secPlates.plates.length > 1 ? `section_plate_${i + 1}` : 'section_plate';
-            files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
-        });
-        // the placement the camera needs, alongside the nominal outlines
-        sec.manifest.plate = secPlates.plates.flatMap(p => p.items.map(it =>
-            ({ name: it.name, xMm: +it.x.toFixed(3), yMm: +it.y.toFixed(3), rotDeg: it.rot ?? 0 })));
+            return packed.plates.length;
+        };
+
+        const pack = (list) => packPlates(list.map(({ name, w, d, h, count }) =>
+            ({ name, w, d, h, count })));
+        let nPlates;
+        if (combined) {
+            // ONE JOB. The coupons and the section are different questions —
+            // an hour of parts to measure against the model, and twenty minutes
+            // of card to test fits by hand — but they are the same print, and
+            // the packer will use however many plates that actually needs.
+            nPlates = emit(pack([...items, ...secItems]), 'calibration_all', 'calibration_all');
+        } else {
+            nPlates = emit(pack(items), 'calibration_plate', 'calibration_plate');
+            nPlates += emit(pack(secItems), 'section_plate', 'section_plate');
+        }
+        files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(items));
+
+        // the manifest records nothing about plate placement any more: with
+        // "one job" the section shares a plate with the coupons, so a position
+        // on a plate says nothing durable about a part. The camera finds the
+        // card by its own outline, not by where the packer put it.
         files['SECTION_NOMINALS.json'] = fflate.strToU8(JSON.stringify(sec.manifest, null, 2) + '\n');
         files['SECTION_README.md'] = fflate.strToU8(sectionReadme(sec));
 
@@ -5332,10 +5337,10 @@ async function exportCalibrationPlate() {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = `klipklop_calibration_geo${GEOMETRY_VERSION.replace(/\./g, '-')}` +
-            `_${state.skirtStyle}.zip`;
+            `_${state.skirtStyle}${combined ? '_onejob' : ''}.zip`;
         a.click();
-        const g = items.reduce((s, it) => s + printedWeightG(it.vol, 'track') * it.count, 0);
-        toast(`⬇ calibration plate · ${items.reduce((s, it) => s + it.count, 0)} coupons · ≈${Math.round(g)} g`);
+        const g = [...items, ...secItems].reduce((s, it) => s + printedWeightG(it.vol, 'track') * (it.count ?? 1), 0);
+        toast(`⬇ calibration · ${nPlates} plate${nPlates === 1 ? '' : 's'} · ≈${Math.round(g)} g`);
     } catch (err) {
         console.error(err);
         toast(`Calibration export failed: ${err.message}`);
