@@ -98,5 +98,5 @@
     "minWalkedFraction": 0.95,
     "layoutErrors": []
   },
-  "geometry": "2.1.0"
+  "geometry": "2.0.0"
 }

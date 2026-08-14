@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.1.0';
+export const GEOMETRY_VERSION = '2.0.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -436,7 +436,29 @@ export const SPEC = {
          * The number to trust over this one is the clearance ladder read by
          * hand in the material being printed.
          */
-        printComp: { neckMm: 0, tipMm: 0.15 },
+        /**
+         * NOT pre-distorted, and the clearance ladder printed in PETG is why.
+         *
+         * Read by hand: the nominal key will not enter a 0.00 cavity, enters
+         * 0.05 EXTREMELY snug, is a good tight fit at 0.10 AND at 0.12, and is
+         * loose from 0.15 up. The as-printed key wants 0.10-0.12 mm per side,
+         * and 0.12 is what is drawn — so the drawn clearance is inside the
+         * proven band and the key is not the half that is wrong.
+         *
+         * This briefly shipped as tipMm 0.15 on the strength of a calibration
+         * CARD measurement, and the ladder took it back out. A key widened
+         * 0.128 mm per side would need a 0.23 cavity and would have jammed in
+         * every pocket already in the field. The card compared a printed key
+         * against a printed hole in a 3 mm card; the rib pocket is a
+         * through-slot in a 12 mm rib and does not print like that. The ladder
+         * compares the two things that actually mate, which is why it wins.
+         *
+         * The seam still feels loose in the field, so something remains
+         * unexplained — most likely the rib pocket printing larger than the
+         * card cavity. That wants evidence, not another guess: the next
+         * measurement is a real rib pocket against the ladder, not a change.
+         */
+        printComp: { neckMm: 0, tipMm: 0 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that
