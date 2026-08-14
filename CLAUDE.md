@@ -143,6 +143,17 @@ building, gait physics simulation, and watertight STL/3MF export.
   `decomposeSupport(stackHeightMm(piece, support))` still lands on the grid.
   A piece's part signature must NOT key on support mode/station/side — the mesh
   is identical either way, and keying on it listed one curve as four.
+- **The calibration button loads PARTS, it does not export.** It swaps the
+  Print shop's job for the calibration set — coupons under one heading, cards
+  and chips under another — so they get the same quantities, thumbnails, plate
+  preview, packing, bed-contact warnings and export path as everything else,
+  instead of a private pipeline reimplementing each. Reopening the shop from
+  the toolbar rebuilds the design's catalogue (`builtFor` is stamped with a
+  sentinel no design key can equal). Two things this cost, both now handled:
+  `shopBuildList` renders only kinds in its own list, so a new kind packs and
+  exports while showing an EMPTY list; and `shopApplyPreset` picks from the
+  design's parts, so applied to this job it matches nothing and zeroes every
+  count. The measurement sheet and nominals ride along in `shopExport`.
 - **Our 3MF carries GEOMETRY ONLY, and that is the point.** BambuStudio 2.8.2+
   greets it with *"The 3mf file has invalid config, load geometry data only"* —
   an informational dialog, not an error. Bambu's own 3MFs embed ~53 KB of

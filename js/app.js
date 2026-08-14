@@ -4852,6 +4852,16 @@ function shopFrameAll() {
  * each part this track needs, rather than one of everything that exists.
  */
 function shopApplyPreset(id) {
+    // The presets pick from the DESIGN's parts. Applied to the calibration job
+    // they match nothing and set every count to zero, emptying the plate for no
+    // visible reason.
+    if (shop.calibration) {
+        for (const it of shop.items) shop.counts.set(it.name, it.designCount);
+        shopBuildList();
+        shop.framedFor = 0;
+        shopRepack();
+        return;
+    }
     const set = getExportSet(id);
     const design = shop.items.filter(it => it.designCount > 0)
         .map(it => ({ name: it.name, kind: it.kind, count: it.designCount }));
@@ -4963,8 +4973,13 @@ function shopBuildList() {
     const list = $('shop-list');
     list.innerHTML = '';
     const LABEL = { track: 'Track & switches', key: 'Connector keys',
-                    support: 'Supports & piers', scenery: 'Scenery', figure: 'Walker figure' };
-    for (const kind of ['track', 'key', 'support', 'scenery', 'figure']) {
+                    support: 'Supports & piers', scenery: 'Scenery', figure: 'Walker figure',
+                    coupon: 'Calibration coupons', gauge: 'Calibration cards & chips' };
+    // `coupon` and `gauge` only ever appear when the shop is holding the
+    // calibration job. A kind that is not in this list is not rendered at all —
+    // which is how the first version of the calibration job packed and exported
+    // 21 parts while showing an empty list.
+    for (const kind of ['track', 'key', 'support', 'scenery', 'figure', 'coupon', 'gauge']) {
         // The gate paddle is not a category of its own — it is the part that
         // makes a switch work, and a group of one told nobody that.
         // The plain forms cover any track. Lifts, elevators, switches and the
@@ -5136,6 +5151,7 @@ async function openPrintShop(opts = {}) {
 
             shop.items = [];
             shop.counts.clear();
+            shop.calibration = null;      // this is the design's catalogue again
             for (const part of [...parts, ...canonical, ...catalogue]) {
                 await new Promise(r => setTimeout(r));
                 const mesh = recenter(part.build());
@@ -5210,13 +5226,29 @@ async function shopExport(format = '3mf') {
         const unstable = shop.items
             .filter(it => onPlates.has(it.name) && it.bed && it.bed.contactMm2 < MIN_BED_MM2)
             .map(it => ({ name: it.name, bed: it.bed }));
+        // The calibration parts bring their own paperwork. Exporting them
+        // through the ordinary path would otherwise drop the measurement sheet
+        // and the nominals a measuring script reads, which are most of the
+        // value — the plates alone are just plastic.
+        if (shop.calibration) {
+            files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(
+                shop.calibration.coupons.map(c => ({ ...c,
+                    vol: shop.items.find(it => it.name === c.name)?.vol ?? 0 }))));
+            files['SECTION_NOMINALS.json'] = fflate.strToU8(
+                JSON.stringify(shop.calibration.manifest, null, 2) + '\n');
+            files['SECTION_README.md'] = fflate.strToU8(
+                sectionReadme({ manifest: shop.calibration.manifest }));
+        }
         files['README.txt'] = fflate.strToU8(exportReadme(
             shop.joints ?? 0, shop.switchCount ?? 0, manifest, unstable));
         const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
-            `_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${shop.plates.length}plates_${format}.zip`;
+        a.download = shop.calibration
+            ? `klipklop_calibration_geo${GEOMETRY_VERSION.replace(/\./g, '-')}` +
+              `_${state.skirtStyle}_${shop.plates.length}plates_${format}.zip`
+            : `klipklop_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}` +
+              `_geo${GEOMETRY_VERSION.replace(/\./g, '-')}_${shop.plates.length}plates_${format}.zip`;
         a.click();
         toast(`⬇ ${shop.plates.length} custom plate${shop.plates.length === 1 ? '' : 's'}`);
     } catch (err) {
@@ -5239,111 +5271,99 @@ async function shopExport(format = '3mf') {
  * style, because a joint printed lying on its underside and the same joint
  * printed rim-down are different measurements.
  */
-async function exportCalibrationPlate() {
+/**
+ * Put the calibration parts INTO the print shop, replacing whatever job is
+ * there, rather than exporting a zip behind the user's back.
+ *
+ * They are parts. Once they are in the shop they get the same quantities,
+ * thumbnails, plate preview, packing, bed-contact warnings and export path as
+ * everything else, instead of a private pipeline that had to reimplement each
+ * of those and could drift from them. It also means you can SEE the plate
+ * before committing 2.5 hours to it, and drop the coupons to print only the
+ * ladder after a filament change.
+ *
+ * BUILT FROM THE CANONICAL STANDARD, never from the open design: a coupon cut
+ * from a custom-parameter piece would certify a track nobody else can print.
+ * The one thing it does take from the design is the underside style, because a
+ * joint printed lying on its underside and the same joint printed rim-down are
+ * different measurements.
+ *
+ * Reopening the shop from the toolbar rebuilds the design's own catalogue —
+ * `builtFor` is stamped with a sentinel that no design key can equal.
+ */
+async function loadCalibrationParts() {
     const btn = $('shop-export-cal');
-    const combined = !!$('shop-cal-one')?.checked;
     if (btn) btn.disabled = true;
+    $('shop-summary').textContent = 'building calibration parts…';
     try {
         await initCSG();
-        // SHORT TILES. The ramp coupon is a whole tile rib to rib rather than
-        // a band cut out of a long one, so the layout is laid out at the
-        // coupon length — see CALIBRATION.rampTileLenMm.
         const { pieces } = layoutTrack(
             ['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
             { skirtStyle: state.skirtStyle, tileLen: CALIBRATION.rampTileLenMm });
         const sups = planPillarPositions(pieces);
-        // a straight that actually carries a boss, so the socket coupon has one
         let piece = null, support = null;
         for (const p of pieces.filter(p => p.type === 'straight')) {
-            const s = sups.find(x => x.pieceIndex === p.index);
-            if (s && s.mode !== 'none') { piece = p; support = s; break; }
+            const sup = sups.find(x => x.pieceIndex === p.index);
+            if (sup && sup.mode !== 'none') { piece = p; support = sup; break; }
         }
         if (!piece) piece = pieces.find(p => p.type === 'straight');
         const sw = layoutTrack(
             [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }],
             { skirtStyle: state.skirtStyle });
-
         const coupons = buildCalibrationCoupons({
             piece, support,
             switchMain: sw.pieces.find(p => p.role === 'main'),
             switchBranch: sw.pieces.find(p => p.role === 'branch')
         }, SPEC);
-
-        const items = coupons.map(c => {
-            // The builders are a mix: a swept solid comes back as raw arrays,
-            // anything through CSG comes back as a BufferGeometry. The parts
-            // list upstream only ever sees one or the other per entry, so it
-            // gets away with picking; a set drawn from six different builders
-            // does not.
-            const raw = c.build();
-            const mesh = recenter(raw.positions && raw.indices
-                ? { positions: new Float32Array(raw.positions), indices: new Uint32Array(raw.indices) }
-                : toArraysFromBG(raw));
-            return { ...c, mesh, ...bedFootprint(mesh.positions),
-                vol: analyzeMesh(mesh.positions, mesh.indices).volumeMm3 };
-        });
-        // --- the XY SECTION is built here too, because "one job" packs both
-        // sets through the SAME packer and the coupons must be in hand first.
         const sec = buildCalibrationSection(SPEC);
-        const secItems = sec.parts.map(p => {
-            const raw = p.geometry;
-            const mesh = recenter(raw.positions && raw.indices
-                ? { positions: new Float32Array(raw.positions), indices: new Uint32Array(raw.indices) }
-                : toArraysFromBG(raw));
-            return { name: p.name, mesh, count: 1, ...bedFootprint(mesh.positions),
-                vol: analyzeMesh(mesh.positions, mesh.indices).volumeMm3 };
-        });
 
-        const files = {};
-        const byName = new Map([...items, ...secItems].map(it => [it.name, it]));
-        const emit = (packed, stem1, stemN) => {
-            packed.plates.forEach((p) => {
-                const objs = p.items.map(it => {
-                    const src = byName.get(it.name);
-                    return { name: `${it.name}_${it.copy}`, meshKey: it.name,
-                        positions: src.mesh.positions, indices: src.mesh.indices,
-                        at: [it.x, it.y, 0], rot: it.rot };
-                });
-                const stem = packed.plates.length > 1
-                    ? `${stemN}_${String(p.index).padStart(2, '0')}` : stem1;
-                files[`${stem}.3mf`] = wrap3MF(generateMultiObject3MFXML(objs));
+        // the builders return a MIX of raw arrays and BufferGeometry — the shop
+        // loop wants arrays, and a set drawn from six builders cannot get away
+        // with picking one
+        const arrays = (g) => (g.positions && g.indices)
+            ? { positions: new Float32Array(g.positions), indices: new Uint32Array(g.indices) }
+            : toArraysFromBG(g);
+        const parts = [
+            // two groups, because they are two errands: coupons are measured
+            // against the model, cards and chips test fits by hand
+            ...coupons.map(c => ({ name: c.name, kind: 'coupon', count: c.count,
+                build: () => arrays(c.build()) })),
+            ...sec.parts.map(p => ({ name: p.name, kind: 'gauge', count: 1,
+                build: () => arrays(p.geometry) }))
+        ];
+
+        shop.items = [];
+        shop.counts.clear();
+        for (const part of parts) {
+            await new Promise(r => setTimeout(r));
+            const mesh = recenter(part.build());
+            const rep = analyzeMesh(mesh.positions, mesh.indices);
+            shop.items.push({
+                name: part.name, kind: part.kind, ...bedFootprint(mesh.positions),
+                variant: '', vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
+                bed: bedStability(mesh.positions, mesh.indices),
+                designCount: part.count, thumb: ''
             });
-            return packed.plates.length;
-        };
-
-        const pack = (list) => packPlates(list.map(({ name, w, d, h, count }) =>
-            ({ name, w, d, h, count })));
-        let nPlates;
-        if (combined) {
-            // ONE JOB. The coupons and the section are different questions —
-            // an hour of parts to measure against the model, and twenty minutes
-            // of card to test fits by hand — but they are the same print, and
-            // the packer will use however many plates that actually needs.
-            nPlates = emit(pack([...items, ...secItems]), 'calibration_all', 'calibration_all');
-        } else {
-            nPlates = emit(pack(items), 'calibration_plate', 'calibration_plate');
-            nPlates += emit(pack(secItems), 'section_plate', 'section_plate');
+            shop.counts.set(part.name, part.count);
         }
-        files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(items));
-
-        // the manifest records nothing about plate placement any more: with
-        // "one job" the section shares a plate with the coupons, so a position
-        // on a plate says nothing durable about a part. The camera finds the
-        // card by its own outline, not by where the packer put it.
-        files['SECTION_NOMINALS.json'] = fflate.strToU8(JSON.stringify(sec.manifest, null, 2) + '\n');
-        files['SECTION_README.md'] = fflate.strToU8(sectionReadme(sec));
-
-        const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `klipklop_calibration_geo${GEOMETRY_VERSION.replace(/\./g, '-')}` +
-            `_${state.skirtStyle}${combined ? '_onejob' : ''}.zip`;
-        a.click();
-        const g = [...items, ...secItems].reduce((s, it) => s + printedWeightG(it.vol, 'track') * (it.count ?? 1), 0);
-        toast(`⬇ calibration · ${nPlates} plate${nPlates === 1 ? '' : 's'} · ≈${Math.round(g)} g`);
+        await shopThumbnails(shop.items);
+        shopBuildList();
+        // the docs travel with the parts, so an export from here carries the
+        // measurement sheet and the nominals a measuring script reads
+        shop.calibration = { manifest: sec.manifest, coupons };
+        shop.joints = 0;
+        shop.switchCount = 0;
+        shop.built = true;
+        shop.builtFor = '__calibration__';
+        $('shop-preset-hint').textContent =
+            'Calibration parts. Export as usual; the measurement sheet and nominals '
+            + 'come with them. Reopen the Print shop to get your design back.';
+        shopRepack();
+        toast('📏 calibration parts loaded — export as usual');
     } catch (err) {
         console.error(err);
-        toast(`Calibration export failed: ${err.message}`);
+        $('shop-summary').textContent = `could not build calibration parts: ${err.message}`;
+        toast(`Calibration parts failed: ${err.message}`);
     } finally {
         if (btn) btn.disabled = false;
     }
@@ -5496,7 +5516,7 @@ $('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all
 $('shop-close').addEventListener('click', () => closePrintShop());
 $('shop-export').addEventListener('click', () => shopExport('3mf'));
 $('shop-export-stl').addEventListener('click', () => shopExport('stl'));
-$('shop-export-cal').addEventListener('click', () => exportCalibrationPlate());
+$('shop-export-cal').addEventListener('click', () => loadCalibrationParts());
 (() => {
     const sel = $('shop-preset');
     for (const set of EXPORT_SETS) {
