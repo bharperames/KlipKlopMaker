@@ -1414,6 +1414,48 @@ describe('calibration coupons', () => {
     }, 240000);
 
     /**
+     * The gate bearing is TRIMMED across the piece as well as along it, to get
+     * it from 26 g down to 10 g and drop the deck that drew a floating
+     * cantilever warning. A lateral trim is exactly the cut that could take
+     * the bore with it, and a coupon that has lost the feature it is named for
+     * is worse than no coupon — it certifies a fit nobody printed.
+     *
+     * The axis is found by pushing two points through the SHIPPED rotation
+     * rather than reimplementing it: tiltOntoUnderside rotates about the
+     * origin, so the pin's foot and the up-vector come back as the tilted
+     * axis's point and direction.
+     */
+    test('the gate bearing coupon still has its bore after the trim', async () => {
+        const { buildCalibrationCoupons, gatePinPosition, tiltOntoUnderside, GATE } =
+            await import('../js/pieces.js');
+        const { pieceFrame: pf, pieceInFrame: pif } = await import('../js/track.js');
+        await initCSG();
+        const s = await src();
+        const frame = pf(s.switchMain);
+        let main = pif(s.switchMain, frame), branch = pif(s.switchBranch, frame);
+        const planeGroup = [main, branch];
+        main = { ...main, planeGroup }; branch = { ...branch, planeGroup };
+        const pin = gatePinPosition(main, branch);
+
+        const probe = { positions: new Float32Array([pin.x, 0, pin.z, 0, 1, 0]) };
+        tiltOntoUnderside(probe, main);
+        const p0 = [probe.positions[0], probe.positions[1], probe.positions[2]];
+        const dir = [probe.positions[3], probe.positions[4], probe.positions[5]];
+
+        const g = buildCalibrationCoupons(s).find(c => c.name === 'cal_gate_bearing').build();
+        const P = g.positions ?? g.attributes.position.array;
+        let onBore = 0;
+        for (let i = 0; i < P.length; i += 3) {
+            const w = [P[i] - p0[0], P[i + 1] - p0[1], P[i + 2] - p0[2]];
+            const t = w[0] * dir[0] + w[1] * dir[1] + w[2] * dir[2];
+            const d = Math.hypot(w[0] - t * dir[0], w[1] - t * dir[1], w[2] - t * dir[2]);
+            if (Math.abs(d - GATE.boreR) < 0.15) onBore++;
+        }
+        expect(`bore wall vertices ${onBore >= 12 ? 'present' : 'MISSING'}`)
+            .toBe('bore wall vertices present');
+    }, 240000);
+
+    /**
      * A coupon that does not carry the feature it is named for is worse than
      * no coupon: it certifies a fit nobody printed. The pocket is a void in
      * the end face, so the coupon must be measurably hollow there.

@@ -1922,7 +1922,8 @@ export function mergeSolids(solids) {
 const CAL = {
     jointKeepMm: 26,     // enough rib to hold the pocket and its surround
     socketKeepMm: 44,    // a band centred on the boss
-    gateKeepMm: 34       // a block around the gate pin bore
+    gateKeepMm: 34,      // a block around the gate pin bore, along the piece
+    gateWidthMm: 15      // and across it, inward from the hinge wall
 };
 
 /**
@@ -1938,6 +1939,17 @@ function bandCutters(face, dFrom, dTo, spec) {
     return [
         { op: SUBTRACTION, geometry: box(-BIG, dFrom) },
         { op: SUBTRACTION, geometry: box(dTo, BIG) }
+    ];
+}
+
+/** The same trim, across the piece instead of along it. */
+function sideCutters(face, pxFrom, pxTo) {
+    const BIG = 400, LO = -400, HI = 400;
+    const box = (a, b) => toBufferGeometry(extrudePolygonY(
+        planToWorld([[a, -BIG], [b, -BIG], [b, BIG], [a, BIG]], face), LO, HI));
+    return [
+        { op: SUBTRACTION, geometry: box(-BIG, pxFrom) },
+        { op: SUBTRACTION, geometry: box(pxTo, BIG) }
     ];
 }
 
@@ -2066,8 +2078,21 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
                 const pin = gatePinPosition(main, branch);
                 const solid = buildSwitchExportGeometry(src.switchMain, src.switchBranch,
                     { spec, forPrint: false });
-                const cut = csgChain(toBufferGeometry(solid), bandCutters(main.entry,
-                    Math.max(-1, pin.s - CAL.gateKeepMm / 2), pin.s + CAL.gateKeepMm / 2, spec));
+                // TRIMMED ACROSS AS WELL AS ALONG. Kept full width this coupon
+                // was the heaviest thing on the plate — 26 g and 42 mm tall to
+                // measure two diameters — because it dragged in the far rail
+                // and the whole deck spanning between them. That deck is also
+                // the only reason it drew a floating-cantilever warning. The
+                // bore lives in the hinge rail, so the far rail 48 mm away
+                // contributes nothing to it and is not "context" worth paying
+                // for. `lat` is where the pin sits: on the hinge-side wall.
+                const lat = pin.hingeSide * (main.innerWidth / 2 + GATE.vaneThk / 2);
+                const inward = -pin.hingeSide * CAL.gateWidthMm;
+                const cut = csgChain(toBufferGeometry(solid), [
+                    ...bandCutters(main.entry,
+                        Math.max(-1, pin.s - CAL.gateKeepMm / 2), pin.s + CAL.gateKeepMm / 2, spec),
+                    ...sideCutters(main.entry, Math.min(lat + 6, lat + inward), Math.max(lat + 6, lat + inward))
+                ]);
                 return tiltOntoUnderside(cut, main, spec);
             },
             measures: [
