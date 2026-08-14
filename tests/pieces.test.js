@@ -1453,6 +1453,24 @@ describe('calibration coupons', () => {
         }
         expect(`bore wall vertices ${onBore >= 12 ? 'present' : 'MISSING'}`)
             .toBe('bore wall vertices present');
+
+        // AND NO THIN BLADE ON TOP. The coupon is capped at the deck because
+        // the rail rose 12 mm above it as a 12 x 2 mm fin — a cantilever with
+        // nothing to do with the socket, and the thing the slicer kept naming.
+        // A sliver returning would show up as a top slab that is wide one way
+        // and paper-thin the other, so both extents are checked rather than
+        // the height alone.
+        let hi = -Infinity, lo = Infinity;
+        for (let i = 1; i < P.length; i += 3) { hi = Math.max(hi, P[i]); lo = Math.min(lo, P[i]); }
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (let i = 0; i < P.length; i += 3) {
+            if (P[i + 1] < hi - 5) continue;
+            x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]);
+            z0 = Math.min(z0, P[i + 2]); z1 = Math.max(z1, P[i + 2]);
+        }
+        const thin = Math.min(x1 - x0, z1 - z0);
+        expect(`top slab ${thin >= 10 ? 'is solid' : `is a ${thin.toFixed(1)} mm blade`}`)
+            .toBe('top slab is solid');
     }, 240000);
 
     /**

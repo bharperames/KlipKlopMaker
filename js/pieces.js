@@ -2088,10 +2088,57 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
                 // for. `lat` is where the pin sits: on the hinge-side wall.
                 const lat = pin.hingeSide * (main.innerWidth / 2 + GATE.vaneThk / 2);
                 const inward = -pin.hingeSide * CAL.gateWidthMm;
+                const d0 = Math.max(-1, pin.s - CAL.gateKeepMm / 2);
+                const d1 = pin.s + CAL.gateKeepMm / 2;
+                // AND THE BACK IS CLOSED WITH A PLAIN WALL. Cut open, the strip
+                // of deck left inboard of the rail is anchored along the rail
+                // and free at the cut — a genuine floating cantilever, and the
+                // one Bambu keeps naming. In the whole switch that deck is a
+                // bridge between two rails; taking one rail away turns it into
+                // a diving board. A wall from the underside plane up to the
+                // deck gives it its second anchor back for 2.4 mm of plastic.
+                //
+                // It is a PLAIN VERTICAL WALL, not a slice of skirt at the ramp
+                // angle, because this coupon exists to verify the swing arm's
+                // socket and nothing else. Brett: "the back doesn't have to be
+                // at the normal ramp angle."
+                const latInner = lat + inward;
+                const u0 = latInner, u1 = latInner + pin.hingeSide * spec.wall;
+                const pl = undersidePlane(main, spec);
+                const dirV = [Math.cos(main.entry.h), Math.sin(main.entry.h)];
+                const rightV = [Math.sin(main.entry.h), -Math.cos(main.entry.h)];
+                const N = 5, profiles = [], stations = [];
+                for (let i = 0; i < N; i++) {
+                    const d = d0 + ((d1 - d0) * i) / (N - 1);
+                    const px = main.entry.x + dirV[0] * d, pz = main.entry.z + dirV[1] * d;
+                    const at = (u) => pl.at(px + rightV[0] * u, pz + rightV[1] * u);
+                    const top = deckYAt(main, Math.min(Math.max(d, 0), main.planLen));
+                    profiles.push([[u0, at(u0)], [u1, at(u1)], [u1, top], [u0, top]]);
+                    stations.push({ origin: [px, 0, pz],
+                        right: [rightV[0], 0, rightV[1]], up: [0, 1, 0] });
+                }
+                // AND THE RAILS COME OFF. Measured on the built mesh, the
+                // swing arm's socket is a void on the bore axis from z 8 to
+                // z 24 and there is no material at all above z 25 except a
+                // 12 x 2 mm blade of rail top standing 12 mm proud — a thin
+                // cantilever that is nothing to do with the socket and is what
+                // the slicer keeps naming. Capping at the deck keeps the whole
+                // socket and takes the blade.
+                const capProfiles = [], capStations = [];
+                for (let i = 0; i < N; i++) {
+                    const d = d0 + ((d1 - d0) * i) / (N - 1);
+                    const top = deckYAt(main, Math.min(Math.max(d, 0), main.planLen));
+                    capProfiles.push([[-400, top], [400, top], [400, 400], [-400, 400]]);
+                    capStations.push({
+                        origin: [main.entry.x + dirV[0] * d, 0, main.entry.z + dirV[1] * d],
+                        right: [rightV[0], 0, rightV[1]], up: [0, 1, 0]
+                    });
+                }
                 const cut = csgChain(toBufferGeometry(solid), [
-                    ...bandCutters(main.entry,
-                        Math.max(-1, pin.s - CAL.gateKeepMm / 2), pin.s + CAL.gateKeepMm / 2, spec),
-                    ...sideCutters(main.entry, Math.min(lat + 6, lat + inward), Math.max(lat + 6, lat + inward))
+                    ...bandCutters(main.entry, d0, d1, spec),
+                    ...sideCutters(main.entry, Math.min(lat + 6, latInner), Math.max(lat + 6, latInner)),
+                    { op: SUBTRACTION, geometry: toBufferGeometry(sweepSolid(capProfiles, capStations)) },
+                    { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) }
                 ]);
                 return tiltOntoUnderside(cut, main, spec);
             },
