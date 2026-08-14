@@ -1324,7 +1324,7 @@ describe('the key can actually be fitted', () => {
             .toBe(bowtieFitTrials({ ...shape, tipChamfer: 1.2, clearance: 0.08 }).pGood);
     });
 
-    test('the key is NOT pre-distorted, because the slot distorts with it', async () => {
+    test('the key IS drawn bigger — the rake cancels, the size does not', async () => {
         // Measured, the key prints with a shallower rake than it is drawn with:
         // the nozzle fills its concave waist and rounds its convex tips. That
         // looked like a reason to draw it pre-distorted, and it was wrong —
@@ -1337,8 +1337,16 @@ describe('the key can actually be fitted', () => {
         // what made this look like a rake problem.
         const { SPEC } = await import('../js/track.js');
         const K = SPEC.key;
-        expect(K.printComp.neckMm).toBe(0);
-        expect(K.printComp.tipMm).toBe(0);
+        // THE KEY IS NOW DRAWN BIGGER, and this test's original claim is why it
+        // took so long to get here. It said the key must not be pre-distorted
+        // because the SLOT distorts with it — true of the RAKE, and the flare
+        // numbers below still hold, which is why neck and tip move together.
+        // It is not true of absolute SIZE, and a fit is made of absolute sizes.
+        // The seam was loose in PLA and looser in PETG.
+        expect(K.printComp.tipMm).toBeGreaterThan(0);
+        expect(K.printComp.neckMm).toBe(-K.printComp.tipMm);   // rake preserved
+        // and the throat lands on the ladder rung measured EXTREMELY SNUG
+        expect(K.fitClearanceMm - K.printComp.tipMm).toBeCloseTo(0.05, 6);
 
         const keyFlarePrinted = ((23.45 / 2) - (16.40 / 2)) / K.depth;      // measured
         const slotFlarePrinted = ((23.90 / 2) - (16.85 / 2)) / (K.depth + 0.2);

@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.0.0';
+export const GEOMETRY_VERSION = '2.1.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -458,7 +458,34 @@ export const SPEC = {
          * card cavity. That wants evidence, not another guess: the next
          * measurement is a real rib pocket against the ladder, not a change.
          */
-        printComp: { neckMm: 0, tipMm: 0 },
+        /**
+         * THE KEY IS DRAWN 0.07 mm PER SIDE BIGGER. Brett, holding the parts:
+         * "the current key/slot is loose, I want the key bigger so it is
+         * tighter", and "ideally it would be tight at extremely snug at 0.05".
+         *
+         * The pocket is drawn at `fitClearanceMm` 0.12 per side. Growing the
+         * key by 0.07 lands the throat on 0.05 — the rung of the printed PETG
+         * clearance ladder that takes the key EXTREMELY SNUG by hand, which is
+         * the fit asked for. The seat, one `seatGripMm` tighter still, lands at
+         * 0.02.
+         *
+         * BOTH numbers move, so the flare does not. `neckHalf` is
+         * `K.neckHalf - comp.neckMm` and `tipHalf` is `K.tipHalf + comp.tipMm`,
+         * so -0.07 and +0.07 grow neck and tips alike: the key gets uniformly
+         * wider without changing its rake, and the rake is the one thing the
+         * printed evidence says is already right (key flare 0.392 against the
+         * slot's 0.383).
+         *
+         * ONLY THE KEY MOVES. `bowtiePocketPlan` never sees printComp, so every
+         * piece already printed keeps its slot and stays valid — the correction
+         * costs a reprint of the cheapest part in the system, which is why it
+         * was chosen over touching the pocket.
+         *
+         * The clearance ladder is the way to check this before committing a
+         * batch: a 2.1 key should first enter around the 0.12 rung rather than
+         * 0.05. If it will not go home by hand, this is the number to reduce.
+         */
+        printComp: { neckMm: -0.07, tipMm: 0.07 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that

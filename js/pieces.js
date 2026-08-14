@@ -2295,7 +2295,7 @@ function sectionFeatures(spec = SPEC) {
         (c) => ({ diameter: +(2 * (GATE.pinR + c)).toFixed(3) }), 0);
     rung('lad_key', 'bowtie cavity', (c) => insetPolygon(bowtieKeyPlan({
             neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer }), -c),
-        (c) => ({ acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) }), 0.12);
+        (c) => ({ acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) }), +(K.fitClearanceMm - K.printComp.tipMm).toFixed(3));
 
     // the three chips you push down the ladders — the REAL parts, at real
     // engagement height, so the test is the joint and not a model of it
@@ -2305,12 +2305,31 @@ function sectionFeatures(spec = SPEC) {
     f.push({ id: 'chip_pin', kind: 'island', group: 'ladder', card: 'ladder',
         label: 'gate pin chip', heightMm: spec.socket.depth,
         nominal: { diameter: 2 * GATE.pinR }, plan: circlePlan(GATE.pinR) });
-    f.push({ id: 'chip_key', kind: 'island', group: 'ladder', card: 'ladder',
-        label: 'bowtie key chip (as shipped)',
-        heightMm: K.height - 2 * spec.jointClearanceMm,
-        nominal: { acrossTips: 2 * K.tipHalf },
-        plan: bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
-            depth: K.depth, tipChamfer: K.tipChamfer }) });
+    // TWO KEYS, and the plate is the only place they can be compared. 2.0 is
+    // the key already in Brett's hands, which the seam will not hold shut; 2.1
+    // is drawn `printComp` bigger on every flank. Printing both side by side is
+    // what turns "is it tighter?" into a thing you can feel, and it is cheap —
+    // the key is the smallest part in the system.
+    //
+    // The 2.0 chip is also the CONTROL for the ladder. Read the ladder with it
+    // and the rungs mean what they always meant, so this plate stays comparable
+    // to the PETG one already measured.
+    //
+    // This is the bug too: the chip used to build from raw `K.tipHalf` and so
+    // never saw printComp at all — the ladder would have gauged a key the track
+    // no longer ships, and read "correct" while the seam stayed open.
+    for (const v of [
+        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0 }, label: 'bowtie key 2.0 (the loose one)' },
+        { id: 'chip_key_21', comp: K.printComp, label: 'bowtie key 2.1 (bigger — print both)' }
+    ]) {
+        const neckHalf = K.neckHalf - v.comp.neckMm, tipHalf = K.tipHalf + v.comp.tipMm;
+        f.push({ id: v.id, kind: 'island', group: 'ladder', card: 'ladder',
+            label: v.label, heightMm: K.height - 2 * spec.jointClearanceMm,
+            nominal: { acrossTips: +(2 * tipHalf).toFixed(3) },
+            mates: v.comp.tipMm ? `fits the ${(K.fitClearanceMm - v.comp.tipMm).toFixed(2)} rung` : null,
+            plan: bowtieKeyPlan({ neckHalf, tipHalf, depth: K.depth,
+                tipChamfer: K.tipChamfer }) });
+    }
 
     // --- hex series. AF 8.6 is the tenon, 9 the socket, 15 the riser shaft.
     const HEX = [6, 8, tenonAF, S.hexAF, 10, 12, 15];
