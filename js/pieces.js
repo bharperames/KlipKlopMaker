@@ -2033,6 +2033,30 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
             ['height, shoulder to shoulder', 15]
         ]
     });
+    // THE SECOND POST, and the reason there has to be one: with a single
+    // cal_post_15 the only joint you can test is post-into-the-RAMP's socket.
+    // Post-into-POST is a different piece of plastic — a socket sunk in a slim
+    // hex shaft, not one sunk in the mass under a deck — and this project has
+    // already measured that a hole's printed size depends on the material
+    // around it. Two posts is the smallest arrangement that can tell them apart.
+    //
+    // 12 mm, not 15: deliberately NOT a grid unit, so a test article can never
+    // be mistaken for a spacer and built into a tower. It is the shortest shaft
+    // that still fully houses the 10 mm socket without breaking through.
+    out.push({
+        name: 'cal_post_short',
+        count: 1,
+        note: 'The mate for cal_post_15: stack them to test post-on-post, which is '
+            + 'a socket in a slim shaft rather than one sunk under a deck. 12 mm '
+            + 'so it is not a grid unit and cannot be built into a tower.',
+        build: () => buildRiserGeometry(12, spec, { code: partCode('R12', GEOMETRY_VERSION) }),
+        measures: [
+            ['tenon across flats', tenonAF],
+            ['shaft across flats', 15],
+            ['socket in the base, across flats', S.hexAF],
+            ['height, shoulder to shoulder', 12]
+        ]
+    });
     out.push({
         name: 'cal_gate_paddle',
         count: 1,
