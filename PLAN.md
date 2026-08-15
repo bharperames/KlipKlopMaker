@@ -199,8 +199,11 @@ CAD.** Both sockets measure 9.00 AF at every height; the difference is that a
 lone boss hanging under the deck of a 150 mm part does not hold size the way a
 compact hex prism standing on the bed does. There is no number to derive from
 that, only one to compensate with, so the TRACK socket alone is cut 0.2 AF
-undersize (`SPEC.socket.trackShrinkAF`) and every riser-to-riser joint is left
-exactly as it prints today — that one already works and must not be "fixed".
+undersize and, since 2.2.0, so is every other socket (`SPEC.socket.socketShrinkAF`).
+The riser-to-riser joint was left alone for exactly as long as the evidence was
+PLA, where it measured 8.62-8.65 and worked. In PETG it came out loose, so it
+now takes the same cut. The lesson is that this compensation is a MATERIAL
+number, not a geometry one.
 
 **A level top under a sloping deck (found in CAD, 2026-08-08).** The end rib
 was a prism whose top was taken at its own face. The deck falls 0.198 mm/mm, so

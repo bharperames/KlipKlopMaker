@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.1.0';
+export const GEOMETRY_VERSION = '2.2.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -228,7 +228,25 @@ export const SPEC = {
          * gets +nozzle and −shrink and they cancel, an internal one gets both
          * inward, and how much depends on what is around it.
          */
-        trackShrinkAF: 0.25,
+        // NOW APPLIED TO EVERY SOCKET, not just the track's. Brett, after
+        // stacking two PETG pillars: "the hex pillars are also not tight with
+        // each other", and "make the pillar socket the same as the ramp
+        // socket". The ramp socket is the one he has repeatedly called right.
+        //
+        // WHAT THIS OVERTURNS, deliberately: the note below and PLAN.md said
+        // riser-to-riser "already works and must not be fixed", on PLA prints
+        // where riser sockets measured 8.62-8.65 from this 9.0 drawing. That
+        // was true of PLA. It is not true of the PETG in his hands, and
+        // calibration is material-specific (see CLAUDE.md) — the earlier
+        // measurement was never evidence about this material.
+        //
+        // THE RISK IS PLA, AND IT IS THE ONE TO WATCH: if a riser socket really
+        // does come out 0.35 under in PLA, drawing it 0.25 smaller again lands
+        // near 8.40 against an 8.60 tenon, which is interference, not a fit.
+        // The hex ladder on the calibration card settles it — read it in the
+        // material you are printing. This is one constant and reverting it to
+        // a track-only value is a one-line change.
+        socketShrinkAF: 0.25,
         /**
          * NO grip taper here, unlike the key — and the reason is worth keeping,
          * because the key's answer looks like it should transfer and does not.

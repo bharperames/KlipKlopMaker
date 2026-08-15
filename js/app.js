@@ -3948,7 +3948,7 @@ function makeDimGroup(box, part, show = 'all') {
         // ---- the support socket ------------------------------------------
         if (support && support.mode !== 'none') {
             const [sx, sz] = at(support.x, support.z);
-            const af = spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0);
+            const af = spec.socket.hexAF - (spec.socket.socketShrinkAF ?? 0);
             dim(V(sx - af / 2, 0, sz), V(sx + af / 2, 0, sz), Y.clone().negate(),
                 `socket ${af.toFixed(2)} mm across flats`,
                 { drawnMm: af, klass: 'holeMassive', offMm: FOFF });
@@ -5636,12 +5636,13 @@ PRINTING
   if your first layer is at all marginal.
 - Pillars, risers, feet and towers: print upright. Everything shares one
   interlock — a hex tenon ${(SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm).toFixed(1)} mm across the flats, ${SPEC.socket.depth} mm deep. The
-  socket it goes into is drawn ${SPEC.socket.hexAF} in a riser or a scenery part and
-  ${(SPEC.socket.hexAF - SPEC.socket.trackShrinkAF).toFixed(2)} in a track piece. From the same AF ${SPEC.socket.hexAF} drawing the riser sockets
-  measured 8.62-8.65 and the track sockets 8.85-8.95, and the same tenon is
-  snug in the first and loose in the second, so they are drawn ${SPEC.socket.trackShrinkAF} apart to
-  come out alike. Measure yours: past the 0.8 mm lead-in flare at the mouth,
-  both should now read about 8.65.
+  socket it goes into is drawn ${(SPEC.socket.hexAF - SPEC.socket.socketShrinkAF).toFixed(2)} everywhere — track, riser and
+  scenery alike — from a nominal AF ${SPEC.socket.hexAF} cut back by ${SPEC.socket.socketShrinkAF}. The track socket was
+  drawn undersize first and is the joint that has felt right in the hand; in
+  PETG the riser-to-riser joint did not, so it now gets the same treatment.
+  Measure yours past the 0.8 mm lead-in flare at the mouth. THIS IS
+  MATERIAL-SPECIFIC: in PLA these sockets ran tighter, so read the hex ladder
+  on the calibration card in the material you actually print.
 - Curves and switches are packed one to a plate. The slicer's cantilever
   warning fires on them whatever the geometry, so alone it tells you which
   part it means, and a part that comes loose takes nothing else with it.

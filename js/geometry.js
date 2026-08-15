@@ -853,7 +853,7 @@ export function bowtiePocketPlan({ neckHalf = 8, tipHalf = 12, depth = 9, cleara
  * What IS independent of all that is how the joints behave: the same tenon is
  * snug in a riser socket and falls out of a track socket. A caliper artefact
  * cannot make a joint feel loose. So the DIRECTION is real and the MAGNITUDE
- * is the uncertain part — which is why SPEC.socket.trackShrinkAF rests on the
+ * is the uncertain part — which is why SPEC.socket.socketShrinkAF rests on the
  * fit reports and treats 0.25 as its best available estimate, not as a fact.
  *
  * Corner rounding is tracked separately (cornerRadiusMm): a shape error, not

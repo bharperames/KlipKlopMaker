@@ -593,7 +593,7 @@ function jointOps(face, deckY, seamDeckY, rimAt, innerWidth, spec, deckAtDepth =
  * elephant-foot flare on the mating part).
  */
 function hexSocketSolid(cx, cz, yOpen, yEnd, spec, afOverride = null, taperAF = 0, roofY = null) {
-    const AF = afOverride ?? spec.socket.hexAF;
+    const AF = afOverride ?? (spec.socket.hexAF - (spec.socket.socketShrinkAF ?? 0));
     const dir = Math.sign(yEnd - yOpen);
     const levels = [
         { y: yOpen, af: AF + 1.2 },
@@ -783,10 +783,10 @@ function bossOps(piece, spec, support) {
         : null;
     ops.push({
         op: SUBTRACTION,
-        // the track's socket alone is cut undersize — see socket.trackShrinkAF
+        // undersize like every other socket now — hexSocketSolid applies
+        // socket.socketShrinkAF itself, so this no longer overrides the AF
         geometry: hexSocketSolid(bx, bz, mouthY - 0.5, socketTop, spec,
-            spec.socket.hexAF - (spec.socket.trackShrinkAF ?? 0), spec.socket.gripTaperAF ?? 0,
-            roofY)
+            null, spec.socket.gripTaperAF ?? 0, roofY)
     });
     // Core the boss out above the socket: only the socket walls carry the
     // tenon, so a solid post is ~6.6 cm3 doing nothing. The bore continues the
