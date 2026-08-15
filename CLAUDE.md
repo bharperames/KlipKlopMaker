@@ -199,8 +199,12 @@ building, gait physics simulation, and watertight STL/3MF export.
   chip at real engagement height. Push the chip down the row; the first rung it
   enters IS the clearance that shape needs. It exists because a photograph
   reads a clearance to about 0.18 mm while fingers do better, and because a
-  1 mm hole is a knife-edge gauge rather than a joint. Calibration is
-  MATERIAL-SPECIFIC — every number measured so far is PLA.
+  1 mm hole is a knife-edge gauge rather than a joint. **THE MATERIAL IS PETG, AND ONLY PETG.** Brett: "I'm only going to
+  print PETG." Every fit in this system is therefore a PETG number and needs
+  no material hedging. Older PLA readings (riser sockets at 8.62-8.65, the
+  first calibration cards) are HISTORY, not constraints — do not preserve a
+  PLA-era value or re-open a decision on PLA grounds. If the filament ever
+  changes, the ladders on the calibration card re-measure everything.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 - **THREE FITS ARE CONFIRMED IN PLASTIC AND MUST NOT BE "IMPROVED".** Measured

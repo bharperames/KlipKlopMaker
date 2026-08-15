@@ -203,7 +203,8 @@ undersize and, since 2.2.0, so is every other socket (`SPEC.socket.socketShrinkA
 The riser-to-riser joint was left alone for exactly as long as the evidence was
 PLA, where it measured 8.62-8.65 and worked. In PETG it came out loose, so it
 now takes the same cut. The lesson is that this compensation is a MATERIAL
-number, not a geometry one.
+number, not a geometry one — and the material is PETG, which is now the only
+one this project prints.
 
 **A level top under a sloping deck (found in CAD, 2026-08-08).** The end rib
 was a prism whose top was taken at its own face. The deck falls 0.198 mm/mm, so

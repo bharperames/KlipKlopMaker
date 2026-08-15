@@ -235,17 +235,10 @@ export const SPEC = {
         //
         // WHAT THIS OVERTURNS, deliberately: the note below and PLAN.md said
         // riser-to-riser "already works and must not be fixed", on PLA prints
-        // where riser sockets measured 8.62-8.65 from this 9.0 drawing. That
-        // was true of PLA. It is not true of the PETG in his hands, and
-        // calibration is material-specific (see CLAUDE.md) — the earlier
-        // measurement was never evidence about this material.
-        //
-        // THE RISK IS PLA, AND IT IS THE ONE TO WATCH: if a riser socket really
-        // does come out 0.35 under in PLA, drawing it 0.25 smaller again lands
-        // near 8.40 against an 8.60 tenon, which is interference, not a fit.
-        // The hex ladder on the calibration card settles it — read it in the
-        // material you are printing. This is one constant and reverting it to
-        // a track-only value is a one-line change.
+        // where riser sockets measured 8.62-8.65 from this 9.0 drawing. Brett
+        // prints PETG and only PETG, so that measurement is history rather than
+        // a constraint — and the PLA interference risk it implied is moot.
+        // THIS NUMBER IS A PETG NUMBER, like every other fit in the system.
         socketShrinkAF: 0.25,
         /**
          * NO grip taper here, unlike the key — and the reason is worth keeping,

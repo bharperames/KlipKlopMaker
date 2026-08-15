@@ -5640,9 +5640,9 @@ PRINTING
   scenery alike — from a nominal AF ${SPEC.socket.hexAF} cut back by ${SPEC.socket.socketShrinkAF}. The track socket was
   drawn undersize first and is the joint that has felt right in the hand; in
   PETG the riser-to-riser joint did not, so it now gets the same treatment.
-  Measure yours past the 0.8 mm lead-in flare at the mouth. THIS IS
-  MATERIAL-SPECIFIC: in PLA these sockets ran tighter, so read the hex ladder
-  on the calibration card in the material you actually print.
+  Measure yours past the 0.8 mm lead-in flare at the mouth. Every fit in this
+  system is a PETG number; the hex ladder on the calibration card is how to
+  re-read it if your printer or filament changes.
 - Curves and switches are packed one to a plate. The slicer's cantilever
   warning fires on them whatever the geometry, so alone it tells you which
   part it means, and a part that comes loose takes nothing else with it.
