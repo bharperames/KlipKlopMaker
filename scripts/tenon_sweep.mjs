@@ -31,7 +31,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fflate from 'fflate';
 import { SPEC } from '../js/track.js';
-import { initCSG, buildRiserGeometry, buildSupportFootGeometry } from '../js/pieces.js';
+import { initCSG, buildRiserGeometry, buildSupportFootGeometry, toBufferGeometry, csgChain, ADDITION } from '../js/pieces.js';
+import { circlePlan, sweepSolid } from '../js/geometry.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
 
@@ -39,11 +40,24 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] ? +argv[i + 1] : d; };
 
-// The socket is DRAWN 8.750 and, from the fits Brett reports, must be PRINTING
-// near 8.43-8.47. The sweep therefore straddles that, not the drawing: a
-// cylinder wants to be at or just over the socket's real across-flats.
-const FROM = flag('from', 8.30);
-const TO = flag('to', 8.75);
+// RANGE 8.80-9.30, AND THE FIRST SWEEP'S RANGE WAS WRONG. It ran 8.30-8.75,
+// reasoned from "the foot's hex tenon measures 8.43 across flats and is very
+// tight in a riser socket, so the socket must print near 8.43". Every coupon
+// came back loose, including 8.75, which bounds the socket's flats ABOVE 8.75.
+//
+// The error is worth keeping because it is the same error twice over: A HEX
+// TENON BINDS AT THE CORNERS, A CYLINDER BINDS AT THE FLATS. FDM cannot cut a
+// sharp internal corner — the nozzle leaves roughly its own radius in each of
+// the socket's six — so a hex tenon's corners foul that rounding long before
+// its flats touch anything. That is why 0.08 mm across corners flips this joint
+// from tight to loose, and it is why the corner-derived number said nothing
+// about where the flats are. Sizing a flat-engaging feature from a
+// corner-derived measurement is what put the whole first sweep below the hole.
+//
+// It also strengthens the case for going round: the hex fit was being set by
+// corner rounding, which is the least controlled feature on the part.
+const FROM = flag('from', 8.80);
+const TO = flag('to', 9.30);
 const STEP = flag('step', 0.05);
 const SIZE = flag('size', 15);
 // `--feet 8.45,8.55` adds real support feet at those diameters. The foot is the
@@ -62,6 +76,48 @@ const FEET = list('feet');
 // Same drawn diameter at two heights settles it directly.
 const TALL = list('tall');
 const OUT = path.join(ROOT, 'test-parts', 'tenon_sweep');
+
+/**
+ * A STEP GAUGE — one part that measures the socket, instead of eleven that
+ * guess at it.
+ *
+ * Brett, on the first sweep: "Why are there so many 15mm pieces they all seem
+ * the same". They were, to the eye: eleven coupons differing only by 0.05 mm of
+ * diameter, identified by an engraved code that is 0.5 mm wide — 1.19 extrusion
+ * widths — which is exactly the legibility problem measured earlier the same
+ * day. A sweep whose members can only be told apart by an illegible mark is a
+ * failed article regardless of what it measures.
+ *
+ * So: a single riser carrying a stepped tenon, smallest at the tip. Push it in
+ * and count the steps that DISAPPEARED — the first one that will not enter is
+ * the socket's effective across-flats. No reading, no calipers, no sorting a
+ * row of identical parts, and it reads the real printed hole rather than its
+ * drawing. Built on a real 15 mm riser so the steps print in the same section
+ * and orientation a real tenon does.
+ *
+ * Steps run LARGEST AT THE SHOULDER so the small end leads. `stepMm` tall each,
+ * so "3 steps went in" is countable against the shoulder.
+ */
+function stepGauge(from, to, step, stepMm, spec) {
+    const dias = [];
+    for (let d = from; d <= to + 1e-9; d += step) dias.push(+d.toFixed(3));
+    // smallest at the tip: the largest sits against the shoulder
+    const n = dias.length;
+    const y0 = 15;                       // the riser's shoulder
+    const g = buildRiserGeometry(15, spec, { roundTenonDia: dias[0] });
+    const ops = [];
+    for (let k = 1; k < n; k++) {
+        // step k spans from the shoulder up to where the smaller steps begin
+        const top = y0 + (n - k) * stepMm;
+        const cyl = sweepSolid(
+            [circlePlan(dias[k] / 2, 96), circlePlan(dias[k] / 2, 96)]
+                .map(pl => pl.map(([x, z]) => [x, -z])),
+            [y0 - 0.4, top].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+        );
+        ops.push({ op: ADDITION, geometry: toBufferGeometry(cyl) });
+    }
+    return { g: csgChain(g, ops), dias, stepMm };
+}
 
 await initCSG();
 fs.mkdirSync(OUT, { recursive: true });
@@ -82,6 +138,34 @@ const arrays = (g) => {
         : Uint32Array.from({ length: g.attributes.position.count }, (_, i) => i);
     return { positions: new Float32Array(pos), indices: new Uint32Array(idx) };
 };
+
+if (argv.includes('--gauge')) {
+    const STEPMM = flag('stepmm', 1.6);
+    const { g, dias, stepMm } = stepGauge(FROM, TO, STEP, STEPMM, SPEC);
+    const r = analyzeMesh(g.positions, g.indices);
+    if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
+        console.error(`gauge failed the mesh gate: nonmanifold=${r.nonManifoldEdges} winding=${r.isConsistent}`);
+        process.exit(1);
+    }
+    const b = { x0: Infinity, x1: -Infinity, y0: Infinity, z0: Infinity, z1: -Infinity };
+    const p = g.positions;
+    for (let i = 0; i < p.length; i += 3) {
+        b.x0 = Math.min(b.x0, p[i]); b.x1 = Math.max(b.x1, p[i]);
+        b.y0 = Math.min(b.y0, p[i + 1]);
+        b.z0 = Math.min(b.z0, p[i + 2]); b.z1 = Math.max(b.z1, p[i + 2]);
+    }
+    const f = path.join(OUT, `step_gauge_${Math.round(FROM*100)}_${Math.round(TO*100)}.3mf`);
+    fs.writeFileSync(f, zip(generateMultiObject3MFXML([{ name: 'step_gauge',
+        positions: g.positions, indices: g.indices,
+        at: [128 - (b.x0 + b.x1) / 2, 128 + (b.z0 + b.z1) / 2, -b.y0] }])));
+    console.log(`\nSTEP GAUGE — one part, ${dias.length} steps of ${stepMm} mm, smallest at the tip\n`);
+    dias.forEach((d, i) => console.log(`   step ${i + 1} from the tip : ${d.toFixed(2)} mm`));
+    console.log(`\n  ${(r.volumeMm3/1000).toFixed(1)} cm3   ${path.relative(ROOT, f)}`);
+    console.log('\n  HOW TO READ IT: push it into a socket you already own, tip first, and');
+    console.log('  COUNT THE STEPS THAT DISAPPEARED. The first step that will not enter is');
+    console.log("  the socket's effective across-flats. No calipers, nothing to read.");
+    process.exit(0);
+}
 
 const dias = [];
 for (let d = FROM; d <= TO + 1e-9; d += STEP) dias.push(+d.toFixed(3));
@@ -172,7 +256,7 @@ console.log('  engraved   tenon dia    (hex socket is drawn 8.750 AF; it prints 
 for (const r of rows) {
     const note = r.foot ? '   <- FOOT (broad part)'
         : r.tall ? '   <- 60 mm RISER (height control)'
-        : Math.abs(r.dia - 8.60) < 1e-9 ? '   <- todays hex tenon, across flats' : '';
+        : Math.abs(r.dia - 8.75) < 1e-9 ? '   <- socket AS DRAWN; the last sweep proved this is still loose' : '';
     console.log(`     ${r.tag}       ${r.dia.toFixed(2)} mm${note}`);
 }
 console.log(`\n  ${path.relative(ROOT, file)}`);
