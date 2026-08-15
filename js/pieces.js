@@ -2321,6 +2321,7 @@ function sectionFeatures(spec = SPEC) {
             neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer }), -c),
         (c) => ({ acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) }), +(K.fitClearanceMm - K.printComp.tipMm).toFixed(3));
 
+    const MINOR_CODE = GEOMETRY_VERSION.split('.').slice(0, 2).join('.');
     // the three chips you push down the ladders — the REAL parts, at real
     // engagement height, so the test is the joint and not a model of it
     f.push({ id: 'chip_tenon', kind: 'island', group: 'ladder', card: 'ladder',
@@ -2343,8 +2344,19 @@ function sectionFeatures(spec = SPEC) {
     // never saw printComp at all — the ladder would have gauged a key the track
     // no longer ships, and read "correct" while the seam stayed open.
     for (const v of [
-        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0, depthMm: 0 }, label: 'bowtie key 2.0 (the loose one)' },
-        { id: 'chip_key_21', comp: K.printComp, label: 'bowtie key 2.1 (bigger — print both)' }
+        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0, depthMm: 0 },
+            label: 'bowtie key 2.0 (the loose one)' },
+        // NAMED FROM THE VERSION, never hardcoded. This chip said "2.1" while
+        // building the 2.3 key, because it reads printComp and the label did
+        // not. A calibration article that misreports which geometry it IS is
+        // worse than no article: it certifies the wrong number by name.
+        //
+        // Until 2.3 the pair was also INDISTINGUISHABLE ONCE PRINTED — 0.14 mm
+        // apart across the tips and nothing engraved on a free chip, so it was
+        // unusable the moment it left the plate. 2.3 moves the DEPTH 0.6 mm,
+        // which a caliper and the eye both catch.
+        { id: `chip_key_${MINOR_CODE.replace('.', '')}`, comp: K.printComp,
+            label: `bowtie key ${MINOR_CODE} (current — print both)` }
     ]) {
         const neckHalf = K.neckHalf - v.comp.neckMm, tipHalf = K.tipHalf + v.comp.tipMm;
         f.push({ id: v.id, kind: 'island', group: 'ladder', card: 'ladder',
