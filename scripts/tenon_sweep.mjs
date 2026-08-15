@@ -163,8 +163,23 @@ const arrays = (g) => {
  *    at 10.10, so 8.9-10.1 spans that whole window.
  */
 if (argv.includes('--compare')) {
-    const CYL = [8.9, 9.3, 9.7, 10.1];      // round tenon -> your existing hex sockets
-    const SOC = [9.0, 9.3, 9.6, 9.9];       // round socket <- your existing hex tenons
+    // CENTRED ON BRETT'S TWO ANCHORS, not on a blind bracket.
+    //
+    // Cylinder in hex: "make that diameter of the cylinder the Flat to Flat
+    // width". Right — a cylinder is tangent to all six flats at exactly the
+    // across-flats, 8.75. But a coupon DRAWN 8.75 already printed loose, so the
+    // principle has to be applied to printed sizes: cylinders come out about
+    // 0.1 under, which puts the flat-to-flat candidate at 8.90 drawn. 8.75 is
+    // the known-loose floor, so the row starts above it and steps 0.2.
+    const CYL = [8.90, 9.10, 9.30];
+    // Hex in round bore: "it is the width of vertex to vertex of the hex that
+    // is what the cylinder diameter should be". Also right, and better founded,
+    // because the male part is MEASURED rather than inferred — his tenons are
+    // 9.65 (riser) and 9.73 (foot) across corners, so 9.65 is the zero-
+    // interference bore and anything under it bites. Bores print under by more
+    // than shafts do, so the row runs from 9.60 (a firm bite once shrunk) up to
+    // 10.10 (near zero even after shrink).
+    const SOC = [9.60, 9.85, 10.10];
     const parts = [], rows = [];
     let bad = 0;
     const add = (g, name, at, kind, dia) => {
@@ -180,25 +195,26 @@ if (argv.includes('--compare')) {
     CYL.forEach((d, i) => add(
         buildRiserGeometry(15, SPEC, { roundTenonDia: d, code: `C${Math.round(d * 10)}` }),
         `cyl_tenon_${Math.round(d * 100)}`,
-        [128 + (i - 1.5) * 24, 128 - 22, 0], 'cylinder tenon -> your hex socket', d));
+        [128 + (i - 1) * 26, 128 - 22, 0], 'cylinder tenon -> your hex socket', d));
     SOC.forEach((d, i) => add(
         buildRiserGeometry(15, SPEC, { roundSocketDia: d, code: `S${Math.round(d * 10)}` }),
         `round_socket_${Math.round(d * 100)}`,
-        [128 + (i - 1.5) * 24, 128 + 22, 0], 'round socket <- your hex tenon', d));
+        [128 + (i - 1) * 26, 128 + 22, 0], 'round socket <- your hex tenon', d));
     if (bad) { console.error(`\n${bad} failed the mesh gate — NOTHING WRITTEN.`); process.exit(1); }
     const f = path.join(OUT, 'compare_cyl_vs_hex.3mf');
     fs.writeFileSync(f, zip(generateMultiObject3MFXML(parts)));
     const tot = rows.reduce((a, b) => a + b.cm3, 0);
-    console.log('\nHEAD-TO-HEAD — 4 + 4 real 15 mm risers\n');
+    console.log('\nHEAD-TO-HEAD — 3 + 3 real 15 mm risers\n');
     console.log('  FRONT ROW  cylinder tenon on top -> push into a hex socket you own');
     for (const r of rows.filter(r => r.kind[0] === 'c'))
-        console.log(`     ${r.name.padEnd(20)} tenon dia ${r.dia.toFixed(2)}   interference/side vs 8.75 flats ${(Math.max(0,(r.dia-0.11-8.75))/2).toFixed(2)}`);
+        console.log(`     ${r.name.padEnd(20)} drawn ${r.dia.toFixed(2)}  ~printed ${(r.dia-0.11).toFixed(2)}  vs socket flats 8.75 -> ${(((r.dia-0.11)-8.75)/2>=0?'+':'')}${(((r.dia-0.11)-8.75)/2).toFixed(2)} /side`);
     console.log('\n  BACK ROW   round socket below -> push YOUR hex tenon (9.65-9.73 a/c) into it');
     for (const r of rows.filter(r => r.kind[0] === 'r'))
-        console.log(`     ${r.name.padEnd(20)} bore dia  ${r.dia.toFixed(2)}   corner interference/side ${((9.65-r.dia)/2).toFixed(2)}`);
+        console.log(`     ${r.name.padEnd(20)} drawn ${r.dia.toFixed(2)}  vs your tenon 9.65 a/c -> ${((9.65-r.dia)/2>=0?'+':'')}${((9.65-r.dia)/2).toFixed(2)} /side before bore shrink`);
     console.log(`\n  ${tot.toFixed(1)} cm3 solid   ${path.relative(ROOT, f)}`);
-    console.log('\n  They are 0.3-0.4 mm apart, so they differ by four times the step you');
-    console.log('  said you cannot feel — and a round feature calipers in one reading.');
+    console.log('\n  0.20-0.25 mm apart, four times the step you said you cannot feel.');
+    console.log('  FRONT ROW = cylinder tenons, BACK ROW = round bores, both small to large');
+    console.log('  left to right. Position is the label; do not rely on the engraving.');
     process.exit(0);
 }
 
