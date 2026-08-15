@@ -176,6 +176,73 @@ function cavityOps({ pitchMm, holePlan, sMarginOverride }) {
     };
 }
 
+/**
+ * SPINES — walls running ALONG the piece, which is Brett's idea and is probably
+ * the right shape of the answer:
+ *
+ *   "I have wondered what would happen if you just put a center spine down the
+ *    underside, just like the outer walls, effectively halving the bridge
+ *    distance across the ramp."
+ *
+ * The arithmetic is on his side. A straight's ceiling bridges WALL TO WALL
+ * across the 48 mm channel, and 13 m of those 40-48 mm spans is what strands.
+ * One centre spine halves every one of them to 24 mm — and the honeycomb that
+ * just worked tops out at 23.4 mm. Same span, and a single 0.8 mm wall is about
+ * 1.8 cm3 against the honeycomb's 11.3.
+ *
+ * Spines were "tried and refuted" once before, but that verdict does not carry:
+ * it was measured on a CURVE (whose ceiling contours run along the arc, not
+ * across it), on meshes 04/05 that were non-manifold and whose scores are void,
+ * with a metric that could not see anchors. None of that applies to a straight.
+ *
+ * The one thing a spine has that a honeycomb does not is a free edge: a lone
+ * 0.8 mm wall standing 15 mm off the bed has nothing bracing it sideways, where
+ * hex cells brace each other at every vertex. Anchored into both end ribs it
+ * should be fine, but that is what a print decides.
+ */
+function spineOps({ count, thickMm }) {
+    return (piece, spec) => {
+        const pl = undersidePlane(piece, spec);
+        const Wi = piece.innerWidth / 2;
+        const sMargin = spec.key.ribThk + 0.5;
+        const s0 = sMargin, s1 = piece.planLen - sMargin;
+        const N = Math.max(2, Math.ceil((s1 - s0) / 3) + 1);
+
+        // Evenly divide the channel into count+1 equal bays.
+        const us = [];
+        for (let i = 1; i <= count; i++) us.push(-Wi + (2 * Wi * i) / (count + 1));
+
+        return us.map((u) => {
+            const stations = [], profiles = [];
+            for (let i = 0; i < N; i++) {
+                const sAt = s0 + ((s1 - s0) * i) / (N - 1);
+                const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
+                const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+                stations.push({ s: sAt, origin: [p.x, y, p.z], right });
+                const botAt = (uu) => pl.at(p.x + right[0] * uu, p.z + right[2] * uu) - y;
+                // 0.3 mm up into the floor, which is already solid — same reason
+                // as the honeycomb block: no exactly-coplanar face with the
+                // shell's ceiling.
+                const top = -spec.floorThk + 0.3;
+                profiles.push([
+                    [u - thickMm / 2, botAt(u - thickMm / 2)],
+                    [u + thickMm / 2, botAt(u + thickMm / 2)],
+                    [u + thickMm / 2, top],
+                    [u - thickMm / 2, top]
+                ]);
+            }
+            return { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) };
+        });
+    };
+}
+
+const spines = (count, thickMm) => ({
+    name: `spine_${count}_${String(thickMm).replace('.', 'p')}`,
+    note: `${count} spine(s) along the piece, ${thickMm} mm, bed to deck`,
+    kind: 'spine',
+    ops: spineOps({ count, thickMm })
+});
+
 /** Hex cells: walls of `wallMm` left between hex holes on a `cellMm` grid. */
 const cell = (cellMm, wallMm) => ({
     name: `honeycomb_${cellMm}_${String(wallMm).replace('.', 'p')}`,
@@ -235,6 +302,7 @@ const VARIANTS = [
     cell(12, 0.8), cell(12, 1.6), cell(8, 0.8), cell(8, 1.6),
     cell(16, 0.8), cell(20, 0.8), cell(24, 0.8), cell(16, 0.45), cell(24, 0.45),
     posts(14, 3), posts(18, 3), posts(22, 3.5),
+    spines(1, 0.8), spines(1, 1.6), spines(2, 0.8), spines(3, 0.8),
     // A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK. This one
     // runs the comb straight through the end ribs, sealing the bowtie throat;
     // `--selftest` builds it and PASSES ONLY IF IT IS REJECTED. Without it the
