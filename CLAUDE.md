@@ -259,11 +259,25 @@ viaduct curve 71 mm.
   undefined, SO THE SCORES DERIVED FROM THEM MEAN NOTHING — including the
   "lattice is the best flat candidate" claim that survived several sessions.
   The lattice also grew ragged tabs past the end face, which the footprint rule
-  forbids and a glance at the render catches. Any future variant: build it with
-  `csgChain` from the real builders, assert `analyzeMesh` BEFORE writing the
-  3MF, and look at the render.
+  forbids and a glance at the render catches.
+  **THERE IS NOW A GATE, AND EXPERIMENTS GO THROUGH IT** —
+  `scripts/curve_variants.mjs`. Variants enter via `buildPieceExportGeometry`'s
+  `extraOps` hook (handed the piece in its own frame, ops joined to the real
+  builder's through `csgChain`, inserted BEFORE `bossOps` so the socket bore is
+  still cut afterwards), and nothing is written, sliced or scored until it
+  passes `analyzeMesh`, the footprint rule against its own no-ops reference,
+  the key-throat ray cast, and an underside render. `--selftest` builds a comb
+  through the end ribs and passes ONLY IF REJECTED, because a gate that has
+  never rejected anything is not known to work. Do not build variants any other
+  way.
+- **One slice is not a measurement, and a 3MF's file hash is not its content.**
+  Slicing a byte-identical 3MF twice moved the `>20 mm` open-ended column by
+  54 mm; the under-deck columns held to ~2%. Export meshes ARE deterministic
+  across processes (verified) — but `fflate.zipSync` stamps zip entries with the
+  current time, so the same geometry hashes differently every second. Compare
+  `3D/3dmodel.model` after unzipping, never the file.
 
-- **NO CURVE ORIENTATION CURRENTLY PRINTS ACCEPTABLY, and do not cite one as a
+- **NO CURVE ORIENTATION HAS YET PRINTED ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT
   curve failed on its arched skirts (its deck was clean); the MINIMAL curve's
   underside came out as spaghetti AND the damage telegraphed through the 2 mm
@@ -271,14 +285,26 @@ viaduct curve 71 mm.
   and the riding surface does not print fine on the flat one". The tempting
   shorthand "the viaduct prints fine" is FALSE — it collapses a deck result
   into a part result, and it was used for a while to recommend rim-down curves
-  as the safe option. Four geometry fixes were measured and refuted (bulkheads
-  across the channel at 30 and 20 mm, spines along the arc, level ceiling): the
-  long runs are DIAGONALS that already span wall to wall, so a wall across the
-  channel cannot shorten them. The open candidate is an 8 mm lattice
-  (`test-parts/curve_experiments/`, gitignored, 6 124 mm open-ended against the
-  baseline's 16 274), UNPRINTED. Judge any attempt on the middle third of the
-  walking surface, not on the slicer's cantilever warning — that warning fires
-  on curves whatever the geometry.
+  as the safe option. Bulkheads across the channel and spines along the arc
+  were measured and refuted: the long runs are DIAGONALS that already span wall
+  to wall, so a wall across the channel cannot shorten them.
+  **Two gated candidates now exist and both are UNPRINTED** (HANDOFF §8,
+  `test-parts/curve_variants/`, gitignored):
+  · the VIADUCT at the current `SPEC.wall` = 2.4. The failed print was taken at
+    1.6, during the spell PLAN.md records; at 1.6 the arcade carries four
+    open-ended runs of 92–119 mm and at 2.4 that cluster does not exist (worst
+    39.7). The archived `curveR_viaduct.3mf` is 86.2 cm³ = the 2.4 build, so the
+    "viaduct 4 356 mm" figure was always the un-printed geometry.
+  · a full HONEYCOMB rising from the bed to the deck underside — Brett's own
+    specification, built properly for the first time. It takes the runs over
+    10 mm from 2 042 mm to 131–328 (a straight that prints beautifully has 24),
+    and every remaining run over 20 mm is on a RAIL CREST 13.1 mm above the
+    deck, not under it. Read `>10 mm`, never the total: a honeycomb multiplies
+    short benign cell-rim runs while killing long ones. Wall thickness beat cell
+    size — 12 mm/1.6 beats 8 mm/0.8 on every long-run column and prints faster.
+  Judge any attempt on the middle third of the walking surface and on the
+  skirt, not on the slicer's cantilever warning — that warning fires on curves
+  whatever the geometry.
 
 - **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units

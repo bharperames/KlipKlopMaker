@@ -168,7 +168,7 @@ export const SUBTRACTION = 'subtract';
  * `simplifyTol` is exposed so tests can build an undecimated reference to
  * compare against — production always uses SIMPLIFY_TOL_MM.
  */
-function csgChain(baseGeometry, ops, simplifyTol = SIMPLIFY_TOL_MM) {
+export function csgChain(baseGeometry, ops, simplifyTol = SIMPLIFY_TOL_MM) {
     let acc = toManifold(baseGeometry);
     for (const { op, geometry } of ops) {
         const other = toManifold(geometry);
@@ -1042,6 +1042,18 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
+    // UNDER-DECK EXPERIMENTS ENTER HERE, AND ONLY HERE.
+    //
+    // Four curve variants were built in scratchpad scripts that CONCATENATED
+    // ribs and lattice onto the shell instead of unioning them, and every score
+    // taken off the resulting non-manifold meshes was void (see HANDOFF §3.2).
+    // The fix is not discipline, it is a seam: `extraOps` is handed the piece
+    // already in its own frame and its ops go through `csgChain` with the rest,
+    // so an experiment is manifold by construction or it is not built at all.
+    //
+    // BEFORE bossOps deliberately — the boss subtracts its socket bore, and an
+    // addition after that would fill the bore back in.
+    if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
     ops.push(...bossOps(piece, spec, opts.support));
     ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
     const solid = csgChain(shell, ops, opts.simplifyTol);

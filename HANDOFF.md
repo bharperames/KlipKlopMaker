@@ -186,57 +186,29 @@ skip it either.
 ### Step 0 — collect the joint results (blocks nothing else, do it first)
 From the plate already printing: does the seam close, and is riser-on-riser
 right? If the riser is interference-tight, revert `socketShrinkAF` before any
-pillars get printed.
+pillars get printed. **STILL OPEN — needs Brett's hands.**
 
-### Step 1 — rebuild Brett's honeycomb, properly
-This is HIS test and it has never actually been run. His specification, in his
-words: *"you should be able to put a full 'honeycomb' rising from the floor
-just like the side rails so there is no unsupported bed, but it is the anchor
-points that are key to reduce the bridge length."*
-
-- full height, **from the bed up to the deck underside** — the 07 file was a
-  shallow waffle on the underside and never reached the bed, so it did not
-  implement this
-- unioned through manifold, `analyzeMesh` clean, nothing past the end faces
-- score with `scripts/unsupported_runs.mjs` against **01's 16,274**
-
-It is a WORST-CASE / sanity article: if a full honeycomb does not bring the
-open-ended runs down, then no amount of under-deck anchoring will, and the
-answer is orientation or support. That is a genuinely informative negative
-result, which is why it is worth doing first.
-
-### Step 2 — attack diagonals, not spans
-If step 1 helps, the follow-up is not more walls. Per §3.3 the killer runs are
-diagonals across exposed ceiling patches. Anchors need to be distributed in
-BOTH directions — a grid, not a comb — with spacing chosen so no straight line
-across the ceiling exceeds roughly the channel width before meeting one.
-
-### Step 3 — re-examine the two non-geometry options honestly
-Both were dismissed too fast on the strength of the false "viaduct prints fine".
-
-- **Slicer support on the flat curve:** measured at 3 h 58 m / 128 g, 37.7%
-  support. The cavity opens downward onto the bed in this orientation, so the
-  support is reachable and removable. Ugly, but it is a printable curve, and
-  nothing else currently is.
-- **Viaduct orientation:** its DECK is the best ceiling result on record
-  (4,356). Its skirts failed. **Nobody has investigated the skirt failure** —
-  and Brett noted the failures were "made worse by the walling thinning we had
-  previously done, but now have undone", which means the failure may already be
-  partly addressed and has simply never been reprinted. **This is probably the
-  cheapest real shot at a printable curve and it has been sitting unexamined.**
+### Steps 1–3 — DONE, see §8. Two candidates are built, gated and waiting.
 
 ### Step 4 — only then merge
 A candidate ships by going into `buildCurveExportGeometry` behind the minimal
 style, with a `tests/pieces.test.js` case, not by living in `test-parts/`.
+Nothing has been merged: both candidates below are unprinted, and the whole
+point of §3 is that a number is not a print.
 
 ---
 
 ## 6. Assumptions and open questions — all of them
 
-1. **That a flat-printing curve is achievable at all.** Unproven. A 90° helicoid
-   ceiling sweeps 90° of azimuth, so no plane fit flattens it — established
-   earlier and still true. Step 1 is partly a test of whether to keep trying.
-2. **That 02/03's numbers survive the z-hop fix.** Unverified — re-score.
+1. ~~**That a flat-printing curve is achievable at all.**~~ Still unproven in
+   plastic, but no longer unpromising. §8 takes the flat curve's long-run tail
+   from 2,011 mm to 153–173 mm, against 24 mm for a straight that prints
+   beautifully — an order of magnitude nearer the good part than the failed one.
+   The helicoid argument stands and is beside the point: the fix is anchors, not
+   flattening.
+2. ~~**That 02/03's numbers survive the z-hop fix.**~~ MOOT. The bulkheads are
+   dominated on every column by the honeycomb (§8) at comparable mass; there is
+   no decision left that their numbers could inform. Not re-sliced, deliberately.
 3. **That the key fix works.** 0.10 per side comes from a ladder rung in a 3 mm
    card; the printed slot may differ. `depthMm` (0.3) is the one number to
    adjust. Brett will know by hand — unlike 2.1.0, this is 0.6 mm.
@@ -266,3 +238,125 @@ style, with a `tests/pieces.test.js` case, not by living in `test-parts/`.
   It was right about the key in the end — Brett said so and he was correct —
   but only because its holes are uniform insets that report every direction at
   once. Read it that way.
+- **Do not read a single slice as a measurement.** Slicing one byte-identical
+  3MF twice moved the `>20 mm` column by 54 mm and the max run by 18 mm — see
+  §8.4. The mesh is deterministic; BambuStudio is not.
+- **Do not compare a 3MF by file hash.** `fflate.zipSync` stamps entries with
+  the current time, so identical geometry hashes differently every second. Hash
+  `3D/3dmodel.model` after unzipping. Half an hour went into "nondeterministic
+  meshes" that were nothing of the sort.
+
+---
+
+## 8. What the next session actually did — the honeycomb and the viaduct
+
+Written 2026-08-15, same day, after §1–7. Everything here came out of one new
+harness, `scripts/curve_variants.mjs`, which is §4's gate turned into code.
+
+### 8.1 The harness
+
+`node scripts/curve_variants.mjs [--slice] [--rescore] [--selftest]`
+→ `test-parts/curve_variants/` (gitignored).
+
+Variants are no longer built in scratchpad scripts. `buildPieceExportGeometry`
+now takes an **`extraOps` hook** — handed the piece already in its own frame,
+its ops go through `csgChain`/manifold-3d with everything else, so an
+experiment is watertight by construction or it does not build. It is inserted
+BEFORE `bossOps`, because the boss subtracts its socket bore and an addition
+after that refills it. `csgChain` is exported for the same reason.
+
+Before anything is written the harness checks, and **refuses to write, slice or
+score a variant that fails any of them**:
+
+1. `analyzeMesh` — manifold, consistent winding, outward volume;
+2. the footprint rule, against the SAME piece built without its extra geometry
+   (not a shared baseline — that is wrong the moment a variant moves the wall);
+3. **the key can still be fitted** — the ray cast from `tests/pieces.test.js`,
+   run on the untilted mesh. Under-deck geometry goes into the cavity the key
+   rises through, and a variant that seals the throat is worthless however well
+   it prints;
+4. an underside render (`*_underside.png`, a software rasteriser, no browser) —
+   the check nobody ran on the lattice whose tabs were visible at a glance.
+
+`--selftest` builds a comb deliberately run through the end ribs and **passes
+only if the gate rejects it**. A gate that has never rejected anything is not
+known to work — that is precisely how the old detent test passed on a part
+whose keys could not be fitted at all.
+
+### 8.2 The numbers
+
+PETG HF, 0.20 mm Standard, P2S 0.4 — the material this project actually prints.
+Two control points frame the table: a minimal STRAIGHT prints beautifully, and
+the two curves marked FAILED are the prints in Brett's hands.
+
+| part | g | time | open-ended | >5 | >10 | >20 | max | in plastic |
+|---|---|---|---|---|---|---|---|---|
+| minimal **straight** (control) | 47.4 | 1h17 | 270 | 93 | 24 | 24 | 23.8 | **prints beautifully** |
+| minimal curve, baseline | 77.5 | 3h14 | 16 355 | 4681 | 2042 | 406 | 39.3 | **FAILED** |
+| honeycomb 12 mm / 0.8 wall | 108.6 | 6h24 | 9 409 | 1292 | 328 | 54 | 31.8 | unprinted |
+| honeycomb 12 mm / 1.6 wall | 129.5 | 7h00 | 7 585 | 1004 | 153 | 0 | 17.6 | unprinted |
+| honeycomb 8 mm / 0.8 wall | 117.5 | 7h38 | 6 334 | 492 | 142 | 0 | 13.8 | unprinted |
+| honeycomb 8 mm / 1.6 wall | 154.4 | 10h59 | 4 568 | 499 | 131 | 0 | 12.8 | unprinted |
+| viaduct, wall 1.6 — **as printed** | 76.0 | 3h21 | 4 830 | 3830 | 3195 | 1860 | **118.9** | **FAILED** |
+| viaduct, wall 2.4 — current code | 83.2 | 3h44 | 4 305 | 3131 | 2610 | 1266 | 39.7 | **never printed** |
+
+**Brett's honeycomb works, and the total is the wrong column to read it in.**
+A honeycomb multiplies SHORT runs — every cell rim is a new one — while killing
+long ones, so the total falls only 3.5× while the tail that actually droops
+falls 13×. Read `>10 mm`: 2 042 → 131–328, against 24 for a part that prints.
+
+**Every open-ended run over 20 mm in a honeycomb variant is on a RAIL CREST,
+not under the deck.** Located, not assumed: the recurring 31.8 mm and 22.7 mm
+runs sit 13.1 mm above the deck at lateral 24.4 mm — `railHeight` is 14 and the
+rail wall spans 24–26.4. They are a tilt artefact the straight has too. The
+longest genuinely under-deck run in any honeycomb variant is **18.2 mm**,
+against the baseline's 39.3 and the failed viaduct's 118.9.
+
+**Wall thickness beats cell size, which was not the prior.** 12 mm/1.6 beats
+8 mm/0.8 on every long-run column while costing 38 minutes less. Do not chase
+8 mm cells; the old "8 mm lattice" figure was void anyway (§3.2).
+
+### 8.3 The viaduct — the record was wrong about which part failed
+
+`test-parts/curve_experiments/curveR_viaduct.3mf` measures **86.2 cm³**, which
+is exactly the wall-**2.4** build; the wall-1.6 build is 73.8 cm³. So the
+"viaduct 4,356 mm, valid" row in §3.3 describes geometry that **has never been
+printed**. The part that failed in Brett's hands was the 1.6 wall.
+
+Sliced at the wall it actually had, that part carries a cluster of four runs of
+**92, 96, 103 and 119 mm**, all at z 13.6–19.4 in one region — the arcade,
+which is exactly what failed. At wall 2.4 that cluster **does not exist**; the
+worst run is 39.7 mm. Bed contact goes 935 → 1031 mm², reproducing PLAN.md's
+independently measured 803 → 918 to within the tolerance of a different method.
+
+So Brett's recollection was right and it is now quantified: **the viaduct
+curve's arcade failure has a fix that has already shipped, and the part has
+never been reprinted.**
+
+### 8.4 Caveats, stated plainly
+
+- **Nothing here is a print.** Every row marked unprinted is a slicer number,
+  and this project's whole recent history is about the gap between the two.
+- **Slicer noise is real and bigger than some of the differences above.** The
+  same byte-identical 3MF sliced twice gave `>20` = 54 and 0, max 31.8 and
+  13.8 — the rail-crest runs appear in some slices and not others. Under-deck
+  columns were stable to ~2%. The mesh is deterministic across processes
+  (verified); BambuStudio is not. Treat 12/1.6 vs 8/0.8 vs 8/1.6 as a tie on
+  the long-run tail; only 12/0.8 and the baseline separate from the pack.
+- **The viaduct at 2.4 still carries far more long-run plastic than any
+  honeycomb** — 2 610 mm over 10 mm against 131–328. It is recommended first on
+  COST and on its known-clean deck, not because its numbers are better.
+- The honeycomb has not been checked for anything but printability and the key
+  throat: not mass in a tower, not the spacer, not whether a 154 g curve is a
+  toy anyone wants.
+
+### 8.5 What to print, in order
+
+1. **`viaduct_wall2p4_current.3mf`** — 83.2 g, 3h44. Cheapest and fastest of
+   everything here, its deck is already known clean, and the one thing that
+   failed on it is measurably 3× better. Judge the ARCADE.
+2. **`honeycomb_12_1p6.3mf`** — 129.5 g, 7h00. Brett's own idea, built properly
+   for the first time. Judge the MIDDLE THIRD of the walking surface.
+
+Both are gated and sitting in `test-parts/curve_variants/`. Judge neither on
+the slicer's cantilever warning — it fires on curves whatever the geometry.
