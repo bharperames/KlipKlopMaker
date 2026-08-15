@@ -270,12 +270,34 @@ viaduct curve 71 mm.
   through the end ribs and passes ONLY IF REJECTED, because a gate that has
   never rejected anything is not known to work. Do not build variants any other
   way.
-- **One slice is not a measurement, and a 3MF's file hash is not its content.**
-  Slicing a byte-identical 3MF twice moved the `>20 mm` open-ended column by
-  54 mm; the under-deck columns held to ~2%. Export meshes ARE deterministic
-  across processes (verified) — but `fflate.zipSync` stamps zip entries with the
-  current time, so the same geometry hashes differently every second. Compare
-  `3D/3dmodel.model` after unzipping, never the file.
+- **PARSE `G2`/`G3`, OR EVERY GCODE NUMBER IS FICTION.** Bambu ships with
+  `enable_arc_fitting = 1` and a sliced CURVE is 13% arc moves (58 903 against
+  389 026 `G1` on the baseline). `unsupported_runs.mjs` and the first version of
+  `curve_variants.mjs` parsed `G1` only, which broke two ways: arcs never marked
+  the occupancy grid, so supported material read as unsupported; and the nozzle
+  position was never advanced by an arc, so the NEXT `G1` was measured from a
+  stale point — a chord drawn clean across the empty concave side of a 90°
+  curve. That is where the phantom 110–148 mm "bridges" came from, and the tell
+  was that they appeared at identical coordinates in every variant INCLUDING the
+  baseline. Real geometry differences do not do that. `scripts/gcode_path.mjs`
+  flattens arcs and both scripts share it; a move is yielded as a POLYLINE, not
+  a segment, because the run analysis calls a stretch "open-ended" when it
+  reaches either end of a move and 100 separate chords would make every stretch
+  open. Two claims died with this bug: that the slicer is nondeterministic
+  (it is not — the same file now scores identically twice), and that wall 2.4
+  fixes the viaduct's arcade (it does not).
+- **A 3MF's file hash is not its content.** `fflate.zipSync` stamps zip entries
+  with the current time, so identical geometry hashes differently every second.
+  Compare `3D/3dmodel.model` after unzipping. Export meshes ARE deterministic
+  across processes — verified, four builds, identical vertex count and volume.
+- **OPEN-ENDED PREDICTS COLLAPSE; BRIDGE LENGTH PREDICTS SURFACE.** Treating a
+  bridge as benign because it is anchored at both ends is the metric's blind
+  spot, and Brett found it by hand: the shipped STRAIGHT, whose open-ended total
+  is a mere 319 mm, has "obvious strands of plastic across the underside of the
+  deck, rough to feel and can grab and peel, not fully melted together." Its
+  ceiling is flat and anchored on both rails, so nothing is open-ended — but it
+  carries 13 m of bridges in the 40–48 mm band, spanning the channel. That is
+  what strands. Score both columns, always.
 
 - **NO CURVE ORIENTATION HAS YET PRINTED ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT

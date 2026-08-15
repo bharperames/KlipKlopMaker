@@ -283,80 +283,119 @@ only if the gate rejects it**. A gate that has never rejected anything is not
 known to work — that is precisely how the old detent test passed on a part
 whose keys could not be fitted at all.
 
-### 8.2 The numbers
+### 8.2 The bug that had to be fixed before any of it meant anything
 
-PETG HF, 0.20 mm Standard, P2S 0.4 — the material this project actually prints.
-Two control points frame the table: a minimal STRAIGHT prints beautifully, and
-the two curves marked FAILED are the prints in Brett's hands.
+**`unsupported_runs.mjs` parsed `G1` only, and Bambu ships with
+`enable_arc_fitting = 1`.** A sliced curve is 13% arc moves — 58 903 `G2`/`G3`
+against 389 026 `G1`. Two consequences, the second worse:
 
-| part | g | time | open-ended | >5 | >10 | >20 | max | in plastic |
-|---|---|---|---|---|---|---|---|---|
-| minimal **straight** (control) | 47.4 | 1h17 | 270 | 93 | 24 | 24 | 23.8 | **prints beautifully** |
-| minimal curve, baseline | 77.5 | 3h14 | 16 355 | 4681 | 2042 | 406 | 39.3 | **FAILED** |
-| honeycomb 12 mm / 0.8 wall | 108.6 | 6h24 | 9 409 | 1292 | 328 | 54 | 31.8 | unprinted |
-| honeycomb 12 mm / 1.6 wall | 129.5 | 7h00 | 7 585 | 1004 | 153 | 0 | 17.6 | unprinted |
-| honeycomb 8 mm / 0.8 wall | 117.5 | 7h38 | 6 334 | 492 | 142 | 0 | 13.8 | unprinted |
-| honeycomb 8 mm / 1.6 wall | 154.4 | 10h59 | 4 568 | 499 | 131 | 0 | 12.8 | unprinted |
-| viaduct, wall 1.6 — **as printed** | 76.0 | 3h21 | 4 830 | 3830 | 3195 | 1860 | **118.9** | **FAILED** |
-| viaduct, wall 2.4 — current code | 83.2 | 3h44 | 4 305 | 3131 | 2610 | 1266 | 39.7 | **never printed** |
+1. arcs never marked the occupancy grid, so supported material read as
+   unsupported;
+2. the nozzle position was never advanced by an arc, so the next `G1` was
+   measured from a STALE point — a chord drawn clean across the empty concave
+   side of a 90° curve. Those were the phantom 110–148 mm "bridges".
 
-**Brett's honeycomb works, and the total is the wrong column to read it in.**
-A honeycomb multiplies SHORT runs — every cell rim is a new one — while killing
-long ones, so the total falls only 3.5× while the tail that actually droops
-falls 13×. Read `>10 mm`: 2 042 → 131–328, against 24 for a part that prints.
+The tell was that they appeared at identical coordinates in every variant
+INCLUDING the baseline. Real geometry differences do not do that.
+`scripts/gcode_path.mjs` now flattens arcs and both scripts share it. A move is
+yielded as a POLYLINE, because the run analysis calls a stretch "open-ended"
+when it reaches either end of a move, and 100 separate chords would make every
+stretch open.
 
-**Every open-ended run over 20 mm in a honeycomb variant is on a RAIL CREST,
-not under the deck.** Located, not assumed: the recurring 31.8 mm and 22.7 mm
-runs sit 13.1 mm above the deck at lateral 24.4 mm — `railHeight` is 14 and the
-rail wall spans 24–26.4. They are a tilt artefact the straight has too. The
-longest genuinely under-deck run in any honeycomb variant is **18.2 mm**,
-against the baseline's 39.3 and the failed viaduct's 118.9.
+**Two claims died with it, both of which were in this document:**
 
-**Wall thickness beats cell size, which was not the prior.** 12 mm/1.6 beats
-8 mm/0.8 on every long-run column while costing 38 minutes less. Do not chase
-8 mm cells; the old "8 mm lattice" figure was void anyway (§3.2).
+- *"Repeat slices of one file moved the >20 mm column by 54 mm."* The numbers
+  did differ, but the cause was this parser, not BambuStudio. Sliced twice with
+  the fix, one byte-identical file scores **identically**. The metric is stable.
+- *"Wall 2.4 fixes the viaduct's arcade."* It does not — see 8.4.
 
-### 8.3 The viaduct — the record was wrong about which part failed
+### 8.3 The metric needed a second column, and Brett found the hole by hand
 
-`test-parts/curve_experiments/curveR_viaduct.3mf` measures **86.2 cm³**, which
-is exactly the wall-**2.4** build; the wall-1.6 build is 73.8 cm³. So the
-"viaduct 4,356 mm, valid" row in §3.3 describes geometry that **has never been
-printed**. The part that failed in Brett's hands was the 1.6 wall.
+Brett, on straights printed from shipped geometry: *"obvious strands of plastic
+across the underside of the deck, rough to feel and can grab and peel, not fully
+melted together."*
 
-Sliced at the wall it actually had, that part carries a cluster of four runs of
-**92, 96, 103 and 119 mm**, all at z 13.6–19.4 in one region — the arcade,
-which is exactly what failed. At wall 2.4 that cluster **does not exist**; the
-worst run is 39.7 mm. Bed contact goes 935 → 1031 mm², reproducing PLAN.md's
-independently measured 803 → 918 to within the tolerance of a different method.
+A straight's open-ended total is **319 mm** — the metric called it near-perfect.
+But its ceiling is flat and anchored on both rails, so nothing is open-ended;
+what it has is **13 099 mm of bridges in the 40–48 mm band**, spanning the
+channel, max 47.3 mm. That is what strands.
 
-So Brett's recollection was right and it is now quantified: **the viaduct
-curve's arcade failure has a fix that has already shipped, and the part has
-never been reprinted.**
+**Open-ended length predicts COLLAPSE. Bridge length predicts SURFACE.** Treating
+a bridge as benign because it is anchored at both ends was the blind spot. Score
+both.
 
-### 8.4 Caveats, stated plainly
+### 8.4 The numbers
 
-- **Nothing here is a print.** Every row marked unprinted is a slicer number,
-  and this project's whole recent history is about the gap between the two.
-- **Slicer noise is real and bigger than some of the differences above.** The
-  same byte-identical 3MF sliced twice gave `>20` = 54 and 0, max 31.8 and
-  13.8 — the rail-crest runs appear in some slices and not others. Under-deck
-  columns were stable to ~2%. The mesh is deterministic across processes
-  (verified); BambuStudio is not. Treat 12/1.6 vs 8/0.8 vs 8/1.6 as a tie on
-  the long-run tail; only 12/0.8 and the baseline separate from the pack.
-- **The viaduct at 2.4 still carries far more long-run plastic than any
-  honeycomb** — 2 610 mm over 10 mm against 131–328. It is recommended first on
-  COST and on its known-clean deck, not because its numbers are better.
-- The honeycomb has not been checked for anything but printability and the key
-  throat: not mass in a tower, not the spacer, not whether a 154 g curve is a
-  toy anyone wants.
+PETG HF, 0.20 mm Standard, P2S 0.4. `>20` and `max` are BRIDGE columns — the
+ones that track stranding.
+
+| part | g | time | bridge >20 | bridge max | open >10 | in plastic |
+|---|---|---|---|---|---|---|
+| minimal **straight** | 47.4 | 1h17 | 13 507 | 47.3 | 24 | **strands, mild** |
+| minimal curve, baseline | 77.5 | 3h14 | 2 985 | 45.6 | 2 775 | **FAILED** |
+| honeycomb 24 / 0.8 | 91.8 | 3h49 | 330 | 24.2 | 1 034 | unprinted |
+| honeycomb 20 / 0.8 | 94.2 | 3h58 | 20 | 20.1 | 924 | unprinted |
+| honeycomb 16 / 0.8 | 98.2 | 4h12 | **0** | 15.9 | 632 | unprinted |
+| **honeycomb 12 / 0.8** | **104.8** | **4h40** | **0** | **12.2** | **276** | unprinted |
+| honeycomb 8 / 0.8 | 117.9 | 5h57 | 0 | 12.2 | 224 | unprinted |
+| honeycomb 12 / 1.6 | 131.6 | 5h24 | 0 | 12.2 | 224 | unprinted |
+| honeycomb 8 / 1.6 | 155.6 | 7h14 | 0 | 12.2 | 238 | unprinted |
+| posts 22 mm / 3.5 | 100.3 | 5h00 | 526 | 30.1 | 929 | unprinted |
+| posts 14 mm / 3 | 122.6 | 7h51 | 0 | 13.0 | 387 | unprinted |
+| viaduct, wall 1.6 — as printed | 76.0 | 3h21 | 1 885 | 47.2 | 6 430 | **FAILED** |
+| viaduct, wall 2.4 — current | 83.2 | 3h44 | 1 834 | 55.1 | 6 729 | never printed |
+
+**12 mm cells with 0.8 mm walls dominates.** Everything finer or thicker costs
+mass and time for nothing measurable: 8/0.8 is +13 g and +1h17 for the same
+bridge profile, 12/1.6 is +27 g for the same. The first sweep recommended
+12/1.6 at 131.6 g, which Brett rejected as "far too much support structure
+underneath". He was right, and it was also 30 g of no benefit.
+
+**Posts lose to walls, decisively.** posts 14/3 costs 122.6 g and 7h51 to do
+what 12/0.8 does for 104.8 g and 4h40. A wall anchors a bridge along its whole
+length; a post anchors a point.
+
+**The viaduct wall change does nothing for the arcade.** 1.6 → 2.4 moves
+open >10 from 6 430 to 6 729 — marginally WORSE, not 3× better. The dramatic
+118.9 → 39.7 reported earlier was the phantom-chord bug. The bed-contact
+improvement (935 → 1031 mm², reproducing PLAN.md's independent 803 → 918) is
+real, because that is measured off the mesh and not the gcode; it is a
+stability argument for the pier, not a bridging one. The viaduct now has the
+WORST open-ended profile of anything in the table.
+
+**Two geometry errors found and fixed on the way**, both of which the gate or a
+render caught:
+- the hex holes were rotated 30° from the lattice they sat on, so they never
+  tessellated — overlapping on one axis, leaving wedges on another. A 24 mm cell
+  cost 17 cm³ instead of 7. Fixed with `hexPlan(af, PI/6)`.
+- the first post grid was sized for a SQUARE lattice on a triangular one
+  (`p/sqrt(2)` where it needed `p/sqrt(3)`), so the holes swallowed every post
+  and all three variants came back byte-identical to the baseline. The gate now
+  rejects a variant whose volume equals its own no-ops reference: a variant that
+  adds nothing is a failed variant, not a good score.
 
 ### 8.5 What to print, in order
 
-1. **`viaduct_wall2p4_current.3mf`** — 83.2 g, 3h44. Cheapest and fastest of
-   everything here, its deck is already known clean, and the one thing that
-   failed on it is measurably 3× better. Judge the ARCADE.
-2. **`honeycomb_12_1p6.3mf`** — 129.5 g, 7h00. Brett's own idea, built properly
-   for the first time. Judge the MIDDLE THIRD of the walking surface.
+**`honeycomb_12_0p8.3mf`** — 104.8 g, 4h40 against the baseline's 77.5 g and
+3h14. It is the only candidate worth plastic: zero bridges over 20 mm, longest
+bridge 12.2 mm against the baseline's 45.6 and the shipped straight's 47.3.
+Judge the MIDDLE THIRD of the walking surface.
 
-Both are gated and sitting in `test-parts/curve_variants/`. Judge neither on
-the slicer's cantilever warning — it fires on curves whatever the geometry.
+**This is not only a curve fix, and on a straight it is nearly free.** The
+strand complaint is about STRAIGHTS, and a straight is the worst part in the
+whole table on the bridge columns. Measured, in `test-parts/straight_hc/`:
+
+| straight | g | time | bridge >40 | bridge >20 | bridge max |
+|---|---|---|---|---|---|
+| baseline (strands today) | 47.4 | 1h17 | **13 099** | 13 507 | 47.3 |
+| honeycomb 20 / 0.8 | 55.1 | 1h36 | 0 | 1 729 | 23.4 |
+| **honeycomb 12 / 0.8** | **60.1** | **1h56** | **0** | **281** | **23.4** |
+
++12.7 g and +39 minutes removes every 40–48 mm span from a straight. The
+open-ended column does not move at all (319 → 318), which is the point of §8.3:
+the straight never had a collapse problem, it had a sagging-bridge problem, and
+only the bridge columns can see it.
+
+Do NOT print the viaduct on the strength of §8's earlier draft; that
+recommendation rested on the arc bug. Judge nothing on the slicer's cantilever
+warning — it fires on curves whatever the geometry.

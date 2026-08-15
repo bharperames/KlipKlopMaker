@@ -41,9 +41,10 @@ import { fileURLToPath } from 'node:url';
 import * as fflate from 'fflate';
 import { layoutTrack, planPillarPositions, planPosAt, deckYAt, undersidePlane, pieceInFrame, SPEC } from '../js/track.js';
 import { initCSG, buildPieceExportGeometry, toBufferGeometry, csgChain, ADDITION, SUBTRACTION } from '../js/pieces.js';
-import { sweepSolid, extrudePolygonY, hexPlan, bowtieKeyPlan } from '../js/geometry.js';
+import { sweepSolid, extrudePolygonY, hexPlan, circlePlan, bowtieKeyPlan } from '../js/geometry.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
+import { moves, pathLength, pointAt } from './gcode_path.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 let OUT = path.join(ROOT, 'test-parts', 'curve_variants');
@@ -90,7 +91,7 @@ const FILAMENT = flag('filament', 'Bambu PETG HF @BBL P2S 0.4 nozzle');
  * The holes are cut from the block ALONE, before it is offered to the piece, so
  * a vertical prism can never reach up through the walking surface.
  */
-function honeycombOps({ cellMm, wallMm, sMarginOverride }) {
+function cavityOps({ pitchMm, holePlan, sMarginOverride }) {
     return (piece, spec) => {
         const pl = undersidePlane(piece, spec);
         const Wi = piece.innerWidth / 2;
@@ -114,19 +115,25 @@ function honeycombOps({ cellMm, wallMm, sMarginOverride }) {
             // The underside is a plane, so its height across the profile is
             // linear in u and two corners describe it exactly.
             const botAt = (u) => pl.at(p.x + right[0] * u, p.z + right[2] * u) - y;
-            const bL = botAt(-uHalf), bR = botAt(uHalf), top = -spec.floorThk;
+            // TOP PUSHED 0.3 mm UP INTO THE FLOOR, which is already solid, so
+            // the union's shape is unchanged and the floor stays 2 mm — but the
+            // block's top face is no longer EXACTLY coplanar with the shell's
+            // ceiling. On a curve the two surfaces are tessellated at slightly
+            // different angles and never quite coincide, so this was not
+            // needed; on a STRAIGHT the underside plane and the deck ceiling
+            // are exactly parallel over a big flat rectangle, the faces landed
+            // exactly on each other, and the union came back with 18
+            // non-manifold edges. The gate caught it, which is the point.
+            const bL = botAt(-uHalf), bR = botAt(uHalf), top = -spec.floorThk + 0.3;
             profiles.push([[-uHalf, bL], [uHalf, bR], [uHalf, top], [-uHalf, top]]);
             yLo = Math.min(yLo, y + bL, y + bR);
             yHi = Math.max(yHi, y + top);
         }
         const block = toBufferGeometry(sweepSolid(profiles, stations));
 
-        // Hex grid over the block's plan footprint, culled to the piece so the
-        // CSG is not spent on prisms that miss it entirely.
-        const holeAF = cellMm - wallMm;
-        if (holeAF <= 0) throw new Error(`cell ${cellMm} is not wider than wall ${wallMm}`);
-        const hex = hexPlan(holeAF);
-        const rowPitch = cellMm * Math.sqrt(3) / 2;
+        // Grid over the block's plan footprint, culled to the piece so the CSG
+        // is not spent on prisms that miss it entirely.
+        const rowPitch = pitchMm * Math.sqrt(3) / 2;
         let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
         for (const st of stations) {
             for (const u of [-uHalf, uHalf]) {
@@ -142,14 +149,14 @@ function honeycombOps({ cellMm, wallMm, sMarginOverride }) {
         };
         const holes = [];
         let row = 0;
-        for (let z = z0 - cellMm; z <= z1 + cellMm; z += rowPitch, row++) {
-            const xOff = (row % 2) * (cellMm / 2);
-            for (let x = x0 - cellMm + xOff; x <= x1 + cellMm; x += cellMm) {
-                if (near(x, z) > uHalf + cellMm) continue;
+        for (let z = z0 - pitchMm; z <= z1 + pitchMm; z += rowPitch, row++) {
+            const xOff = (row % 2) * (pitchMm / 2);
+            for (let x = x0 - pitchMm + xOff; x <= x1 + pitchMm; x += pitchMm) {
+                if (near(x, z) > uHalf + pitchMm) continue;
                 holes.push({
                     op: SUBTRACTION,
                     geometry: toBufferGeometry(extrudePolygonY(
-                        hex.map(([hx, hy]) => [x + hx, z + hy]), yLo - 5, yHi + 5))
+                        holePlan.map(([hx, hy]) => [x + hx, z + hy]), yLo - 5, yHi + 5))
                 });
             }
         }
@@ -169,10 +176,48 @@ function honeycombOps({ cellMm, wallMm, sMarginOverride }) {
     };
 }
 
+/** Hex cells: walls of `wallMm` left between hex holes on a `cellMm` grid. */
 const cell = (cellMm, wallMm) => ({
     name: `honeycomb_${cellMm}_${String(wallMm).replace('.', 'p')}`,
     note: `hex cells ${cellMm} mm, ${wallMm} mm walls, bed to deck`,
-    ops: honeycombOps({ cellMm, wallMm })
+    kind: 'honeycomb',
+    // ROTATED 30 deg, because hexPlan(af, 0) puts a VERTEX on +x and therefore
+    // its flat-sharing neighbours on y and y+/-60 — while the grid below steps
+    // along x by the pitch. Unrotated the holes do not tessellate: they overlap
+    // on one axis and leave a wedge of solid on another, which is why the first
+    // renders showed triangular blobs rather than walls and why a 24 mm cell
+    // still cost 17 cm3. With flats facing the grid it is a real honeycomb.
+    ops: cavityOps({ pitchMm: cellMm, holePlan: hexPlan(cellMm - wallMm, Math.PI / 6) })
+});
+
+/**
+ * POSTS, which is the sparse limit of the same idea and much closer to what
+ * Brett actually asked for. He said "it is the ANCHOR POINTS that are key to
+ * reduce the bridge length" — I read "honeycomb" literally, filled the cavity
+ * and handed back a 130 g curve. A bridge does not care what it lands on, only
+ * how far away the next landing is.
+ *
+ * Cut ROUND holes on a grid at a radius LARGER than half the pitch: the circles
+ * overlap, the walls between them vanish, and what survives is a post at each
+ * grid corner. Same block-minus-prisms machinery, so the posts still stand on
+ * the underside plane and still stop at the falling deck ceiling.
+ *
+ * THE GRID IS TRIANGULAR, NOT SQUARE, and the first cut of this got that wrong:
+ * rows are offset by half a pitch, so three neighbouring centres form an
+ * equilateral triangle and the surviving post sits at its circumcentre,
+ * pitch/sqrt(3) from each — not pitch/sqrt(2). Sized for a square grid the
+ * circles overlapped the posts away completely and all three variants came back
+ * byte-identical to the baseline. `postMm` is the post's width across corners:
+ * r = pitch/sqrt(3) - postMm/2, and a post exists only while that is positive.
+ */
+const posts = (pitchMm, postMm) => ({
+    name: `posts_${pitchMm}_${String(postMm).replace('.', 'p')}`,
+    note: `posts ${postMm} mm across on a ${pitchMm} mm grid, bed to deck`,
+    kind: 'posts',
+    ops: cavityOps({
+        pitchMm,
+        holePlan: circlePlan(pitchMm / Math.sqrt(3) - postMm / 2)
+    })
 });
 
 // 1.6 mm walls are four extrusions and cost 46 cm3 on a 12 mm cell — a quarter
@@ -183,7 +228,13 @@ const cell = (cellMm, wallMm) => ({
 // sweep to find out whether it does.
 const VARIANTS = [
     { name: 'baseline', note: 'minimal curve as it ships — the number to beat', ops: null },
+    // Brett, on the first sweep: "far too much support structure underneath."
+    // He is right — 12/1.6 added 46 cm3 to an 86 cm3 part. These are the sparse
+    // end of the same family, kept alongside the heavy ones so the mass/benefit
+    // curve is visible rather than asserted.
     cell(12, 0.8), cell(12, 1.6), cell(8, 0.8), cell(8, 1.6),
+    cell(16, 0.8), cell(20, 0.8), cell(24, 0.8), cell(16, 0.45), cell(24, 0.45),
+    posts(14, 3), posts(18, 3), posts(22, 3.5),
     // A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK. This one
     // runs the comb straight through the end ribs, sealing the bowtie throat;
     // `--selftest` builds it and PASSES ONLY IF IT IS REJECTED. Without it the
@@ -192,7 +243,7 @@ const VARIANTS = [
     // fitted at all (PLAN.md, 2026-08-08).
     { name: 'SELFTEST_comb_through_the_pocket', selfTest: true,
         note: 'seals the key throat on purpose — the gate must reject it',
-        ops: honeycombOps({ cellMm: 12, wallMm: 1.6, sMarginOverride: 0 }) },
+        ops: cavityOps({ pitchMm: 12, holePlan: hexPlan(12 - 1.6, Math.PI / 6), sMarginOverride: 0 }) },
 
     // THE VIADUCT CURVE HAS NEVER BEEN PRINTED AT THE WALL IT NOW HAS.
     //
@@ -334,6 +385,15 @@ function gate(g, base) {
         }
         if (b.y0 < a.y0 - 0.05) fail.push(`BELOW THE BED: y0 ${b.y0.toFixed(2)} under the baseline's ${a.y0.toFixed(2)}`);
         if (b.y0 > a.y0 + 0.05) fail.push(`FLOATS: y0 ${b.y0.toFixed(2)} above the baseline's ${a.y0.toFixed(2)}`);
+        // A VARIANT THAT ADDS NOTHING IS A FAILED VARIANT, not a good score.
+        // The first post grid was sized for a square lattice on a triangular
+        // one, so the holes swallowed every post and all three came back at
+        // exactly the baseline's 85.8 cm3 — which would have sliced, scored and
+        // been reported as "posts do nothing" when what they did was not exist.
+        const rr = analyzeMesh(base.positions, base.indices);
+        if (Math.abs(r.volumeMm3 - rr.volumeMm3) < 1) {
+            fail.push(`ADDS NOTHING: ${(r.volumeMm3 / 1000).toFixed(1)} cm3 is its own no-ops reference. The extra geometry did not survive.`);
+        }
     }
     return { fail, r, bed: bedContactMm2(g) };
 }
@@ -483,17 +543,15 @@ function write3MF(name, g) {
 function score(gcodeFile) {
     const CELL = 0.5, STEP = 0.4, R = 0.25;
     const lines = fs.readFileSync(gcodeFile, 'utf8').split('\n');
-    let x = 0, y = 0, X0 = 1e9, X1 = -1e9, Y0 = 1e9, Y1 = -1e9;
-    for (const l of lines) {
-        if (!l.startsWith('G1 ')) continue;
-        const mx = /\sX(-?[0-9.]+)/.exec(l), my = /\sY(-?[0-9.]+)/.exec(l);
-        const nx = mx ? parseFloat(mx[1]) : x, ny = my ? parseFloat(my[1]) : y;
-        const me = /\sE(-?[0-9.]+)/.exec(l);
-        if (me && parseFloat(me[1]) > 0) {
-            X0 = Math.min(X0, x, nx); X1 = Math.max(X1, x, nx);
-            Y0 = Math.min(Y0, y, ny); Y1 = Math.max(Y1, y, ny);
+
+    // pass 1: bounds of everything actually extruded
+    let X0 = 1e9, X1 = -1e9, Y0 = 1e9, Y1 = -1e9;
+    for (const mv of moves(lines)) {
+        if (!mv.extruding) continue;
+        for (const [px, py] of mv.pts) {
+            X0 = Math.min(X0, px); X1 = Math.max(X1, px);
+            Y0 = Math.min(Y0, py); Y1 = Math.max(Y1, py);
         }
-        x = nx; y = ny;
     }
     const NX = Math.ceil((X1 - X0) / CELL) + 4, NY = Math.ceil((Y1 - Y0) / CELL) + 4;
     const idx = (px, py) => {
@@ -510,51 +568,51 @@ function score(gcodeFile) {
             }
         }
     };
+
+    // pass 2: layer by layer.
+    //
+    // THE LAYER BOUNDARY IS NOT "Z CHANGED". Bambu z-hops on travel moves, and
+    // the hop is a bare `G1 Z...` indistinguishable from a layer change by
+    // pattern — so keying on it wiped the occupancy grid several times per
+    // layer. A hop extrudes nothing, so the honest boundary is a change in the
+    // Z of the last EXTRUSION, which is immune to hops by construction.
     let prev = new Uint8Array(NX * NY), cur = new Uint8Array(NX * NY);
-    let feature = '(none)', z = 0, printZ = null;
+    let printZ = null;
     const runs = [];
-    x = 0; y = 0;
-    for (const l of lines) {
-        if (l.startsWith('; FEATURE:')) { feature = l.slice(11).trim(); continue; }
-        const zm = /^G1\s[^;]*?Z([0-9.]+)/.exec(l);
-        if (zm) { z = parseFloat(zm[1]); continue; }
-        if (!l.startsWith('G1 ')) continue;
-        const mx = /\sX(-?[0-9.]+)/.exec(l), my = /\sY(-?[0-9.]+)/.exec(l);
-        const nx = mx ? parseFloat(mx[1]) : x, ny = my ? parseFloat(my[1]) : y;
-        const me = /\sE(-?[0-9.]+)/.exec(l);
-        if (me && parseFloat(me[1]) > 0) {
-            if (printZ === null) printZ = z;
-            else if (z > printZ + 0.05) { prev = cur; cur = new Uint8Array(NX * NY); printZ = z; }
-            if (/Bridge|Overhang|Floating/i.test(feature)) {
-                const d = Math.hypot(nx - x, ny - y);
-                const n = Math.max(1, Math.ceil(d / STEP));
-                const sup = [];
-                for (let k = 0; k <= n; k++) {
-                    const t = k / n;
-                    const p = idx(x + (nx - x) * t, y + (ny - y) * t);
-                    sup.push(p >= 0 && prev[p] === 1);
-                }
-                const dl = d / n;
-                let k = 0;
-                while (k <= n) {
-                    if (sup[k]) { k++; continue; }
-                    let e = k;
-                    while (e <= n && !sup[e]) e++;
-                    const len = (e - k) * dl;
-                    // Carry WHERE, not just how long. Three honeycomb variants
-                    // came back with an identical 54 mm over 20 mm, which a bare
-                    // total cannot explain and a height can.
-                    const t = ((k + e) / 2) / n;
-                    if (len > 0.6) runs.push({
-                        len, both: k > 0 && e <= n, z,
-                        at: [x + (nx - x) * t, y + (ny - y) * t]
-                    });
-                    k = e;
-                }
+
+    for (const mv of moves(lines)) {
+        if (!mv.extruding) continue;
+        if (printZ === null) printZ = mv.z;
+        else if (mv.z > printZ + 0.05) { prev = cur; cur = new Uint8Array(NX * NY); printZ = mv.z; }
+
+        if (/Bridge|Overhang|Floating/i.test(mv.feature)) {
+            // Walk the move BY ARC LENGTH along its own path. An arc is one
+            // move with a bent path, so its unsupported stretches are measured
+            // around the curve rather than across the chord.
+            const d = pathLength(mv.pts);
+            const n = Math.max(1, Math.ceil(d / STEP));
+            const sup = [];
+            for (let k = 0; k <= n; k++) {
+                const [px, py] = pointAt(mv.pts, (d * k) / n);
+                const p = idx(px, py);
+                sup.push(p >= 0 && prev[p] === 1);
             }
-            mark(cur, x, y, nx, ny);
+            const dl = d / n;
+            let k = 0;
+            while (k <= n) {
+                if (sup[k]) { k++; continue; }
+                let e = k;
+                while (e <= n && !sup[e]) e++;
+                const len = (e - k) * dl;
+                // Carry WHERE, not just how long.
+                const [ax, ay] = pointAt(mv.pts, (d * (k + e)) / (2 * n));
+                if (len > 0.6) runs.push({ len, both: k > 0 && e <= n, z: mv.z, at: [ax, ay] });
+                k = e;
+            }
         }
-        x = nx; y = ny;
+        for (let k = 0; k + 1 < mv.pts.length; k++) {
+            mark(cur, mv.pts[k][0], mv.pts[k][1], mv.pts[k + 1][0], mv.pts[k + 1][1]);
+        }
     }
     const sum = (a) => a.reduce((p, q) => p + q, 0);
     const openR = runs.filter(r => !r.both);
@@ -567,7 +625,20 @@ function score(gcodeFile) {
         over10: sum(open.filter(v => v >= 10)),
         over20: sum(open.filter(v => v >= 20)),
         bridged: sum(bridged),
+        // BRIDGED IS NOT AUTOMATICALLY FINE, and treating it as fine is the
+        // metric's blind spot. Brett, on straights printed from the shipped
+        // geometry: "obvious strands of plastic across the underside of the
+        // deck, rough to feel and can grab and peel, not fully melted together."
+        // A straight's ceiling is flat and anchored at both rails, so almost
+        // none of it is open-ended — those strands are SAGGING BRIDGES. Open-
+        // ended length predicts collapse; bridge length predicts surface.
+        bridgedMax: Math.max(0, ...bridged),
+        br10: sum(bridged.filter(v => v >= 10)),
+        br20: sum(bridged.filter(v => v >= 20)),
+        br40: sum(bridged.filter(v => v >= 40)),
         worst: openR.sort((a, b) => b.len - a.len).slice(0, 6)
+            .map(r => ({ len: +r.len.toFixed(1), z: +r.z.toFixed(2), at: r.at.map(v => +v.toFixed(1)) })),
+        worstBridged: runs.filter(r => r.both).sort((a, b) => b.len - a.len).slice(0, 6)
             .map(r => ({ len: +r.len.toFixed(1), z: +r.z.toFixed(2), at: r.at.map(v => +v.toFixed(1)) }))
     };
 }
@@ -604,8 +675,11 @@ if (argv.includes('--rescore')) {
         const s = score(path.join(OUT, f));
         console.log(`\n  ${f.replace('.gcode', '')}`);
         console.log(`    open-ended ${s.open.toFixed(0)} mm  >5 ${s.over5.toFixed(0)}  >10 ${s.over10.toFixed(0)}  >20 ${s.over20.toFixed(0)}  max ${s.openMax.toFixed(1)}`);
-        console.log(`    longest runs (len @ print z, at bed x,y):`);
+        console.log(`    BRIDGED    ${s.bridged.toFixed(0)} mm  >10 ${s.br10.toFixed(0)}  >20 ${s.br20.toFixed(0)}  >40 ${s.br40.toFixed(0)}  max ${s.bridgedMax.toFixed(1)}`);
+        console.log(`    longest OPEN runs (len @ print z, at bed x,y):`);
         for (const w of s.worst) console.log(`      ${String(w.len).padStart(5)} mm  z=${String(w.z).padStart(6)}  (${w.at[0]}, ${w.at[1]})`);
+        console.log(`    longest BRIDGES:`);
+        for (const w of s.worstBridged) console.log(`      ${String(w.len).padStart(5)} mm  z=${String(w.z).padStart(6)}  (${w.at[0]}, ${w.at[1]})`);
     }
     process.exit(0);
 }
