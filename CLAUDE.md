@@ -248,6 +248,23 @@ in the UI at all — `tests/pieces.test.js` and `analyzeMesh` are what enforce
 it. The shop's part list also states each part's size, which is the quickest
 check of which underside is in force: a minimal curve is 41 mm tall and a
 viaduct curve 71 mm.
+- **NO CURVE ORIENTATION CURRENTLY PRINTS ACCEPTABLY, and do not cite one as a
+  fallback.** Both have been printed and both failed, differently: the VIADUCT
+  curve failed on its arched skirts (its deck was clean); the MINIMAL curve's
+  underside came out as spaghetti AND the damage telegraphed through the 2 mm
+  floor into the riding surface. Brett: "the viaduct does not print fine ...
+  and the riding surface does not print fine on the flat one". The tempting
+  shorthand "the viaduct prints fine" is FALSE — it collapses a deck result
+  into a part result, and it was used for a while to recommend rim-down curves
+  as the safe option. Four geometry fixes were measured and refuted (bulkheads
+  across the channel at 30 and 20 mm, spines along the arc, level ceiling): the
+  long runs are DIAGONALS that already span wall to wall, so a wall across the
+  channel cannot shorten them. The open candidate is an 8 mm lattice
+  (`test-parts/curve_experiments/`, gitignored, 6 124 mm open-ended against the
+  baseline's 16 274), UNPRINTED. Judge any attempt on the middle third of the
+  walking surface, not on the slicer's cantilever warning — that warning fires
+  on curves whatever the geometry.
+
 - **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
   and supports stack from five reusable riser designs. Never change STANDARD
