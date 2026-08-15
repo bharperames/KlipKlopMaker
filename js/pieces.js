@@ -1432,6 +1432,42 @@ function stackedHex(levels) {
 }
 
 /**
+ * A ROUND SOCKET FOR A HEX TENON — the inversion, and Brett's second idea:
+ * "the whole round and the post a hexagon, so that the corners of the hexagon
+ * can drive themselves into the cylindrical hole".
+ *
+ * It puts each feature where FDM is good. An EXTERNAL hex corner is only a
+ * direction change and comes out crisp; it is the INTERNAL corners a nozzle
+ * cannot reach into, and those are what round off and make the current hex
+ * socket's fit a lottery. A round hole has none. Six corners also yield far
+ * more readily than six lines, so it absorbs more spread again.
+ *
+ * The cost, and it is the one that matters for a toy taken apart and rebuilt:
+ * corners driving into a round hole is PLASTIC, not elastic. It swages the bore
+ * once and each reassembly starts from a larger hole. Worth measuring against
+ * the cylinder-in-hex rather than assuming either way.
+ *
+ * Mirrors hexSocketSolid: a mouth flare so the tenon starts, and a 45 deg roof
+ * on the blind end so the slicer does not plant support inside a hole that can
+ * never be reached.
+ */
+function roundSocketSolid(dia, yOpen, yEnd, roofY = null) {
+    const r = dia / 2;
+    const dir = Math.sign(yEnd - yOpen);
+    const levels = [
+        { y: yOpen, r: r + 0.6 },
+        { y: yOpen + dir * 0.8, r },
+        { y: yEnd, r }
+    ];
+    if (roofY != null && dir * (roofY - yEnd) > 0.2) {
+        levels.push({ y: roofY, r: Math.max(0.3, r - Math.abs(roofY - yEnd)) });
+    }
+    const profiles = levels.map(l => circlePlan(l.r, 96).map(([x, z]) => [x, -z]));
+    const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
+    return toBufferGeometry(sweepSolid(profiles, stations));
+}
+
+/**
  * A ROUND TENON FOR A HEX SOCKET — Brett's idea, and it explains the defect it
  * is meant to fix.
  *
@@ -1715,7 +1751,9 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     return csgChain(body, [
         ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(
             roundTenon(round, sizeMm - 0.4, sizeMm + spec.socket.depth - 1)) }] : []),
-        { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        { op: SUBTRACTION, geometry: opts.roundSocketDia
+            ? roundSocketSolid(opts.roundSocketDia, -0.5, spec.socket.depth)
+            : hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
         ...gridMarks(sizeMm, spec),
         // BETWEEN two grid marks, not across one. hexFlatEngraveOps centres the
         // block on the span it is given, and given the whole shaft that centre

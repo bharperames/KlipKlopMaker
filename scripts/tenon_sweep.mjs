@@ -139,31 +139,66 @@ const arrays = (g) => {
     return { positions: new Float32Array(pos), indices: new Uint32Array(idx) };
 };
 
-if (argv.includes('--gauge')) {
-    const STEPMM = flag('stepmm', 1.6);
-    const { g, dias, stepMm } = stepGauge(FROM, TO, STEP, STEPMM, SPEC);
-    const r = analyzeMesh(g.positions, g.indices);
-    if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
-        console.error(`gauge failed the mesh gate: nonmanifold=${r.nonManifoldEdges} winding=${r.isConsistent}`);
-        process.exit(1);
-    }
-    const b = { x0: Infinity, x1: -Infinity, y0: Infinity, z0: Infinity, z1: -Infinity };
-    const p = g.positions;
-    for (let i = 0; i < p.length; i += 3) {
-        b.x0 = Math.min(b.x0, p[i]); b.x1 = Math.max(b.x1, p[i]);
-        b.y0 = Math.min(b.y0, p[i + 1]);
-        b.z0 = Math.min(b.z0, p[i + 2]); b.z1 = Math.max(b.z1, p[i + 2]);
-    }
-    const f = path.join(OUT, `step_gauge_${Math.round(FROM*100)}_${Math.round(TO*100)}.3mf`);
-    fs.writeFileSync(f, zip(generateMultiObject3MFXML([{ name: 'step_gauge',
-        positions: g.positions, indices: g.indices,
-        at: [128 - (b.x0 + b.x1) / 2, 128 + (b.z0 + b.z1) / 2, -b.y0] }])));
-    console.log(`\nSTEP GAUGE — one part, ${dias.length} steps of ${stepMm} mm, smallest at the tip\n`);
-    dias.forEach((d, i) => console.log(`   step ${i + 1} from the tip : ${d.toFixed(2)} mm`));
-    console.log(`\n  ${(r.volumeMm3/1000).toFixed(1)} cm3   ${path.relative(ROOT, f)}`);
-    console.log('\n  HOW TO READ IT: push it into a socket you already own, tip first, and');
-    console.log('  COUNT THE STEPS THAT DISAPPEARED. The first step that will not enter is');
-    console.log("  the socket's effective across-flats. No calipers, nothing to read.");
+/**
+ * HEAD-TO-HEAD: cylinder-in-hex against hex-in-round, four of each.
+ *
+ * Not a step gauge. A gauge needs a hard stop, and this joint is deliberately
+ * COMPLIANT — 0.1 mm ledges in a line-contact fit swage through with gradually
+ * rising force rather than stopping, so the gauge cannot read anything. Brett:
+ * ".05mm is not enough to make a difference". So: few parts, spaced 0.3-0.4 mm,
+ * which is four times the step he has already said he cannot feel.
+ *
+ * You supply the mating half for both from parts already printed — existing hex
+ * SOCKETS take the cylinder tenons, existing hex TENONS go into the new round
+ * sockets. Nothing here needs a partner from the same plate.
+ *
+ * Ranges are grounded differently, and unequally:
+ *  - HEX IN ROUND is the better grounded of the two, because the male part was
+ *    measured: Brett's tenons are 9.73 (foot) and 9.65 (riser) across corners.
+ *    Corner interference per side is (9.65 - D)/2, so 9.0-9.9 runs from a heavy
+ *    bite to just free.
+ *  - CYLINDER IN HEX only has a bound. Every coupon up to 8.75 drawn (~8.64
+ *    printed) was loose, so the socket's flats are above that; the cylinder
+ *    bears on the flats at 8.75 and is not fully constrained until the corners
+ *    at 10.10, so 8.9-10.1 spans that whole window.
+ */
+if (argv.includes('--compare')) {
+    const CYL = [8.9, 9.3, 9.7, 10.1];      // round tenon -> your existing hex sockets
+    const SOC = [9.0, 9.3, 9.6, 9.9];       // round socket <- your existing hex tenons
+    const parts = [], rows = [];
+    let bad = 0;
+    const add = (g, name, at, kind, dia) => {
+        const a = arrays(g);
+        const r = analyzeMesh(a.positions, a.indices);
+        if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
+            console.log(` FAIL ${name}: nonmanifold=${r.nonManifoldEdges} winding=${r.isConsistent}`);
+            bad++; return;
+        }
+        parts.push({ name, positions: a.positions, indices: a.indices, at });
+        rows.push({ name, kind, dia, cm3: +(r.volumeMm3 / 1000).toFixed(2) });
+    };
+    CYL.forEach((d, i) => add(
+        buildRiserGeometry(15, SPEC, { roundTenonDia: d, code: `C${Math.round(d * 10)}` }),
+        `cyl_tenon_${Math.round(d * 100)}`,
+        [128 + (i - 1.5) * 24, 128 - 22, 0], 'cylinder tenon -> your hex socket', d));
+    SOC.forEach((d, i) => add(
+        buildRiserGeometry(15, SPEC, { roundSocketDia: d, code: `S${Math.round(d * 10)}` }),
+        `round_socket_${Math.round(d * 100)}`,
+        [128 + (i - 1.5) * 24, 128 + 22, 0], 'round socket <- your hex tenon', d));
+    if (bad) { console.error(`\n${bad} failed the mesh gate — NOTHING WRITTEN.`); process.exit(1); }
+    const f = path.join(OUT, 'compare_cyl_vs_hex.3mf');
+    fs.writeFileSync(f, zip(generateMultiObject3MFXML(parts)));
+    const tot = rows.reduce((a, b) => a + b.cm3, 0);
+    console.log('\nHEAD-TO-HEAD — 4 + 4 real 15 mm risers\n');
+    console.log('  FRONT ROW  cylinder tenon on top -> push into a hex socket you own');
+    for (const r of rows.filter(r => r.kind[0] === 'c'))
+        console.log(`     ${r.name.padEnd(20)} tenon dia ${r.dia.toFixed(2)}   interference/side vs 8.75 flats ${(Math.max(0,(r.dia-0.11-8.75))/2).toFixed(2)}`);
+    console.log('\n  BACK ROW   round socket below -> push YOUR hex tenon (9.65-9.73 a/c) into it');
+    for (const r of rows.filter(r => r.kind[0] === 'r'))
+        console.log(`     ${r.name.padEnd(20)} bore dia  ${r.dia.toFixed(2)}   corner interference/side ${((9.65-r.dia)/2).toFixed(2)}`);
+    console.log(`\n  ${tot.toFixed(1)} cm3 solid   ${path.relative(ROOT, f)}`);
+    console.log('\n  They are 0.3-0.4 mm apart, so they differ by four times the step you');
+    console.log('  said you cannot feel — and a round feature calipers in one reading.');
     process.exit(0);
 }
 
