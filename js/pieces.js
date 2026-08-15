@@ -1554,12 +1554,22 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
  * SHAFT; two feet 40 mm apart would foul each other before the app noticed.
  */
 export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
-    const body = toBufferGeometry(stackedHex([
+    // The foot takes the round tenon too — see roundTenon. It has to: the foot's
+    // tenon is the one measuring 9.73 across corners against a riser's 9.65, and
+    // it is the joint Brett found "too tight" on one of three otherwise
+    // identical prints. Leaving it hex would fix the loose end and keep the
+    // tight one. The JOG is the only part that keeps a hex tenon, because its
+    // angle is what aims the 45 mm offset.
+    const round = opts.roundTenonDia;
+    const shaft = [
         { y: 0, af: 34.8 },                                  // elephant-foot chamfer
         { y: 0.6, af: 36 },
         { y: 4, af: 36 },
         { y: 4, af: 15 },
-        { y: STANDARD.footHeight, af: 15 },
+        { y: STANDARD.footHeight, af: 15 }
+    ];
+    const body = toBufferGeometry(round ? stackedHex(shaft) : stackedHex([
+        ...shaft,
         { y: STANDARD.footHeight, af: TENON_AF },
         { y: STANDARD.footHeight + spec.socket.depth - 2, af: TENON_AF },
         { y: STANDARD.footHeight + spec.socket.depth - 1, af: TENON_AF - 1.4 }
@@ -1573,7 +1583,12 @@ export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
         ? engraveFlatOps(String(opts.code).split(' '), baseMarkOrigin(opts.code, spec),
             [1, 0, 0], [0, 0, 1], spec)
         : [];
-    return marks.length ? toBufferGeometry(csgChain(body, marks)) : body;
+    const ops = [
+        ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(roundTenon(
+            round, STANDARD.footHeight - 0.4, STANDARD.footHeight + spec.socket.depth - 1)) }] : []),
+        ...marks
+    ];
+    return ops.length ? toBufferGeometry(csgChain(body, ops)) : body;
 }
 
 /** Centres a two-line block on a part's base plane (y = 0), reading from +Y. */
