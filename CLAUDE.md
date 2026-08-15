@@ -248,6 +248,21 @@ in the UI at all — `tests/pieces.test.js` and `analyzeMesh` are what enforce
 it. The shop's part list also states each part's size, which is the quickest
 check of which underside is in force: a minimal curve is 41 mm tall and a
 viaduct curve 71 mm.
+- **EXPERIMENT EXPORTS GO THROUGH `analyzeMesh` TOO — four of them did not, and
+  every number taken off them is void.** The curve variants were built in
+  scratchpad scripts that added ribs/spines/lattice by concatenating meshes
+  instead of unioning them through manifold-3d, so added geometry interpenetrated
+  the shell: 04 spine 236 non-manifold edges, 05 spines 472, 06 level ceiling
+  6518, 07 lattice 1580, all with inconsistent winding, and Bambu reports the
+  same 1580. `tests/pieces.test.js` gates SHIPPED parts; nothing gated these,
+  and they were sliced anyway. A slicer's reading of a non-manifold mesh is
+  undefined, SO THE SCORES DERIVED FROM THEM MEAN NOTHING — including the
+  "lattice is the best flat candidate" claim that survived several sessions.
+  The lattice also grew ragged tabs past the end face, which the footprint rule
+  forbids and a glance at the render catches. Any future variant: build it with
+  `csgChain` from the real builders, assert `analyzeMesh` BEFORE writing the
+  3MF, and look at the render.
+
 - **NO CURVE ORIENTATION CURRENTLY PRINTS ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT
   curve failed on its arched skirts (its deck was clean); the MINIMAL curve's
