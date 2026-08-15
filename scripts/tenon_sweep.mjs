@@ -141,7 +141,10 @@ for (const r of rows) {
     console.log(`     ${r.tag}       ${r.dia.toFixed(2)} mm${note}`);
 }
 console.log(`\n  ${path.relative(ROOT, file)}`);
-console.log(`  ${total.toFixed(1)} cm3 total, ~${(total * 1.27).toFixed(0)} g in PETG\n`);
+// Solid volume x density OVERSTATES it by nearly 2x — these are infilled, not
+// solid. Sliced, the 10+2 plate is 29.3 g / 1h11 against the 53 g that
+// arithmetic predicted. Quote the slicer, not the density.
+console.log(`  ${total.toFixed(1)} cm3 of solid, but sliced the 10+2 plate is 29.3 g / 1h11\n`);
 console.log('  HOW TO READ IT: push each one into a socket you already own — a riser you');
 console.log('  printed, not a new part. The first that grips without needing force is the');
 console.log('  number. Try the loose 60 and the too-tight foot both, and note if they');
