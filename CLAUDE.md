@@ -299,6 +299,40 @@ viaduct curve 71 mm.
   carries 13 m of bridges in the 40–48 mm band, spanning the channel. That is
   what strands. Score both columns, always.
 
+- **THE UNDER-DECK FIX IS PER PIECE TYPE, and the two do not substitute.**
+  A minimal piece's deck ceiling has to be held up or it sags and leaves
+  strands on the walking surface's underside — Brett, on shipped straights:
+  "obvious strands of plastic across the underside of the deck, rough to feel
+  and can grab and peel, not fully melted together."
+  · **STRAIGHTS take SPINES along the piece** — 2 of them, 0.8 mm, bed to deck
+    ceiling. A straight's ceiling bridges ACROSS the channel, so a lengthwise
+    wall halves every span: 48 → 16 mm at two spines. Measured, sliced: bridges
+    over 40 mm go 13 099 → 0 mm and the longest span 47.3 → 23.4, for +3.0 g and
+    +4 minutes. ONE spine is not enough — half of 48 is 24, still over the 20 mm
+    line, and 13 m stays in the >20 band.
+  · **CURVES take the HONEYCOMB** — 12 mm hex cells, 0.8 mm walls, bed to deck.
+    Spines do almost nothing on a curve (three of them leave the max span at
+    45.2 against a 45.6 baseline) because a curve's exposed ceiling runs ALONG
+    the arc, so a spine lies parallel to the spans. The honeycomb takes the max
+    to 12.2 for +27 g. This is the one part of the old "spines refuted" verdict
+    that survives, and only for curves.
+  Cell size below 20 mm buys nothing on the max span, and 8 mm cells or 1.6 mm
+  walls cost 13–27 g for numbers that do not move. `scripts/curve_variants.mjs`
+  builds and gates all of it. **CONFIRMED IN PLASTIC** for the straight
+  honeycomb: Brett, "the honeycomb has eliminated the stray strands from the
+  underside of the walking surface".
+- **The strands around a track socket's mouth are KNOWN, MINOR AND ACCEPTED —
+  do not "fix" them.** The collar is bored out to `collarBoreR` 9.2 so the
+  spacer's Ø18 body can tuck up inside, and the top of that recess is an
+  annulus from r 5.05 to 9.2 sitting 2.38 mm above the bed, cantilevered from
+  its outer edge only. It prints over air and droops a few strands. Every
+  correction is worse than the defect: coning the recess blocks the spacer, and
+  a true 45° chamfer needs 3.45 mm of radial run against 2.38 mm of available
+  depth, so it does not geometrically fit. Deepening the recess moves
+  `socketMouthY` off the 15 mm grid. Brett: "the strands are not an issue, very
+  minor, and can easily be cleaned or left." It is unique to track pieces
+  because a riser's socket opens onto the build plate and this one cannot —
+  the socket must stand vertical in the tower, so it tilts with the part.
 - **NO CURVE ORIENTATION HAS YET PRINTED ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT
   curve failed on its arched skirts (its deck was clean); the MINIMAL curve's
