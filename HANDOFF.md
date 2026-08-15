@@ -1,252 +1,268 @@
-# Handoff — printing a minimal curve with no slicer warnings
+# Handoff — the curve, done properly this time
 
-The task: get `curveR` (and `curveL`, and the switch) to slice clean without
-giving up the flat print orientation. This session put a REAL SLICER in the
-loop, and that overturned three things the last handoff asserted. Read §2
-before trusting any earlier number.
-
----
-
-## 1. Where things stand
-
-Clean tree, **357 tests passing**. **`minimal` is now `SPEC.skirt.style`** — the
-default underside — on the evidence in §4 and the print evidence in §6.
-`viaduct` remains fully supported, one selection away in the Underside control,
-and is what the three arcade tests in `tests/geometry.test.js` now pin
-explicitly rather than inheriting.
-
-A `minimal` piece is exported **already tilted onto its own underside**
-(`tiltOntoUnderside`, gated by `laysOnUnderside`). Do not re-orient it in the
-slicer — that is the whole reason it is shaped the way it is.
-
-| part | on the bed | tall | mass |
-|---|---|---|---|
-| straight | 1480 mm² | 30 mm | 69 g |
-| curve | 1777 mm² | 41 mm | 106 g |
-| switch | 2680 mm² | 43 mm | 158 g |
-
-Support library: **foot · jog · risers 60/30/15 · one spacer (SPC 11.20)**.
+Written 2026-08-15, at the end of a session that got the joints right and the
+curve badly wrong. Read the whole of §3 before touching the curve; it is a list
+of things that have already been tried, and two of them were tried twice.
 
 ---
 
-## 2. THE LOOP IS CLOSED NOW — `scripts/slice_loop.mjs`
+## 1. Where the repo is
 
-`slice_audit.mjs` reads a slice somebody made by hand. `slice_loop.mjs` makes
-one:
+`GEOMETRY_VERSION 2.3.0`, clean tree, 364 tests passing, `main`.
 
-```
-node scripts/slice_loop.mjs                    # every piece, both styles
-node scripts/slice_loop.mjs curveR minimal     # one part
-node scripts/slice_loop.mjs --save             # rewrite reports/slice-baseline.json
-```
+Three joint changes shipped this session, each from a fit Brett measured by
+hand in PETG. **PETG is now the only material** — no fit needs a material
+hedge, and PLA-era readings are history, not constraints.
 
-BambuStudio ships a CLI inside the .app and the P2S presets are already on
-disk, so build → 3MF → slice → feature totals runs headless in ~20 s. The
-baseline for the whole library is committed at `reports/slice-baseline.json`
-and every run diffs against it.
-
-**The trap that invalidated a whole table before it was caught.** A Bambu
-system preset is a LEAF: `0.16mm Standard @BBL P2S.json` contains no layer
-height at all — that lives in `fdm_process_single_0.16`, via `inherits`. The
-CLI does not follow `inherits` and does not say so. Passed the leaf, it keeps
-0.2 mm layers and reports a clean run, so two "different" layer heights
-produced byte-identical feature totals. `flatten()` resolves the chain; the
-achieved layer height is then read back out of the gcode and printed in the
-header, because the belt deserves braces. **Any slice made before this fix used
-CLI defaults, not the P2S profile.**
-
-Validation that it is the same slicer Brett drives by hand: on the shipped
-curve the loop reports 517.9 mm of Floating vertical shell against the GUI's
-513.9, and 17 647 mm of filament against ~17 600.
-
----
-
-## 3. THREE CORRECTIONS TO THE LAST HANDOFF
-
-**(a) "Concentrated in a 1.6 mm band at z 20.4–22.0" — no.** That reading came
-from `slice_audit`'s "worst layers" list, whose `trouble` regex is
-`/Bridge|Floating|Overhang|Support/` and is therefore dominated by Bridge. It
-found where the slicer BRIDGES most, not where it floats. Floating + Overhang
-alone is spread across **125 distinct layers, z 8 to 38.4** — essentially the
-whole part. There is no local defect to patch; it is distributed along the
-entire climb.
-
-**(b) "A flatter fit is worth one measurement first" — measured, and it is
-dead.** Refitting the plane to minimise the DECK's deviation instead of the
-wall lines gives 4974 mm² in the 5–25° band against the shipped fit's 4914 —
-very slightly WORSE. A brute-force search over every plane (±0.3 in both
-slopes, interior optimum) bottoms out at 4641 mm², **5.5% better than what
-ships**, and with a worse maximum angle. The shipped fit is already within a
-few percent of the best a plane can do. Do not spend another session on it.
-
-The reason is structural, not a tuning failure. The ceiling is a helicoid: its
-normal leans ~11.2° off vertical everywhere, but its AZIMUTH follows the arc,
-so over a 90° turn it sweeps 90° of azimuth. A plane has one normal. The locus
-of ceiling normals has an angular diameter of 15.8°, so the best-centred plane
-still leaves ±7.9° — no plane can bring a 90° curve's ceiling under 5°.
-
-**(c) "Floating vertical shell" is not a synonym for broken.** It has a benign
-floor: a flat ceiling produces one loop of it at the single layer where the
-ceiling starts in mid-air, and is then bridged normally. A `minimal` straight,
-whose ceiling is measurably **0.00°**, still prints 192.8 mm of it. What makes
-a curve different is only that its ceiling arrives over ~50 layers instead of
-one, so it pays that perimeter cost fifty times. **Compare parts against each
-other, never against zero.**
-
----
-
-## 4. What the library actually measures (0.20mm Standard @BBL P2S)
-
-`Support` is **0.0 mm on every part in both styles** — nothing in the library
-needs support material today. Trouble = (floating + overhang) / filament:
-
-| part | minimal | viaduct |
+| change | version | what moved |
 |---|---|---|
-| start | 1.19% | 1.19% |
-| straight | **1.38%** | 12.20% |
-| curveR | **4.56%** | 17.02% |
-| lift | 1.43% | 12.37% |
-| powered | 0.84% | 1.12% |
-| end | 0.76% | 0.76% |
-| switchL | **5.68%** | 13.83% |
+| key drawn 0.07/side wider on the flanks | 2.1.0 | `printComp.tipMm` / `neckMm` |
+| every socket cut to the track's undersize | 2.2.0 | `socketShrinkAF`, was track-only |
+| **key depth 18.00 → 18.60** | 2.3.0 | `printComp.depthMm` |
 
-Two things fall out of this table that nobody had looked at:
+The third is the one that matters. **2.1.0 was a mistake worth understanding:**
+it moved the flanks 0.07 mm per side — about one clearance-ladder step — on a
+joint Brett described as falling right out, and he printed a whole plate to
+discover it felt identical. The real slop was 0.80 mm, in the DEPTH direction,
+which is the axis the two ramps separate along. He found it by hand
+("the back of the key to the back of the slot ... almost a full 1mm") after two
+versions of me tuning the wrong axis. It came straight from
+`depthClearanceMm: 0.4` per side. The key now spans 18.60 into an 18.80 cavity,
+leaving 0.10 per side.
 
-- **`minimal` is dramatically better than `viaduct` everywhere it differs** —
-  a straight is 1.38% against 12.20%. The arcade is by far the bigger generator
-  of floating shell. **This table is why `minimal` is now the default style.**
-- Only the **curve (4.56%) and the switch (5.68%)** stand out among `minimal`
-  pieces; everything else sits near 1%. The curve's excess over a straight is
-  about 570 mm of filament.
+Only the key moved — `bowtiePocketPlan` never sees `printComp` — so every
+pocket already printed stays valid.
 
----
+**On Brett's printer right now:** `plate_01_13parts_208g.3mf`, verified to be
+genuinely 2.3.0 (key measures 18.600, riser sockets 8.75 AF). Contents:
+`straight ×2`, `bowtie_key ×3`, `support_foot ×3`, `riser 15/30/60`.
 
-## 5. The mechanism, confirmed rather than argued
+Two results to collect from it, and they gate different things:
 
-The ceiling climbs **across the channel** (4.70° mean, 8.11° peak) and barely
-**along the arc** (1.18°) — the last handoff guessed this and it is right. So
-its contour lines run ALONG the arc, and each 0.2 mm layer advances the ceiling
-edge 1.3–1.8 mm sideways, more than an extrusion width, leaving each advancing
-perimeter with nothing beneath it.
-
-Confirmation is a shape match, not a story: mapping the ≥5° ceiling in bed
-coordinates and histogramming it by azimuth gives peaks in the −150..−135° and
-45..60° bins, and the gcode's trouble filament peaks **in the same two bins**.
-
-Two levers were tested and are not worth pulling:
-
-- **Layer height is not a lever.** 0.20 → 4.56%, 0.16 → 4.04%, 0.08 → **5.24%**
-  (worse). Halving the sliver width also doubles the number of slivers.
-- **Reducing the export tilt** trades the across-channel ceiling slope against
-  depth, and the exchange rate is ruinous: the tilt is what holds the deck-to-
-  plane distance to ±5.46 mm, and a level plane lets it vary by the full 44.75
-  mm drop. Getting the ceiling under 5° needs ~60% of the tilt removed, which
-  costs tens of cm³. This axis IS the viaduct↔minimal axis, and §4 shows which
-  end of it wins.
+- **Two straights + a key = a real seam.** Does it close and stay shut? This is
+  the original complaint ("any exposed seam stops the klipklop") and the first
+  honest test of it.
+- **Riser into riser = pillar-on-pillar.** This is 2.2.0 and it is the
+  RISKIER change: it is reasoned from "pillars aren't tight", not measured. If
+  a riser needs real force into another riser, `socketShrinkAF` (0.25) went too
+  far — one-line revert. Riser into a track boss did not move and should feel
+  exactly as before.
 
 ---
 
-## 6. RIBS DO NOT WORK — measured, not argued
+## 2. The goal
 
-The last candidate standing was **radial bridge-ribs**: thin fins running
-ACROSS the channel (the advancing perimeter runs along the arc, so it crosses
-them), each with a flat bottom parallel to the underside plane so the rib is
-itself a bridge anchored on both skirt walls. It was prototyped at mesh level
-and sliced. It makes things **worse at every pitch**:
-
-| ribs | filament | floating | overhang | trouble |
-|---|---|---|---|---|
-| none (baseline) | 17 647 | 518.0 | 287.3 | **805.3** |
-| 19 @ 10 mm | 18 830 | 566.0 | 313.9 | 879.8 |
-| 38 @ 5 mm | 19 937 | 557.7 | 343.8 | 901.4 |
-| 64 @ 3 mm | 21 511 | 712.5 | 382.1 | 1094.6 |
-
-The reason is simple once seen: a rib only touches the advancing perimeter over
-its own 0.8 mm thickness, so at 10 mm pitch it catches 8% of that perimeter's
-length — while every rib contributes a full set of new perimeters and its own
-floating bottom edge. Tightening the pitch adds cost faster than it adds
-support. To actually land the perimeter you would need a pitch near one
-extrusion width, which is a solid cavity, which is ~50 g.
-
-Terracing the ceiling into flat treads was rejected earlier on the same kind of
-measurement: with honest connected-component analysis only 27% of tread area at
-0.6 mm steps lands on a band reaching BOTH walls, so 73% cantilevers. (A naive
-per-level touch test says 93% and is wrong — one level is often two patches,
-each hugging one wall.)
-
-**So the recommendation is to stop.** Every geometric lever has now been
-measured and every one is neutral or negative. What is left is not a defect:
-support material is 0.0 mm, and the residual is ~570 mm of perimeter laid at a
-shallow overhang on the UNDERSIDE of the deck, which is hidden in use.
-
-### The print evidence, which says the same thing from the other side
-
-Brett has printed a **viaduct** curve (Aug 2026). What actually failed on it:
-
-- failures were **exclusively on the arched skirts** — the arcade — and were
-  made worse by a wall-thinning change that has since been undone;
-- the deck underside on that part is the same complex curve, and drew the same
-  floating-cantilever warnings, and **was not affected**;
-- **the walking surface was not affected.**
-
-That is an independent confirmation of §4 and §3(c): the arcade is where the
-cost is real, and the ceiling warnings are noise. Two lines of evidence,
-measurement and plastic, agreeing.
-
-### What is actually untested
-
-**No `minimal` piece has ever been printed.** The gcode this whole
-investigation was built on (`curveR_1_PLA_3h2m.gcode`) is a minimal curve that
-was sliced and never run — it matches the loop's minimal slice to within 4 mm
-of filament, which is how the loop was validated, but it is not a print.
-
-So the style the numbers favour by 4-10x is the one with zero physical
-evidence behind it. That, not the ceiling, is the open risk. `--keep` on
-`slice_loop.mjs` writes a ready-to-print 3MF and gcode for exactly this:
-
-```
-node scripts/slice_loop.mjs straight minimal --keep test-parts/minimal_trial
-node scripts/slice_loop.mjs curveR   minimal --keep test-parts/minimal_trial
-```
-
-Print the straight first — it is 69 g against the curve's 106 g and it tests
-the tilted underside, the bed contact and the grid-snapped seat without the
-spacer. The curve needs SPC 11.20 under it.
+**A curve that prints acceptably, whole.** Not a clean score, not an absent
+warning — a part that comes off the plate with an intact riding surface and an
+intact skirt.
 
 ---
 
-## 7. Things already tried, so nobody repeats them
+## 3. The curve: what is actually known
 
-- **Constant-depth underside on a curve.** A helicoid, 5.15 mm from its own
-  best-fit plane. No rotation flattens it; the part rests on one end.
-- **Removing the rim clamp without sloping the rib bottoms.** Bed contact goes
-  to zero. Both halves have to move together.
-- **A level face inside a tilted plane.** Cannot be flush — this bit the socket
-  mouth (2.91 mm proud at D = 12) and the boss collar, and is why
-  `minimalDepthMm` is 17.
-- **A third spacer for the switch.** Avoided by snapping the seat onto the grid.
-- **A fully coned socket ceiling in minimal.** Structurally impossible: the 45°
-  bore needs 3.90 mm of headroom and has −1.07.
-- **Refitting the underside plane** — §3(b). Within 5.5% of optimal already.
-- **Layer height, and reducing the tilt** — §5.
-- **Terracing the ceiling**, and **radial bridge-ribs** at 10/5/3 mm pitch — §6.
-  The ribs were prototyped and sliced; they are worse at every pitch.
+### 3.1 Both orientations have been printed and both FAILED
+
+This is the fact most easily lost, and I lost it twice in one session.
+
+| | outcome |
+|---|---|
+| **viaduct** curve | FAILED on the arched skirts. Its deck was clean. |
+| **minimal** (flat) curve | FAILED — spaghetti underside, and it telegraphed through the 2 mm floor into the riding surface. |
+
+**Never say "the viaduct prints fine."** That sentence collapses a deck result
+into a part result. I used it as an anchor fact for most of a session and built
+a "just print curves rim-down" recommendation on top of it. Brett's correction:
+*"the viaduct does not print fine ... and the riding surface does not print
+fine on the flat one."*
+
+So there is **no known-good way to print a curve**, and no fallback.
+
+### 3.2 Four of the eight experiment meshes are broken, and their scores are void
+
+`test-parts/curve_experiments/` (gitignored). Audited with
+`node scripts/audit_3mf.mjs test-parts/curve_experiments/*.3mf`:
+
+| file | manifold | non-manifold edges | winding |
+|---|---|---|---|
+| 01_BASELINE_curve_minimal_asis | OK | 0 | consistent |
+| 02_BULKHEADS_across_channel_30mm_pitch | OK | 0 | consistent |
+| 03_BULKHEADS_across_channel_20mm_pitch | OK | 0 | consistent |
+| 04_SPINE_along_arc_centre | **FAIL** | 236 | inconsistent |
+| 05_SPINES_along_arc_pair | **FAIL** | 472 | inconsistent |
+| 06_LEVEL_CEILING_across_channel | **FAIL** | 6518 | inconsistent |
+| 07_LATTICE_8mm_sanity_check | **FAIL** | 1580 | inconsistent |
+| curveR_viaduct | OK | 0 | consistent |
+
+Bambu independently reports the same 1580 on the lattice.
+
+**Cause:** the scratchpad scripts that generated the variants added ribs,
+spines and lattice by CONCATENATING meshes instead of unioning them through
+manifold-3d. Added geometry interpenetrates the shell. `tests/pieces.test.js`
+enforces `analyzeMesh` on shipped parts; nothing gated the experiments, and I
+sliced them and published the numbers anyway.
+
+**Consequence, and it is the whole point:** a slicer's reading of a
+non-manifold mesh is undefined, so **every score derived from 04–07 is
+meaningless** — including the 6,124 mm that made the lattice "the best flat
+candidate" and that Brett was told twice to print.
+
+Additionally the lattice has ragged tabs protruding **past the end face** —
+forbidden by the footprint rule, and visible at a glance in the render. Nobody
+looked at the render.
+
+### 3.3 What is still valid
+
+Only meshes 01, 02, 03 and the viaduct were ever sound.
+
+- **01 baseline: 16,274 mm open-ended.** Valid, and the number to beat.
+- **viaduct: 4,356 mm open-ended.** Valid — but remember 3.1: that part's
+  DECK printed clean while its skirts failed. It is a good ceiling, not a good
+  part.
+- **02 / 03 bulkheads:** meshes are sound, but they were scored under the OLD
+  metric (`segs >20 mm`) and I am not certain they were re-scored after the
+  z-hop fix. **Treat their numbers as unverified** and re-run
+  `scripts/unsupported_runs.mjs` on fresh slices before citing them.
+
+Under the old metric, bulkheads at 30 mm and 20 mm pitch bought four
+percentage points for ten grams. The REASON is the durable part and it should
+shape any new attempt: **the long unsupported runs are DIAGONALS that already
+span wall to wall.** The channel is 48 mm; the baseline's worst run was 66 mm.
+A bulkhead ACROSS the channel cannot shorten a diagonal that already reaches
+both walls, and a spine ALONG the channel does not move the maximum at all.
+
+### 3.4 The measurement instrument, and the bug that poisoned it
+
+`scripts/unsupported_runs.mjs` (rescued from scratchpad this session).
+
+It rasterises each layer's extrusions into an occupancy grid, then walks every
+bridge move in the next layer and measures the runs passing over empty cells.
+It classifies each run:
+
+- **anchored at both ends** — a real bridge; prints fine
+- **open-ended** — stops in mid-air; this is what droops
+
+That distinction is the whole value. The slicer's cantilever warning fires on
+AREA and cannot make it — which is why it fires on curves regardless of
+geometry, and why it is useless as a pass/fail signal.
+
+**The z-hop bug (fixed, do not reintroduce):** Bambu z-hops on travel moves,
+and a hop is a bare `G1 Z...` indistinguishable by pattern from a layer change.
+Keying layer boundaries on "Z changed" wiped the occupancy grid several times
+per layer, so nearly everything scored as unsupported — and the viaduct (clean
+deck) scored WORSE than the minimal curve that actually failed. The fix: take
+the boundary from the Z of the last EXTRUSION move. A hop extrudes nothing, so
+this is immune by construction.
+
+An earlier metric — raw bridge SEGMENT length — is also wrong and is kept in
+the history only as a warning: a single `G1` move can pass straight over
+intervening solid material, so its length says nothing about unsupported
+distance. That is what made a lattice with 8 mm anchors report a 65 mm
+"segment".
 
 ---
 
-## 8. Rules this work established, worth not breaking
+## 4. The process gate — do this first, it is cheap
 
-- **One expression of the underside.** `undersidePlane` is the only thing that
-  says where it is. `tests/pieces.test.js` asserts nothing sits below a piece's
-  own plane and that both end ribs and the boss reach it.
-- **`laysOnUnderside` gates everything at once** — rim clamp, boss collar,
-  export tilt. They were allowed to disagree once and a flat platform balanced
-  on a 114 mm² ring.
-- **Cutters that are solids of revolution eat the core.** Bore the cutter
-  first, subtract the tube.
-- **Stock scenes cannot go stale** (`tests/scene_currency.test.js`).
-- **Flatten a slicer preset before believing it** — §2.
-- **Nothing here has been printed except one curve.** Every other number in
-  `reports/print-audit.md` is measured off a mesh; every number in
-  `reports/slice-baseline.json` is measured off a real slice, but only the one
-  curve has ever come off a printer.
+Nothing below is trustworthy without it.
+
+1. **Build variants through `csgChain` / manifold-3d**, from the real builders
+   in `js/pieces.js`. Never concatenate meshes.
+2. **Assert `analyzeMesh` BEFORE writing any 3MF** — manifold, consistent
+   winding, outward volume. Refuse to write the file otherwise. This is the
+   single check that would have prevented the entire mess.
+3. **Look at the render.** The lattice's tabs past the end face were visible.
+4. **Check the footprint rule**: nothing protrudes past an end face, nothing
+   floats above the bed.
+5. Only then slice, and only then score.
+
+Worth doing properly: promote the variant generator out of scratchpad into
+`scripts/`, with the `analyzeMesh` assert wired in, so the next person cannot
+skip it either.
+
+---
+
+## 5. Plan of attack
+
+### Step 0 — collect the joint results (blocks nothing else, do it first)
+From the plate already printing: does the seam close, and is riser-on-riser
+right? If the riser is interference-tight, revert `socketShrinkAF` before any
+pillars get printed.
+
+### Step 1 — rebuild Brett's honeycomb, properly
+This is HIS test and it has never actually been run. His specification, in his
+words: *"you should be able to put a full 'honeycomb' rising from the floor
+just like the side rails so there is no unsupported bed, but it is the anchor
+points that are key to reduce the bridge length."*
+
+- full height, **from the bed up to the deck underside** — the 07 file was a
+  shallow waffle on the underside and never reached the bed, so it did not
+  implement this
+- unioned through manifold, `analyzeMesh` clean, nothing past the end faces
+- score with `scripts/unsupported_runs.mjs` against **01's 16,274**
+
+It is a WORST-CASE / sanity article: if a full honeycomb does not bring the
+open-ended runs down, then no amount of under-deck anchoring will, and the
+answer is orientation or support. That is a genuinely informative negative
+result, which is why it is worth doing first.
+
+### Step 2 — attack diagonals, not spans
+If step 1 helps, the follow-up is not more walls. Per §3.3 the killer runs are
+diagonals across exposed ceiling patches. Anchors need to be distributed in
+BOTH directions — a grid, not a comb — with spacing chosen so no straight line
+across the ceiling exceeds roughly the channel width before meeting one.
+
+### Step 3 — re-examine the two non-geometry options honestly
+Both were dismissed too fast on the strength of the false "viaduct prints fine".
+
+- **Slicer support on the flat curve:** measured at 3 h 58 m / 128 g, 37.7%
+  support. The cavity opens downward onto the bed in this orientation, so the
+  support is reachable and removable. Ugly, but it is a printable curve, and
+  nothing else currently is.
+- **Viaduct orientation:** its DECK is the best ceiling result on record
+  (4,356). Its skirts failed. **Nobody has investigated the skirt failure** —
+  and Brett noted the failures were "made worse by the walling thinning we had
+  previously done, but now have undone", which means the failure may already be
+  partly addressed and has simply never been reprinted. **This is probably the
+  cheapest real shot at a printable curve and it has been sitting unexamined.**
+
+### Step 4 — only then merge
+A candidate ships by going into `buildCurveExportGeometry` behind the minimal
+style, with a `tests/pieces.test.js` case, not by living in `test-parts/`.
+
+---
+
+## 6. Assumptions and open questions — all of them
+
+1. **That a flat-printing curve is achievable at all.** Unproven. A 90° helicoid
+   ceiling sweeps 90° of azimuth, so no plane fit flattens it — established
+   earlier and still true. Step 1 is partly a test of whether to keep trying.
+2. **That 02/03's numbers survive the z-hop fix.** Unverified — re-score.
+3. **That the key fix works.** 0.10 per side comes from a ladder rung in a 3 mm
+   card; the printed slot may differ. `depthMm` (0.3) is the one number to
+   adjust. Brett will know by hand — unlike 2.1.0, this is 0.6 mm.
+4. **That 8.75 suits a pillar socket.** Reasoned, not measured, and it
+   contradicts its own premise: the two sockets differed BECAUSE identical
+   drawings print differently in different plastic masses, and the fix assumes
+   they now won't. The hex ladder (`chip_tenon` down `lad_hex_00…30`) settles
+   it.
+5. **That the slicer warning means anything.** It does not — it fires on area,
+   on curves, regardless of geometry. Judge prints, and judge them on the
+   middle third of the riding surface and on the skirt.
+
+---
+
+## 7. Traps
+
+- **Do not print `07_LATTICE_8mm_sanity_check.3mf`.** It is broken geometry.
+- **Do not cite 6,124 mm.** Void.
+- **Do not reach for `fitClearanceMm`, `printComp` or a global XY offset on
+  the key's flanks.** Three fits are confirmed in plastic (hex tenon, gate pin,
+  zero-clearance pairs) and the flank clearance is not the defect — see
+  CLAUDE.md.
+- **Do not tune a joint by an amount you cannot feel.** 0.07 mm per side cost a
+  print and a day. If the symptom is "falls right out", measure the slop before
+  changing anything.
+- **Do not trust a ladder card to stand in for a real part** without saying so.
+  It was right about the key in the end — Brett said so and he was correct —
+  but only because its holes are uniform insets that report every direction at
+  once. Read it that way.
