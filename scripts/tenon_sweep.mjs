@@ -31,8 +31,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as fflate from 'fflate';
 import { SPEC } from '../js/track.js';
-import { initCSG, buildRiserGeometry, buildSupportFootGeometry, toBufferGeometry, csgChain, ADDITION } from '../js/pieces.js';
-import { circlePlan, sweepSolid } from '../js/geometry.js';
+import { initCSG, buildRiserGeometry, buildSupportFootGeometry, toBufferGeometry, csgChain, ADDITION, SUBTRACTION } from '../js/pieces.js';
+import { circlePlan, sweepSolid, extrudePolygonY } from '../js/geometry.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
 
@@ -162,6 +162,34 @@ const arrays = (g) => {
  *    bears on the flats at 8.75 and is not fully constrained until the corners
  *    at 10.10, so 8.9-10.1 spans that whole window.
  */
+/**
+ * COUNTABLE NOTCHES, because neither of the other two labels survives contact.
+ *
+ * The engraved code is 0.5 mm of stroke — 1.19 extrusion widths — which is the
+ * width at which a slicer renders a hairline or drops it; Brett could not read
+ * the last set. And plate POSITION is not a label either: the transforms in
+ * this file put the parts on a 26 mm grid at two rows, and BambuStudio
+ * re-arranged them, so what comes off the plate is in an order nobody chose.
+ *
+ * So: N grooves cut into the shaft between the socket (which ends at 10) and
+ * the tenon shoulder (at 15), where they touch neither. Count them with a
+ * fingernail. The two ROWS need no label — one has a round tenon on top and the
+ * other a hex one, which is unmistakable.
+ *
+ * Height is deliberately NOT the label. It would work, but the tenon is the
+ * feature under test and moving it up or down changes what it prints like,
+ * which is the exact variable being measured.
+ */
+function notchOps(n) {
+    const ops = [];
+    for (let k = 0; k < n; k++) {
+        const y = 10.8 + k * 1.3;   // top notch ends 14.2, clear of the 15 shoulder
+        ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(
+            [[6.3, -12], [20, -12], [20, 12], [6.3, 12]], y, y + 0.8)) });
+    }
+    return ops;
+}
+
 if (argv.includes('--compare')) {
     // CENTRED ON BRETT'S TWO ANCHORS, not on a blind bracket.
     //
@@ -190,14 +218,14 @@ if (argv.includes('--compare')) {
             bad++; return;
         }
         parts.push({ name, positions: a.positions, indices: a.indices, at });
-        rows.push({ name, kind, dia, cm3: +(r.volumeMm3 / 1000).toFixed(2) });
+        rows.push({ name, kind, dia, notches: rows.filter(x=>x.kind===kind).length + 1, cm3: +(r.volumeMm3 / 1000).toFixed(2) });
     };
     CYL.forEach((d, i) => add(
-        buildRiserGeometry(15, SPEC, { roundTenonDia: d, code: `C${Math.round(d * 10)}` }),
+        csgChain(buildRiserGeometry(15, SPEC, { roundTenonDia: d, code: `C${Math.round(d * 10)}` }), notchOps(i + 1)),
         `cyl_tenon_${Math.round(d * 100)}`,
         [128 + (i - 1) * 26, 128 - 22, 0], 'cylinder tenon -> your hex socket', d));
     SOC.forEach((d, i) => add(
-        buildRiserGeometry(15, SPEC, { roundSocketDia: d, code: `S${Math.round(d * 10)}` }),
+        csgChain(buildRiserGeometry(15, SPEC, { roundSocketDia: d, code: `S${Math.round(d * 10)}` }), notchOps(i + 1)),
         `round_socket_${Math.round(d * 100)}`,
         [128 + (i - 1) * 26, 128 + 22, 0], 'round socket <- your hex tenon', d));
     if (bad) { console.error(`\n${bad} failed the mesh gate — NOTHING WRITTEN.`); process.exit(1); }
@@ -207,14 +235,15 @@ if (argv.includes('--compare')) {
     console.log('\nHEAD-TO-HEAD — 3 + 3 real 15 mm risers\n');
     console.log('  FRONT ROW  cylinder tenon on top -> push into a hex socket you own');
     for (const r of rows.filter(r => r.kind[0] === 'c'))
-        console.log(`     ${r.name.padEnd(20)} drawn ${r.dia.toFixed(2)}  ~printed ${(r.dia-0.11).toFixed(2)}  vs socket flats 8.75 -> ${(((r.dia-0.11)-8.75)/2>=0?'+':'')}${(((r.dia-0.11)-8.75)/2).toFixed(2)} /side`);
+        console.log(`   ${r.notches} notch${r.notches>1?'es':'  '}  drawn ${r.dia.toFixed(2)}  ~printed ${(r.dia-0.11).toFixed(2)}  vs socket flats 8.75 -> ${(((r.dia-0.11)-8.75)/2>=0?'+':'')}${(((r.dia-0.11)-8.75)/2).toFixed(2)} /side`);
     console.log('\n  BACK ROW   round socket below -> push YOUR hex tenon (9.65-9.73 a/c) into it');
     for (const r of rows.filter(r => r.kind[0] === 'r'))
-        console.log(`     ${r.name.padEnd(20)} drawn ${r.dia.toFixed(2)}  vs your tenon 9.65 a/c -> ${((9.65-r.dia)/2>=0?'+':'')}${((9.65-r.dia)/2).toFixed(2)} /side before bore shrink`);
+        console.log(`   ${r.notches} notch${r.notches>1?'es':'  '}  bore ${r.dia.toFixed(2)}  vs your tenon 9.65 a/c -> ${((9.65-r.dia)/2>=0?'+':'')}${((9.65-r.dia)/2).toFixed(2)} /side before bore shrink`);
     console.log(`\n  ${tot.toFixed(1)} cm3 solid   ${path.relative(ROOT, f)}`);
-    console.log('\n  0.20-0.25 mm apart, four times the step you said you cannot feel.');
-    console.log('  FRONT ROW = cylinder tenons, BACK ROW = round bores, both small to large');
-    console.log('  left to right. Position is the label; do not rely on the engraving.');
+    console.log('\n  IDENTIFY BY COUNTING THE NOTCHES on the shaft. Not by position — the');
+    console.log('  slicer re-arranges the plate — and not by the engraving, which is');
+    console.log('  1.19 extrusion widths wide. Round tenon on top = cylinder-in-hex row;');
+    console.log('  hex tenon on top = round-bore row.');
     process.exit(0);
 }
 
