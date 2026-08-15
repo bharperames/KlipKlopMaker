@@ -236,6 +236,56 @@ function spineOps({ count, thickMm }) {
     };
 }
 
+/**
+ * RIBS — walls ACROSS the channel, at a pitch along the piece. The symmetric
+ * counterpart to spines, and on a curve it should be the half that matters.
+ *
+ * Spines along a curve's arc do nothing (three of them left the max span at
+ * 45.2 against a 45.6 baseline) because the exposed ceiling runs ALONG the arc
+ * and a lengthwise wall lies parallel to the spans. If that is the reason, then
+ * the honeycomb's along-arc walls are dead weight on a curve and only its
+ * transverse component is working — in which case plain radial ribs buy the
+ * same result for about half the plastic.
+ *
+ * Worth testing rather than assuming: the old "bulkheads across the channel"
+ * experiments concluded they bought almost nothing, but that was measured with
+ * the segment-length metric and before the arc-parsing fix, so it decides
+ * nothing either way.
+ */
+function ribOps({ pitchMm, thickMm }) {
+    return (piece, spec) => {
+        const pl = undersidePlane(piece, spec);
+        const uHalf = piece.innerWidth / 2 + spec.wall / 2;
+        const sMargin = spec.key.ribThk + 0.5;
+        const s0 = sMargin, s1 = piece.planLen - sMargin;
+        const n = Math.max(1, Math.round((s1 - s0) / pitchMm));
+        const ops = [];
+        for (let i = 0; i <= n; i++) {
+            const sc = s0 + ((s1 - s0) * i) / n;
+            const a = Math.max(s0, sc - thickMm / 2), b = Math.min(s1, sc + thickMm / 2);
+            if (b - a < 0.05) continue;
+            const stations = [], profiles = [];
+            for (const sAt of [a, b]) {
+                const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
+                const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+                stations.push({ s: sAt, origin: [p.x, y, p.z], right });
+                const botAt = (u) => pl.at(p.x + right[0] * u, p.z + right[2] * u) - y;
+                const top = -spec.floorThk + 0.3;
+                profiles.push([[-uHalf, botAt(-uHalf)], [uHalf, botAt(uHalf)], [uHalf, top], [-uHalf, top]]);
+            }
+            ops.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
+        }
+        return ops;
+    };
+}
+
+const ribs = (pitchMm, thickMm) => ({
+    name: `ribs_${pitchMm}_${String(thickMm).replace('.', 'p')}`,
+    note: `ribs across the channel every ${pitchMm} mm, ${thickMm} mm, bed to deck`,
+    kind: 'ribs',
+    ops: ribOps({ pitchMm, thickMm })
+});
+
 const spines = (count, thickMm) => ({
     name: `spine_${count}_${String(thickMm).replace('.', 'p')}`,
     note: `${count} spine(s) along the piece, ${thickMm} mm, bed to deck`,
@@ -303,6 +353,7 @@ const VARIANTS = [
     cell(16, 0.8), cell(20, 0.8), cell(24, 0.8), cell(16, 0.45), cell(24, 0.45),
     posts(14, 3), posts(18, 3), posts(22, 3.5),
     spines(1, 0.8), spines(1, 1.6), spines(2, 0.8), spines(3, 0.8),
+    ribs(10, 0.8), ribs(14, 0.8), ribs(18, 0.8), ribs(24, 0.8),
     // A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK. This one
     // runs the comb straight through the end ribs, sealing the bowtie throat;
     // `--selftest` builds it and PASSES ONLY IF IT IS REJECTED. Without it the
