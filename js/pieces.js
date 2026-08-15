@@ -1431,6 +1431,54 @@ function stackedHex(levels) {
     return sweepSolid(profiles, stations);
 }
 
+/**
+ * A ROUND TENON FOR A HEX SOCKET — Brett's idea, and it explains the defect it
+ * is meant to fix.
+ *
+ * A hex tenon in a hex socket is FACE contact: six flats, 4.3 mm wide by 8 mm
+ * engaged. Face contact has almost no compliance, so 0.035 mm of interference
+ * goes straight from "loose" to "will not move" — which is exactly the window
+ * measured between a foot's tenon (9.73 across corners) and a riser's (9.65),
+ * and exactly the spread seen between three nominally identical feet off one
+ * plate. When the process spread is as wide as the whole tolerance window, no
+ * sizing change can work.
+ *
+ * A cylinder in the same hex is SIX LINE CONTACTS, tangent to the flats. Line
+ * contact flattens locally at low force, so the same interference is absorbed
+ * rather than resisted; it never reaches the corners, which is where a printed
+ * hex is worst formed; and six symmetric contacts centre the part better than a
+ * clearance hex fit does. It also prints as steady arc moves instead of six
+ * direction changes a layer, and — unlike a blind hex bore — a shaft diameter
+ * can actually be measured.
+ *
+ * Backward compatible on purpose: the inscribed circle of a hex IS its
+ * across-flats, so this mates with every hex socket already printed.
+ *
+ * Sized deliberately OVERSIZE. Line contact absorbs oversize and does nothing
+ * for undersize — a small cylinder in a big hex simply rattles — so every unit
+ * wants to land in interference and let the contacts take up the spread.
+ */
+function roundTenon(dia, y0, y1, leadIn = 1.0) {
+    const r = dia / 2;
+    const levels = [
+        { y: y0, r },
+        { y: y1 - leadIn, r },
+        { y: y1, r: Math.max(0.4, r - 0.7) }   // insertion chamfer, as the hex has
+    ];
+    // NOT `segmentsForCircle`. That holds the facet sagitta under FACET_TOL_MM
+    // = 0.1 mm, which is right for a surface you look at and wrong for one that
+    // mates: at this radius it returns a 15-gon whose ACROSS-FLATS is 0.18 mm
+    // under the nominal diameter — two and a half times the 0.07 mm diametral
+    // window this joint has to live in, and it would reintroduce the very thing
+    // the cylinder exists to escape, a polygon whose fit depends on how its
+    // corners happen to land against the socket's flats. 96 sides puts the
+    // flat-to-corner difference at 0.004 mm, which is noise here.
+    const segs = 96;
+    const profiles = levels.map(l => circlePlan(l.r, segs).map(([x, z]) => [x, -z]));
+    const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
+    return sweepSolid(profiles, stations);
+}
+
 const TENON_AF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm; // 8.6
 
 /** Hex support pillar with base flare and top tenon. Zero CSG. */
@@ -1636,14 +1684,22 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
 
 /** Stackable riser: hex tube with a socket below and a tenon above. Needs initCSG. */
 export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
-    const body = toBufferGeometry(stackedHex([
-        { y: 0, af: 15 },
-        { y: sizeMm, af: 15 },
-        { y: sizeMm, af: TENON_AF },
-        { y: sizeMm + spec.socket.depth - 2, af: TENON_AF },
-        { y: sizeMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }
-    ]));
+    // `roundTenonDia` swaps the hex tenon for a cylinder — see roundTenon. The
+    // shaft, the shoulder and the socket are untouched, so a swept set of these
+    // can be tried in sockets that are already printed.
+    const round = opts.roundTenonDia;
+    const body = toBufferGeometry(round
+        ? stackedHex([{ y: 0, af: 15 }, { y: sizeMm, af: 15 }])
+        : stackedHex([
+            { y: 0, af: 15 },
+            { y: sizeMm, af: 15 },
+            { y: sizeMm, af: TENON_AF },
+            { y: sizeMm + spec.socket.depth - 2, af: TENON_AF },
+            { y: sizeMm + spec.socket.depth - 1, af: TENON_AF - 1.4 }
+        ]));
     return csgChain(body, [
+        ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(
+            roundTenon(round, sizeMm - 0.4, sizeMm + spec.socket.depth - 1)) }] : []),
         { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
         ...gridMarks(sizeMm, spec),
         // BETWEEN two grid marks, not across one. hexFlatEngraveOps centres the
