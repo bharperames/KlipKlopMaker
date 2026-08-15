@@ -1332,10 +1332,10 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         return marks.length ? csgChain(toBufferGeometry(plain), marks) : plain;
     }
     // drawn pre-distorted so it PRINTS at nominal — see SPEC.key.printComp
-    const comp = K.printComp ?? { neckMm: 0, tipMm: 0 };
+    const comp = K.printComp ?? { neckMm: 0, tipMm: 0, depthMm: 0 };
     const shape = {
         neckHalf: K.neckHalf - comp.neckMm, tipHalf: K.tipHalf + comp.tipMm,
-        depth: K.depth, tipChamfer: K.tipChamfer
+        depth: K.depth + (comp.depthMm ?? 0), tipChamfer: K.tipChamfer
     };
     const full = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
     // a TRUE inward offset, so the chamfer band's quads stay planar and the
@@ -2343,7 +2343,7 @@ function sectionFeatures(spec = SPEC) {
     // never saw printComp at all — the ladder would have gauged a key the track
     // no longer ships, and read "correct" while the seam stayed open.
     for (const v of [
-        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0 }, label: 'bowtie key 2.0 (the loose one)' },
+        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0, depthMm: 0 }, label: 'bowtie key 2.0 (the loose one)' },
         { id: 'chip_key_21', comp: K.printComp, label: 'bowtie key 2.1 (bigger — print both)' }
     ]) {
         const neckHalf = K.neckHalf - v.comp.neckMm, tipHalf = K.tipHalf + v.comp.tipMm;
@@ -2351,8 +2351,8 @@ function sectionFeatures(spec = SPEC) {
             label: v.label, heightMm: K.height - 2 * spec.jointClearanceMm,
             nominal: { acrossTips: +(2 * tipHalf).toFixed(3) },
             mates: v.comp.tipMm ? `fits the ${(K.fitClearanceMm - v.comp.tipMm).toFixed(2)} rung` : null,
-            plan: bowtieKeyPlan({ neckHalf, tipHalf, depth: K.depth,
-                tipChamfer: K.tipChamfer }) });
+            plan: bowtieKeyPlan({ neckHalf, tipHalf,
+                depth: K.depth + (v.comp.depthMm ?? 0), tipChamfer: K.tipChamfer }) });
     }
 
     // --- hex series. AF 8.6 is the tenon, 9 the socket, 15 the riser shaft.

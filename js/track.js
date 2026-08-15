@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.2.0';
+export const GEOMETRY_VERSION = '2.3.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -492,11 +492,31 @@ export const SPEC = {
          * costs a reprint of the cheapest part in the system, which is why it
          * was chosen over touching the pocket.
          *
+         * `depthMm` IS THE ONE THAT WAS ACTUALLY LOOSE, and it is worth being
+         * blunt about how long it took to see. Brett: "the back of the key to
+         * the back of the slot has a lot of slop, almost a full 1mm". He was
+         * right to the tenth. One rib's pocket runs to 9.4 from the seam, two
+         * mated ribs give an 18.80 cavity, and the key spanned 18.00 — 0.80 mm
+         * of play, all of it in THE DIRECTION THE TWO RAMPS SEPARATE. The key
+         * located the pieces and then let them open a 0.8 mm seam, which is
+         * exactly the failure he has described from the start: "any exposed
+         * seam stops the klipklop".
+         *
+         * It comes straight from `depthClearanceMm` 0.4 per side, and it is
+         * SIX TIMES the 0.07 flank change that felt like nothing in the hand.
+         * The flanks were never the problem; I spent two versions there because
+         * I was reading the ladder as a statement about the flanks when it is a
+         * uniform inset and was reporting on every direction at once.
+         *
+         * 0.3 leaves 0.1 per side, which is the rung Brett called a good tight
+         * fit. Taking the pocket's clearance out instead would have been the
+         * same joint, but it would strand every pocket already printed.
+         *
          * The clearance ladder is the way to check this before committing a
          * batch: a 2.1 key should first enter around the 0.12 rung rather than
          * 0.05. If it will not go home by hand, this is the number to reduce.
          */
-        printComp: { neckMm: -0.07, tipMm: 0.07 },
+        printComp: { neckMm: -0.07, tipMm: 0.07, depthMm: 0.3 },
         // The pocket's far corners are INTERNAL, and a 0.4 nozzle cannot cut
         // one sharper than ~0.3 mm radius. A sharp key corner cannot enter
         // that, so it rides on its corners and never touches the flanks that
