@@ -51,8 +51,16 @@ const SIZE = flag('size', 15);
 // Brett found "too tight" on one of three — and a foot is a much broader part
 // than a riser, so it is exactly where a print-size effect would differ. Off by
 // default because a foot is ~4x the plastic of a 15 mm riser.
-const FEET = (process.argv[process.argv.indexOf('--feet') + 1] || '')
-    .split(',').filter(Boolean).map(Number);
+const list = (n) => (argv[argv.indexOf(`--${n}`) + 1] || '').split(',').filter(Boolean).map(Number);
+const FEET = list('feet');
+// `--tall 8.45,8.60` adds 60 mm risers at those diameters. THIS IS THE ONE
+// CONTROL THE SWEEP OTHERWISE LACKS. Every coupon above is a 15 mm riser, so a
+// number read off them is calibrated for a 15 — and the leading explanation for
+// the whole fault is that a tenon's printed size depends on the part carrying
+// it (a foot's measures 9.73 across corners, a riser's 9.65). If that is height,
+// a 60's tenon differs from a 15's and the sweep answers for the wrong part.
+// Same drawn diameter at two heights settles it directly.
+const TALL = list('tall');
 const OUT = path.join(ROOT, 'test-parts', 'tenon_sweep');
 
 await initCSG();
@@ -78,8 +86,16 @@ const arrays = (g) => {
 const dias = [];
 for (let d = FROM; d <= TO + 1e-9; d += STEP) dias.push(+d.toFixed(3));
 
+// A BUILD ITEM'S TRANSFORM IS [X, Y, Z] IN PRINTER SPACE, AND Z IS HEIGHT.
+// The feet were first given `at: [x, 0, 45]` meaning "45 mm back on the bed",
+// which actually lifted them 45 mm into the air; BambuStudio met the file with
+// "Multi-part object detected ... objects positioned at multiple heights" and
+// offered to merge them into one object. The second slot is the one that moves
+// a part across the plate. Parts also have to be placed about the BED CENTRE —
+// the mesh sits at the origin, so without this the row straddles the corner.
+const BED = 256;
 // One row, 22 mm apart: a 15 AF hex is 17.3 across corners, so this clears.
-// A foot flares to 36, so feet get their own row further back.
+// A foot flares to 36, so feet get their own row 50 mm away.
 const PITCH = 22;
 const parts = [];
 const rows = [];
@@ -103,9 +119,26 @@ for (let i = 0; i < dias.length; i++) {
     }
     parts.push({
         name: `tenon_${tag}`, positions: g.positions, indices: g.indices,
-        at: [(i - (dias.length - 1) / 2) * PITCH, 0, 0]
+        at: [BED / 2 + (i - (dias.length - 1) / 2) * PITCH, BED / 2 - 25, 0]
     });
     rows.push({ dia, tag, cm3: +(r.volumeMm3 / 1000).toFixed(2) });
+}
+
+for (let i = 0; i < TALL.length; i++) {
+    const dia = TALL[i];
+    const tag = String(Math.round(dia * 100));
+    const g = buildRiserGeometry(60, SPEC, { roundTenonDia: dia, code: `T ${tag}` });
+    const r = analyzeMesh(g.positions, g.indices);
+    if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
+        console.log(` FAIL  tall dia ${dia}  nonmanifold=${r.nonManifoldEdges} winding=${r.isConsistent}`);
+        bad++;
+        continue;
+    }
+    parts.push({
+        name: `tall60_${tag}`, positions: g.positions, indices: g.indices,
+        at: [BED / 2 + (i - (TALL.length - 1) / 2) * 30, BED / 2 - 70, 0]
+    });
+    rows.push({ dia, tag, cm3: +(r.volumeMm3 / 1000).toFixed(2), tall: true });
 }
 
 for (let i = 0; i < FEET.length; i++) {
@@ -120,7 +153,7 @@ for (let i = 0; i < FEET.length; i++) {
     }
     parts.push({
         name: `foot_${tag}`, positions: g.positions, indices: g.indices,
-        at: [(i - (FEET.length - 1) / 2) * 40, 0, 45]
+        at: [BED / 2 + (i - (FEET.length - 1) / 2) * 45, BED / 2 + 25, 0]
     });
     rows.push({ dia, tag, cm3: +(r.volumeMm3 / 1000).toFixed(2), foot: true });
 }
@@ -130,21 +163,24 @@ if (bad) {
     process.exit(1);
 }
 
-const file = path.join(OUT, `tenon_sweep_${dias.length}x${FEET.length ? `_${FEET.length}feet` : ''}.3mf`);
+const file = path.join(OUT, `tenon_sweep_${dias.length}x${TALL.length ? `_${TALL.length}tall` : ''}${FEET.length ? `_${FEET.length}feet` : ''}.3mf`);
 fs.writeFileSync(file, zip(generateMultiObject3MFXML(parts)));
 
 const total = rows.reduce((a, b) => a + b.cm3, 0);
 console.log(`\nROUND-TENON SWEEP — ${dias.length} real ${SIZE} mm risers${FEET.length ? ` + ${FEET.length} feet` : ''}, hex sockets unchanged\n`);
 console.log('  engraved   tenon dia    (hex socket is drawn 8.750 AF; it prints smaller)');
 for (const r of rows) {
-    const note = r.foot ? '   <- FOOT' : Math.abs(r.dia - 8.60) < 1e-9 ? '   <- todays hex tenon, across flats' : '';
+    const note = r.foot ? '   <- FOOT (broad part)'
+        : r.tall ? '   <- 60 mm RISER (height control)'
+        : Math.abs(r.dia - 8.60) < 1e-9 ? '   <- todays hex tenon, across flats' : '';
     console.log(`     ${r.tag}       ${r.dia.toFixed(2)} mm${note}`);
 }
 console.log(`\n  ${path.relative(ROOT, file)}`);
 // Solid volume x density OVERSTATES it by nearly 2x — these are infilled, not
 // solid. Sliced, the 10+2 plate is 29.3 g / 1h11 against the 53 g that
 // arithmetic predicted. Quote the slicer, not the density.
-console.log(`  ${total.toFixed(1)} cm3 of solid, but sliced the 10+2 plate is 29.3 g / 1h11\n`);
+console.log(`  ${total.toFixed(1)} cm3 of solid — sliced, 10 risers is 29.3 g / 1h11 and the`);
+console.log('  full 10 + 2 tall + 2 feet plate is 41.4 g / 2h00\n');
 console.log('  HOW TO READ IT: push each one into a socket you already own — a riser you');
 console.log('  printed, not a new part. The first that grips without needing force is the');
 console.log('  number. Try the loose 60 and the too-tight foot both, and note if they');
