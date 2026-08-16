@@ -296,6 +296,26 @@ viaduct curve 71 mm.
   open. Two claims died with this bug: that the slicer is nondeterministic
   (it is not — the same file now scores identically twice), and that wall 2.4
   fixes the viaduct's arcade (it does not).
+- **BAMBU'S CANTILEVER WARNING IS ABOUT THE UNDER-DECK CAVITY, AND A SOLID ONE
+  CLEARS IT.** This overturns a claim that stood for most of the project — that
+  it "fires on curves whatever the geometry" and could never be silenced. It
+  went untested because nothing could READ it: the warning is in the slicer's
+  `result.json` at `sliced_plates[0].warning_message`, verbatim "It seems object
+  curveR_1 has floating regions", and `scripts/curve_variants.mjs` captures it
+  on every slice now. The first control settled it, and Brett confirmed it in
+  his own GUI — a ribbed curve warns, a solid-cavity one does not. The old
+  "warns even with the arcade suppressed" evidence was a VIADUCT, a different
+  underside; nobody had run the equivalent on a minimal curve.
+  **THE WARNING IS STILL NOT A QUALITY SIGNAL.** Silencing it says nothing about
+  whether the walking surface comes out clean, and every print verdict in this
+  file was reached without it. Judge the middle third.
+- **QUOTE YOUR OWN SLICER PROFILE, NOT THE HARNESS'S.** The scripts here use
+  `0.20mm Standard @BBL P2S` + PETG HF + 15% infill, and Brett's GUI profile is
+  not that. The SAME curve file: 89.8 g on the harness, 114 g in his GUI. Worse,
+  the two disagree on the SIGN of a comparison — solid-vs-ribbed is +12 g on the
+  harness and -14 g in his GUI, because a ribbed curve is mostly thin walls
+  (which his wall settings inflate) while a solid one is mostly infill. Harness
+  numbers are for RANKING variants; anything absolute has to come off his slicer.
 - **A 3MF's file hash is not its content.** `fflate.zipSync` stamps zip entries
   with the current time, so identical geometry hashes differently every second.
   Compare `3D/3dmodel.model` after unzipping. Export meshes ARE deterministic
