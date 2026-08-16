@@ -363,6 +363,15 @@ viaduct curve 71 mm.
   minor, and can easily be cleaned or left." It is unique to track pieces
   because a riser's socket opens onto the build plate and this one cannot —
   the socket must stand vertical in the tower, so it tilts with the part.
+  **THIS IS ALSO WHAT BAMBU'S FLOATING-CANTILEVER WARNING MEANS.** The same
+  solid switch built with no support station at all slices SILENT (409.1 cm3,
+  138.74 g) where the identical part carrying its socket warns, so the warning
+  names the collar recess and nothing else. It is therefore pointing at a defect
+  already inspected in plastic and accepted, which is why no geometry change
+  ever silenced it. It is marginal at the checker's threshold too: 0.044 mm of
+  socket station flips it, and the shipped straight is silent only by luck
+  (nudge its socket -0.05 mm and it warns). Judge parts on bridge MOVE length
+  and open-ended run length; `scripts/floating_regions.mjs` locates patches.
 - **NO CURVE ORIENTATION HAS YET PRINTED ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT
   curve failed on its arched skirts (its deck was clean); the MINIMAL curve's
