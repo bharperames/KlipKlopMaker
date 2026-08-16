@@ -286,6 +286,138 @@ const ribs = (pitchMm, thickMm) => ({
     ops: ribOps({ pitchMm, thickMm })
 });
 
+/**
+ * SPINE WITH A CAPITAL — a wider strip at the top so the SLICER anchors to it.
+ *
+ * Brett, watching the first floor layer go down on a printed straight: "the
+ * sagging (caught by the ribs, but not anchored to them)", and "the gcode is
+ * still going from edge to edge". Measured, he is right: 290 of 404 bridge
+ * moves span the full 49.3 mm wall to wall, straight over both spines.
+ *
+ * A 0.8 mm strip is evidently too narrow for the slicer's bridge-region
+ * detection to split the span — it sees one region and lays one continuous
+ * extrusion. Widening only the TOP gives it a real supported band to terminate
+ * on, at almost no material: the spine stays 0.8 mm for its height and flares
+ * over the last `capH`.
+ */
+function spineCapOps({ count, thickMm, capMm, capH }) {
+    return (piece, spec) => {
+        const pl = undersidePlane(piece, spec);
+        const uHalf = piece.innerWidth / 2 + spec.wall / 2;
+        const s0 = spec.key.ribThk - 0.5, s1 = piece.planLen - spec.key.ribThk + 0.5;
+        const steps = Math.max(2, Math.ceil((s1 - s0) / 3));
+        const top = -spec.floorThk + 0.3;
+        const ops = [];
+        for (let i = 1; i <= count; i++) {
+            const u = -uHalf + (2 * uHalf * i) / (count + 1);
+            const stations = [], profiles = [];
+            for (let k = 0; k <= steps; k++) {
+                const sAt = s0 + ((s1 - s0) * k) / steps;
+                const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
+                const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+                stations.push({ s: sAt, origin: [p.x, y, p.z], right });
+                const bot = (uu) => pl.at(p.x + right[0] * uu, p.z + right[2] * uu) - y;
+                // shaft, then flare out to the capital over capH
+                // FULL WIDTH AT THE BRIDGING LAYER, reached by a 45 deg taper.
+                //
+                // Two shapes were wrong before this. A square step gets the
+                // width but is 1.1 mm of 90 deg ledge running the whole 129 mm,
+                // which the scorer reported as two 71.8 mm open-ended runs. A
+                // taper finishing at the TOP is self-supporting but only 2.56 mm
+                // wide at the ceiling — under the threshold — and the long
+                // bridge moves came straight back.
+                //
+                // The layer that matters is the ceiling itself, so the taper has
+                // to be DONE by then: it opens from `thickMm` to `capMm` at 45
+                // deg and finishes one layer below the ceiling, then runs
+                // straight up through it.
+                const ceil = -spec.floorThk - 0.2;
+                const rise = (capMm - thickMm) / 2;          // 45 deg
+                profiles.push([
+                    [u - thickMm / 2, bot(u - thickMm / 2)],
+                    [u + thickMm / 2, bot(u + thickMm / 2)],
+                    [u + thickMm / 2, ceil - rise],
+                    [u + capMm / 2, ceil],
+                    [u + capMm / 2, top],
+                    [u - capMm / 2, top],
+                    [u - capMm / 2, ceil],
+                    [u - thickMm / 2, ceil - rise]
+                ]);
+            }
+            ops.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
+        }
+        return ops;
+    };
+}
+
+/**
+ * RIBS WITH A CAPITAL — the same fix as the spine's, rotated 90 degrees.
+ *
+ * A curve's ribs run ACROSS the channel while its long bridge moves sweep ALONG
+ * the arc, so the rib has to widen IN S rather than in u. Measured on the
+ * shipped curve: 209 bridge moves over 30 mm, longest 65.7, straight over ribs
+ * the slicer cannot see — the same 0.8 mm blindness the straight had.
+ *
+ * Built by sweeping the rib's SILHOUETTE along u instead of sweeping a profile
+ * along s. The silhouette is the T: a 0.8 mm shaft, a 45 deg flare, and full
+ * `capMm` width from one layer below the ceiling upward. Each station carries
+ * its own bottom, because the underside plane is tilted across the channel and
+ * a rib's foot is not level.
+ */
+function ribCapOps({ pitchMm, thickMm, capMm }) {
+    return (piece, spec) => {
+        const pl = undersidePlane(piece, spec);
+        const uHalf = piece.innerWidth / 2 + spec.wall / 2;
+        const s0 = spec.key.ribThk, s1 = piece.planLen - spec.key.ribThk;
+        const n = Math.max(1, Math.round((s1 - s0) / pitchMm));
+        const top = -spec.floorThk + 0.3;
+        const ceil = -spec.floorThk - 0.2;
+        const rise = (capMm - thickMm) / 2;
+        const ops = [];
+        for (let i = 1; i < n; i++) {
+            const sc = s0 + ((s1 - s0) * i) / n;
+            const p = planPosAt(piece, sc), y = deckYAt(piece, sc);
+            const dir = [Math.cos(p.h), 0, Math.sin(p.h)];
+            const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+            const steps = 8;
+            const stations = [], profiles = [];
+            for (let k = 0; k <= steps; k++) {
+                const u = -uHalf + (2 * uHalf * k) / steps;
+                stations.push({ origin: [p.x + right[0] * u, y, p.z + right[2] * u],
+                    right: dir, up: [0, 1, 0] });
+                // THE FOOT FOLLOWS THE PLANE ALONG THE ARC TOO. A flat bottom
+                // taken at the station's own s pokes through on the downhill
+                // edge by grad * thick/2 — 0.198 * 0.4 = 0.08 mm, which is
+                // exactly what the gate reported as "below the bed".
+                const bot = (ds) => pl.at(p.x + right[0] * u + dir[0] * ds,
+                    p.z + right[2] * u + dir[2] * ds) - y;
+                profiles.push([
+                    [-thickMm / 2, bot(-thickMm / 2)], [thickMm / 2, bot(thickMm / 2)],
+                    [thickMm / 2, ceil - rise], [capMm / 2, ceil],
+                    [capMm / 2, top], [-capMm / 2, top],
+                    [-capMm / 2, ceil], [-thickMm / 2, ceil - rise]
+                ]);
+            }
+            ops.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
+        }
+        return ops;
+    };
+}
+
+const cappedRibs = (pitchMm, thickMm, capMm) => ({
+    name: `ribcap_${pitchMm}_${String(thickMm).replace('.', 'p')}_top${String(capMm).replace('.', 'p')}`,
+    note: `ribs every ${pitchMm} mm, ${thickMm} mm with a ${capMm} mm capital`,
+    kind: 'ribcap',
+    ops: ribCapOps({ pitchMm, thickMm, capMm })
+});
+
+const capped = (count, thickMm, capMm, capH = 1.5) => ({
+    name: `cap_${count}x${String(thickMm).replace('.', 'p')}_top${String(capMm).replace('.', 'p')}`,
+    note: `${count} spines ${thickMm} mm with a ${capMm} mm capital over the top ${capH} mm`,
+    kind: 'cap',
+    ops: spineCapOps({ count, thickMm, capMm, capH })
+});
+
 const spines = (count, thickMm) => ({
     name: `spine_${count}_${String(thickMm).replace('.', 'p')}`,
     note: `${count} spine(s) along the piece, ${thickMm} mm, bed to deck`,
@@ -353,7 +485,10 @@ const VARIANTS = [
     cell(16, 0.8), cell(20, 0.8), cell(24, 0.8), cell(16, 0.45), cell(24, 0.45),
     posts(14, 3), posts(18, 3), posts(22, 3.5),
     spines(1, 0.8), spines(1, 1.6), spines(2, 0.8), spines(3, 0.8),
+    capped(2, 0.8, 2), capped(2, 0.8, 3), capped(2, 0.8, 5),
+    capped(1, 0.8, 3), capped(1, 0.8, 5), capped(1, 1.6, 5),
     ribs(10, 0.8), ribs(14, 0.8), ribs(18, 0.8), ribs(24, 0.8),
+    cappedRibs(14, 0.8, 3), cappedRibs(18, 0.8, 3), cappedRibs(14, 0.8, 5),
     // A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK. This one
     // runs the comb straight through the end ribs, sealing the bowtie throat;
     // `--selftest` builds it and PASSES ONLY IF IT IS REJECTED. Without it the
@@ -698,12 +833,14 @@ function score(gcodeFile) {
     let prev = new Uint8Array(NX * NY), cur = new Uint8Array(NX * NY);
     let printZ = null;
     const runs = [];
+    const moveLens = [];
 
     for (const mv of moves(lines)) {
         if (!mv.extruding) continue;
         if (printZ === null) printZ = mv.z;
         else if (mv.z > printZ + 0.05) { prev = cur; cur = new Uint8Array(NX * NY); printZ = mv.z; }
 
+        if (/Bridge/i.test(mv.feature)) moveLens.push(pathLength(mv.pts));
         if (/Bridge|Overhang|Floating/i.test(mv.feature)) {
             // Walk the move BY ARC LENGTH along its own path. An arc is one
             // move with a bent path, so its unsupported stretches are measured
@@ -751,6 +888,18 @@ function score(gcodeFile) {
         // A straight's ceiling is flat and anchored at both rails, so almost
         // none of it is open-ended — those strands are SAGGING BRIDGES. Open-
         // ended length predicts collapse; bridge length predicts surface.
+        // BRIDGE MOVE LENGTH, which is a different question from unsupported
+        // run length and the one Brett's print exposed. A 0.8 mm spine breaks
+        // the RUN over empty cells — the occupancy grid sees support underneath
+        // — while the slicer still lays ONE continuous 49 mm extrusion at bridge
+        // speed straight over it. That line sags between real anchors and does
+        // not bond to the sliver it drapes across: "caught by the ribs, but not
+        // anchored to them". Run length predicts droop between supports; MOVE
+        // length says whether the slicer treated it as one long bridge at all.
+        moveMax: Math.max(0, ...moveLens),
+        moveOver30: moveLens.filter(v => v >= 30).length,
+        moveOver40: moveLens.filter(v => v >= 40).length,
+        moves: moveLens.length,
         bridgedMax: Math.max(0, ...bridged),
         br10: sum(bridged.filter(v => v >= 10)),
         br20: sum(bridged.filter(v => v >= 20)),
@@ -795,6 +944,7 @@ if (argv.includes('--rescore')) {
         console.log(`\n  ${f.replace('.gcode', '')}`);
         console.log(`    open-ended ${s.open.toFixed(0)} mm  >5 ${s.over5.toFixed(0)}  >10 ${s.over10.toFixed(0)}  >20 ${s.over20.toFixed(0)}  max ${s.openMax.toFixed(1)}`);
         console.log(`    BRIDGED    ${s.bridged.toFixed(0)} mm  >10 ${s.br10.toFixed(0)}  >20 ${s.br20.toFixed(0)}  >40 ${s.br40.toFixed(0)}  max ${s.bridgedMax.toFixed(1)}`);
+        console.log(`    BRIDGE MOVES ${s.moves}   over 30 mm ${s.moveOver30}   over 40 mm ${s.moveOver40}   longest ${s.moveMax.toFixed(1)}`);
         console.log(`    longest OPEN runs (len @ print z, at bed x,y):`);
         for (const w of s.worst) console.log(`      ${String(w.len).padStart(5)} mm  z=${String(w.z).padStart(6)}  (${w.at[0]}, ${w.at[1]})`);
         console.log(`    longest BRIDGES:`);

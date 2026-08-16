@@ -1645,7 +1645,7 @@ describe('the deck ceiling is held up', () => {
             { skirtStyle: 'minimal', slopeDeg: 11.2167 });
         const world = pieces.find((q) => q.type === type);
         const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
-        return { g: buildPieceExportGeometry(world, { support: sup }), pc: pieceInFrame(world) };
+        return { g: buildPieceExportGeometry(world, { support: sup }), pc: pieceInFrame(world), sup };
     };
 
     test('a straight carries SPEC.underside.spines walls along it', async () => {
@@ -1670,7 +1670,7 @@ describe('the deck ceiling is held up', () => {
      */
     test('a spine is fused into the end rib at both ends', async () => {
         await initCSG();
-        const { g, pc } = build('straight');
+        const { g, pc, sup } = build('straight');
         const pl = undersidePlane(pc, SPEC);
         const uHalf = pc.innerWidth / 2 + SPEC.wall / 2;
         const u = -uHalf + (2 * uHalf) / (SPEC.underside.spines + 1);
@@ -1687,16 +1687,24 @@ describe('the deck ceiling is held up', () => {
             if (!solid && inside) { inside = false; runs.push([start, s]); }
         }
         if (inside) runs.push([start, pc.planLen]);
-        // ONE run, and it has to reach inside both ribs (which span 0..ribThk
-        // and planLen-ribThk..planLen). Two runs means a gap at an end.
-        const spanning = runs.filter(([a, b]) => b - a > 20);
-        expect(`${spanning.length} continuous run(s) on the spine`)
-            .toBe('1 continuous run(s) on the spine');
-        const [a, b] = spanning[0];
-        expect(`starts inside the entry rib: ${a < SPEC.key.ribThk}`)
+        // It has to reach inside both ribs (which span 0..ribThk and
+        // planLen-ribThk..planLen), and the ONLY break allowed is the socket
+        // bore. A single CENTRE spine runs through the boss, so the bore
+        // legitimately interrupts it — measured 10.6 mm at the boss station,
+        // which is the 9.6 bore plus its mouth flare. Any other gap, or one
+        // anywhere else, is a spine attached to nothing.
+        const spanning = runs.filter(([a, b]) => b - a > 5);
+        expect(`starts inside the entry rib: ${spanning[0][0] < SPEC.key.ribThk}`)
             .toBe('starts inside the entry rib: true');
-        expect(`ends inside the exit rib: ${b > pc.planLen - SPEC.key.ribThk}`)
+        expect(`ends inside the exit rib: ${spanning.at(-1)[1] > pc.planLen - SPEC.key.ribThk}`)
             .toBe('ends inside the exit rib: true');
+        for (let i = 1; i < spanning.length; i++) {
+            const from = spanning[i - 1][1], to = spanning[i][0];
+            const atBoss = Math.abs((from + to) / 2 - (sup?.s ?? pc.planLen / 2)) < SPEC.socket.collarR;
+            expect(`gap ${from.toFixed(1)}..${to.toFixed(1)} is the socket bore: `
+                + `${to - from < 12 && atBoss}`)
+                .toBe(`gap ${from.toFixed(1)}..${to.toFixed(1)} is the socket bore: true`);
+        }
     });
 
     test('a curve carries ribs across it, not spines along it', async () => {

@@ -373,8 +373,35 @@ export const SPEC = {
      * arc, where it does nothing.
      *
      * 0.8 mm is two extrusions. 1.6 measured identically and cost 27 g.
+     *
+     * THE TOP HAS TO BE 3 mm WIDE OR THE SLICER IGNORES IT. Brett, watching a
+     * printed straight: "the sagging (caught by the ribs, but not anchored to
+     * them)... the gcode is still going from edge to edge". Measured, exactly
+     * so: 290 of 404 bridge moves at the ceiling layer spanned the full 49.3 mm
+     * wall to wall, straight over both spines.
+     *
+     * A slicer builds the bridge region as this layer's solid minus what is
+     * supported below, then runs a morphological cleanup to drop slivers. A
+     * 0.8 mm strip is narrower than that cleanup, so the slot it leaves closes
+     * straight back up and the region merges as if the spine were not there; a
+     * bridge line also wants an anchor wider than one extrusion to bond to.
+     * The socket boss is Ø22 and survives both, which is exactly why the head
+     * visibly works around it and ignores the spines.
+     *
+     * Measured threshold, on the ceiling layer: 2 mm changes nothing (521 long
+     * moves against 522), 3 mm takes it to ZERO. So the capital is 3 mm, and it
+     * has to be full width AT the ceiling — a taper finishing above it is only
+     * 2.56 mm there and the long moves come straight back. It opens at 45° and
+     * finishes one layer below.
+     *
+     * ONE SPINE, NOT TWO. Brett: "a single center rib that connects to the
+     * support socket would be more stable and likely enough." Both, measured:
+     * one capped centre spine gives the same 232 long moves as two, at 48.9 g
+     * against 50.7 — and 1.6 g lighter than the two UNCAPPED spines that
+     * shipped before it. At u=0 it also runs through the boss, so it is braced
+     * mid-span instead of standing as a lone 129 mm fin.
      */
-    underside: { spines: 2, spineMm: 0.8, ribPitchMm: 14, ribMm: 0.8 },
+    underside: { spines: 1, spineMm: 0.8, capMm: 3, ribPitchMm: 14, ribMm: 0.8 },
     /**
      * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
      * the 15 mm grid. Same move as the jog: the track piece keeps one shape and

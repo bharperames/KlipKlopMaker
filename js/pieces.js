@@ -1026,16 +1026,38 @@ function undersideSupportOps(piece, spec) {
         }
         return ops;
     }
-    // SPINES along the piece, dividing the channel into equal bays. They run
-    // 0.5 mm INTO each end rib rather than stopping short of it: a butt joint
-    // on the rib's inner face is a coplanar pair the boolean has to resolve,
-    // and stopping short leaves the same orphan gap the ribs had.
+    // SPINES along the piece, each carrying a CAPITAL at the ceiling so the
+    // slicer will actually anchor its bridges to it — see SPEC.underside. They
+    // run 0.5 mm INTO each end rib rather than stopping short of it: a butt
+    // joint on the rib's inner face is a coplanar pair the boolean has to
+    // resolve, and stopping short leaves the orphan gap the ribs once had.
     const a = s0 - 0.5, b = s1 + 0.5;
     const steps = Math.max(2, Math.ceil((b - a) / 3));
+    const capW = U.capMm ?? U.spineMm;
+    const ceil = -spec.floorThk - 0.2;          // one layer below the ceiling
+    const rise = Math.max(0, (capW - U.spineMm) / 2);   // 45 deg
     const ops = [];
     for (let i = 1; i <= U.spines; i++) {
         const u = -uHalf + (2 * uHalf * i) / (U.spines + 1);
-        ops.push(wall(a, b, () => [u - U.spineMm / 2, u + U.spineMm / 2], steps));
+        const stations = [], profiles = [];
+        for (let k = 0; k <= steps; k++) {
+            const sAt = a + ((b - a) * k) / steps;
+            const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
+            const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+            stations.push({ s: sAt, origin: [p.x, y, p.z], right });
+            const bot = (uu) => pl.at(p.x + right[0] * uu, p.z + right[2] * uu) - y;
+            profiles.push([
+                [u - U.spineMm / 2, bot(u - U.spineMm / 2)],
+                [u + U.spineMm / 2, bot(u + U.spineMm / 2)],
+                [u + U.spineMm / 2, ceil - rise],
+                [u + capW / 2, ceil],
+                [u + capW / 2, top],
+                [u - capW / 2, top],
+                [u - capW / 2, ceil],
+                [u - U.spineMm / 2, ceil - rise]
+            ]);
+        }
+        ops.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
     }
     return ops;
 }
