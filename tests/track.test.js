@@ -157,6 +157,7 @@ describe('samplePath', () => {
 // v2: tree tracks — switches, lifts, open ends, ride-path resolution
 // ---------------------------------------------------------------------------
 import { resolveRidePath, openContainers, getContainer, nodeAt, isSwitchNode } from '../js/track.js';
+import { SEGMENT_TYPES, isKnownNode } from '../js/track.js';
 
 describe('switch nodes', () => {
     const seq = ['straight', { type: 'switchL', gate: 'branch', main: ['straight'], branch: ['curveL', 'straight'] }];
@@ -623,6 +624,32 @@ describe('the spacer', () => {
         const viaduct = layoutTrack(SPIRAL, { skirtStyle: 'viaduct' }).pieces.find(p => p.rimY < 1
             && p.type !== 'end' && p.type !== 'start');
         expect(needsPier(viaduct)).toBe(false);
+    });
+
+    /**
+     * An unrecognised token used to become a CURVE. `makePiece` dispatches on
+     * the token with a final `else` meaning "curve", so a scene asking for
+     * `platform` got a 225.6 mm curve carrying the previous piece's drop, with
+     * nothing in `issues` — plausible on screen and wrong everywhere else.
+     */
+    test('an unrecognised piece type is reported and builds nothing', () => {
+        const { pieces, issues } = layoutTrack(['start', 'straight', 'platform', 'curveR', 'end'],
+            { skirtStyle: 'minimal' });
+        const bad = issues.filter(i => i.code === 'unknown-piece');
+        expect(bad).toHaveLength(1);
+        expect(bad[0].level).toBe('error');
+        expect(bad[0].msg).toContain('platform');
+        // and no phantom piece: one curve was asked for, one curve exists
+        expect(pieces.filter(p => /^curve/.test(p.type))).toHaveLength(1);
+        expect(pieces.some(p => p.type === 'platform')).toBe(false);
+    });
+
+    test('every SEGMENT_TYPES token actually builds', () => {
+        for (const kind of SEGMENT_TYPES) {
+            const { pieces, issues } = layoutTrack([kind], { skirtStyle: 'minimal' });
+            expect(`${kind}: ${issues.filter(i => i.code === 'unknown-piece').length}`).toBe(`${kind}: 0`);
+            expect(`${kind}: built`).toBe(`${kind}: ${pieces.some(p => p.type === kind) ? 'built' : 'MISSING'}`);
+        }
     });
 
     test('platforms and elevators keep the rim boss and take no spacer', () => {

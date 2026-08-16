@@ -666,6 +666,27 @@ export function ridgeOffset(s, pitch, height) {
 export const SIMPLE_TYPES = ['straight', 'curveL', 'curveR', 'lift', 'elevator', 'powered'];
 export const isSwitchNode = (n) => typeof n === 'object' && n !== null && (n.type === 'switchL' || n.type === 'switchR');
 
+/**
+ * EVERY SEGMENT TOKEN A SEQUENCE MAY CONTAIN. `switchL`/`switchR` are not here
+ * because they are switch NODES, not segments — see isSwitchNode.
+ *
+ * This exists because `makePiece` dispatches on the token with a final `else`
+ * that means "curve", so ANY unrecognised string became a curve, silently and
+ * with no issue raised: a scene asking for `platform` got a 225.6 mm curve
+ * carrying the previous piece's drop, and looked plausible on screen. A typo in
+ * a scene file should say so, not quietly build something else.
+ *
+ * `switchMain`/`switchBranch` are internal — `walk` synthesises them for a
+ * switch's two role pieces and they never appear in a sequence.
+ */
+export const SEGMENT_TYPES = Object.freeze([
+    'start', 'end', 'straight', 'curveL', 'curveR', 'lift', 'powered', 'elevator'
+]);
+
+/** Is this node something `layoutTrack` can actually build? */
+export const isKnownNode = (n) => isSwitchNode(n) ||
+    SEGMENT_TYPES.includes(typeof n === 'string' ? n : (n && n.type));
+
 /** Array a `containerPath` refers to: [] = root; [i,'main',...] descends switches. */
 export function getContainer(sequence, containerPath) {
     let arr = sequence;
@@ -873,6 +894,13 @@ export function layoutTrack(sequence, params = {}) {
                 return null;
             }
             const kind = typeof node === 'string' ? node : node.type;
+            // UNKNOWN TOKEN: report it and build NOTHING. Falling through would
+            // hand `makePiece` a kind its final `else` reads as a curve.
+            if (!SEGMENT_TYPES.includes(kind)) {
+                issues.push({ level: 'error', code: 'unknown-piece',
+                    msg: `"${kind}" is not a piece type. Use one of: ${SEGMENT_TYPES.join(', ')}, or a switch node.` });
+                continue;
+            }
             const piece = makePiece(kind, node, cursor, entryDeck, { address, active });
             piece.prevIndex = prev ? prev.index : null;
             prev = piece;
@@ -905,6 +933,7 @@ export function layoutTrack(sequence, params = {}) {
         const tanL = tanLift;
         for (const node of sequence) {
             const kind = typeof node === 'string' ? node : node.type;
+            if (!SEGMENT_TYPES.includes(kind)) continue;   // reported in walk()
             let plan, drop;
             if (kind === 'straight' || kind === 'lift' || kind === 'elevator' || kind === 'powered') {
                 plan = segmentPlan('straightish', cur, { len: p.tileLen });
