@@ -44,10 +44,14 @@ const VALUES = arg('values', '').split(',').filter(Boolean).map(Number);
 const PIECE = arg('piece', 'straight');
 const SPACING = Number(arg('spacing', 60));
 const PLATE = Number(arg('plate', 256));      // Bambu X1C bed
-// One plate per variant. A packed plate is fine for printing but useless as a
-// diagnostic: Bambu attributes a support warning to the wrong object when
-// several are loaded, and does not re-run the check when one is deleted — only
-// on load. Every verdict gathered from a packed plate here proved unreliable.
+// One plate per variant, so a variant is judged on its own print.
+//
+// A NOTE ON WHAT THIS IS NOT. This comment used to say Bambu attributes a
+// support warning to the WRONG OBJECT on a packed plate. Brett, who is the one
+// reading the screen: "The warning is not misattributed, it is always the
+// curve." So the misattribution claim is withdrawn — what remains true is that
+// the check is re-run on LOAD and not on delete, so reload between checks, and
+// that a solo plate contains a failure to the part that caused it.
 const SOLO = argv.includes('--solo');
 
 /** Downward skirt-wall area, split by angle from horizontal. */

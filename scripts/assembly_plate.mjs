@@ -99,14 +99,21 @@ for (const it of items) {
 }
 if (bad) { console.error(`\n${bad} part(s) failed the mesh gate — NOTHING WRITTEN.`); process.exit(1); }
 
-// TWO PLATES, AND THE CURVE IS ALONE ON ONE.
+// TWO PLATES, AND THE CURVE IS ALONE ON ONE — to contain a failure, not to
+// keep a warning straight.
 //
-// Not a packing compromise — it is what this project's own guidance says. The
-// curve trips Bambu's cantilever warning whatever its geometry, and on a packed
-// plate Bambu attributes that warning to the wrong object and does not re-run
-// the check when one is deleted. A verdict gathered from a packed plate has
-// been unreliable here before. It also happens to pack better: the curve is
-// 179x178 on a 244 mm usable bed and leaves only awkward strips.
+// Brett: "The warning is not misattributed, it is always the curve, the reason
+// to print alone is being conservative about failures." The curve is the part
+// with no successful print behind it and the longest run on the plate at 3h43;
+// putting the straight and every support part beside it means one bad curve
+// costs all of them. Separated, a failure costs only itself.
+//
+// (The cantilever warning does fire on this curve, and it will fire on any
+// curve whatever its geometry — it tests area and cannot tell a bridge from a
+// cantilever. Ignore it and judge the print.)
+//
+// It packs better too: the curve is 179x178 on a 244 mm usable bed and leaves
+// only awkward strips — a shelf packer overflowed on a 24 mm key.
 //
 // Printer space is X=x, Y=-z, Z=y, so a part's bed footprint is (w, d) and the
 // build item translation centres it there. Z is HEIGHT: -y0 puts it on the bed.
