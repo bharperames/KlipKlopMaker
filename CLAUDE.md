@@ -193,6 +193,17 @@ building, gait physics simulation, and watertight STL/3MF export.
   whether the numbers transfer: from above a hole shows its narrowest layer
   and an island its widest, which on a 5-layer part is the squished first
   layer, so slice it with production's first-layer settings.
+  **A LADDER CARD SETTLES A SHAPE QUESTION, NOT A MASS ONE**, and the pillar
+  joint is the case that proved the difference. Its fault was that ONE drawing
+  prints 0.08 mm wider across corners on a broad foot than on a slender riser,
+  so no rung on a 3 mm card — a third mass again — could have found it. What
+  found it was `scripts/tenon_sweep.mjs --compare`, which builds REAL 15 mm
+  risers and hands you the mating half from parts already printed. A `lad_bore`
+  rung for that joint was added and removed the same day for exactly this
+  reason: on the card it would look authoritative and answer nothing. The
+  ladder's real wins are the KEY (right, and CLAUDE.md says why: uniform insets
+  that report every direction at once) and the GATE PIN. Re-run the riser sweep
+  if the filament or printer changes.
   The **ladder card** is the other half and is a HAND test: a separate,
   thicker part (`SECTION.ladderThicknessMm` = 3) carrying each joint's female
   feature cut at a sweep of per-side clearances, with the real male part as a

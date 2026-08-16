@@ -2441,29 +2441,7 @@ export const SECTION = {
      * 0.20 is the shipped hex (tenon 8.6 in socket 9.0) and 0.12 the shipped
      * bowtie, so both land inside the ladder rather than off its end.
      */
-    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30],
-    /**
-     * THE PILLAR JOINT'S OWN LADDER, because it is no longer hex in hex.
-     *
-     * A hex tenon in a ROUND bore lands on its six CORNERS, so the number that
-     * decides the fit is INTERFERENCE against the tenon's ACROSS-CORNERS, not
-     * clearance against its across-flats. Swept the other way from
-     * `ladderSteps`: bore diameter = tenon AC - 2 * i.
-     *
-     * COARSER ON PURPOSE. Brett, on the 0.05 sweep: ".05mm is not enough to
-     * make a difference" — 0.025 per side, a third of the 0.07/side already
-     * recorded as unfeelable. These are 0.08 apart, which is 0.16 mm of
-     * diameter between rungs.
-     *
-     * 0.165 is what ships (tenon AC 9.93 drawn, bore 9.60) and sits mid-ladder.
-     *
-     * CAVEAT, and it is the reason this card did not settle the joint: a 3 mm
-     * card is a third plastic mass again, and the whole fault here was
-     * mass-dependent — the same drawing printing 0.08 wider on a broad foot
-     * than on a slender riser. What settled it was a sweep of REAL 15 mm
-     * risers. Read this ladder as a shape check, not as a substitute for that.
-     */
-    boreSteps: [0, 0.08, 0.165, 0.25, 0.33]
+    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
 };
 
 /**
@@ -2535,19 +2513,19 @@ function sectionFeatures(spec = SPEC) {
     };
     // The TRACK BOSS still takes a hex tenon in a hex socket, so this ladder
     // stays — but it is that joint's now, not the pillar's.
+    //
+    // AND THERE IS DELIBERATELY NO RUNG FOR THE PILLAR BORE. A rung was added
+    // here and removed the same day: the pillar joint is a hex tenon in a round
+    // bore, and its fault was never a shape question this card could answer. It
+    // was MASS — one drawing printing 0.08 mm wider across corners on a broad
+    // foot than on a slender riser — and a 3 mm card is a third mass again. A
+    // ladder card settles a SHAPE question; only a coupon cut from the real
+    // part settles a mass one, which is why `scripts/tenon_sweep.mjs --compare`
+    // builds actual 15 mm risers and is what settled 9.60. Re-run that if the
+    // filament or the printer ever changes; do not put it on this card, where
+    // it would look authoritative and answer nothing.
     rung('lad_hex', 'track hex socket', (c) => hexPlan(tenonAF + 2 * c),
         (c) => ({ acrossFlats: +(tenonAF + 2 * c).toFixed(3) }), 0.20);
-    // THE PILLAR JOINT: the same hex tenon, but in a ROUND bore, so the rungs
-    // sweep INTERFERENCE against its across-corners. See SECTION.boreSteps.
-    const tenonAC = tenonAF / Math.cos(Math.PI / 6);
-    for (const i of SECTION.boreSteps) {
-        const dia = tenonAC - 2 * i;
-        const tag = String(Math.round(i * 100)).padStart(2, '0');
-        f.push({ id: `lad_bore_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder', tag,
-            label: `pillar bore -${i.toFixed(3)}/side`, clearancePerSide: -i,
-            nominal: { diameter: +dia.toFixed(3) }, plan: circlePlan(dia / 2, 96),
-            mates: Math.abs(dia - S.boreDia) < 0.02 ? 'ships today' : null });
-    }
     rung('lad_pin', 'gate bore', (c) => circlePlan(GATE.pinR + c),
         (c) => ({ diameter: +(2 * (GATE.pinR + c)).toFixed(3) }), 0);
     rung('lad_key', 'bowtie cavity', (c) => insetPolygon(bowtieKeyPlan({
