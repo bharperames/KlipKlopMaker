@@ -5234,9 +5234,10 @@ async function shopExport(format = '3mf') {
             files['MEASUREMENTS.md'] = fflate.strToU8(calibrationSheet(
                 shop.calibration.coupons.map(c => ({ ...c,
                     vol: shop.items.find(it => it.name === c.name)?.vol ?? 0 }))));
-            files['SECTION_NOMINALS.json'] = fflate.strToU8(
-                JSON.stringify(shop.calibration.manifest, null, 2) + '\n');
-            files['SECTION_README.md'] = fflate.strToU8(
+            // SECTION_NOMINALS.json is gone with the card it served: it existed
+            // so a script could match a photographed contour to its feature
+            // without anyone typing a number, and there is no photograph now.
+            files['LADDER_README.md'] = fflate.strToU8(
                 sectionReadme({ manifest: shop.calibration.manifest }));
         }
         files['README.txt'] = fflate.strToU8(exportReadme(
@@ -5415,86 +5416,52 @@ function calibrationSheet(items) {
 }
 
 /**
- * How to actually take the measurement, next to the numbers it produces.
- * The ArUco constants are FossilRecord's, because that is the pipeline that
- * will read the photograph — a sheet drawn to different constants measures
- * nothing.
+ * How to read the one card that is left.
+ *
+ * This used to document a camera workflow — a 1 mm section card of graded holes
+ * and islands, reference squares, an ArUco sheet, and a JSON of nominals for a
+ * script to match contours against. All of it is gone, and the reason is worth
+ * keeping: that card built an XY error CURVE for predicting feature sizes, and
+ * nothing decides anything from that curve any more. The joints are measured
+ * directly on coupons cut from the real builders, and the joints are the truth.
+ * It also could not answer the question that actually bit this project — the
+ * same drawing printing wider in a broad part than a slender one — because a
+ * card is a third plastic mass again.
  */
 function sectionReadme(sec) {
     const m = sec.manifest;
     const L = [];
-    L.push(`# XY section — measured by camera, not calipers`, '');
-    L.push(`Five layers (${m.thicknessMm.toFixed(1)} mm) of the same profiles the track is`,
-        'built from. Print `section_plate.3mf`, lift it off the bed, lay it on the',
-        'ArUco sheet and photograph it square-on.', '');
-    L.push('## The sheet', '');
-    L.push(`- dictionary \`${m.aruco.dict}\`, marker ids ${m.aruco.markerIds.join(', ')} `
-        + `(TL, TR, BR, BL), ${m.aruco.markerSizeMm} mm, on ${m.aruco.sheet}`);
-    L.push(`- these are ${m.aruco.source}'s constants — \`detect_aruco_markers\` returns`,
-        '  the corners and a pixels-per-mm, and that scale is what turns a contour',
-        '  into millimetres');
-    L.push('', `## What is on it — card ${m.cardSizeMm[0]} x ${m.cardSizeMm[1]} mm`, '');
-    L.push('| series | holes | islands |');
-    L.push('|---|---|---|');
-    for (const g of ['fit', 'reference', 'round', 'hex']) {
-        const size = (f) => Object.values(f.nominal).map(v => (+v).toFixed(2)).join('/');
-        const h = m.features.filter(f => f.group === g && f.kind === 'hole').map(size);
-        const i = m.features.filter(f => f.group === g && f.kind === 'island').map(size);
-        if (!h.length && !i.length) continue;
-        L.push(`| ${g} | ${h.join(', ') || '—'} | ${i.join(', ') || '—'} |`);
-    }
-    L.push('', 'A GRADED SERIES, not just the sizes that mate. Printed error is not one',
-        'number: the same over-extrusion eats a larger fraction of a small hole than a',
-        'large one, and a hex loses its points before a circle loses its rim. Measuring',
-        'the series gives an error CURVE to read the real features off, instead of one',
-        'point and a hope. The sizes that actually mate are IN the series and flagged',
-        '`mates` in the JSON — socket AF 9, tenon AF 8.6, riser shaft AF 15, gate bore',
-        'Ø4 — so they come off the same curve as everything else.', '');
-    L.push('HOLES AND ISLANDS BOTH, because they carry opposite error: a hole prints',
-        'small and an island prints large, by about the same amount, so measuring one',
-        'of them tells you half of a fit.', '');
-    L.push('The two REFERENCE SQUARES (10.000 and 20.000 mm, one of each kind) are how',
-        'the camera checks its own scale. If the 20 mm reference reads 20.14, every',
-        'other number carries that same 0.7% and it is the marker fit that needs',
-        'fixing, not the printer.', '');
-    L.push('## The ladder card — the fit test, read by hand', '');
-    L.push(`Separate part, ${m.ladderThicknessMm.toFixed(1)} mm thick rather than `
-        + `${m.thicknessMm.toFixed(1)}, because a 1 mm hole is a knife-edge gauge and not`,
-        'a joint — the male part barely engages, so "fits" comes down to how hard you',
-        'pushed. The chips are the REAL parts at real engagement height, so what is being',
-        'tested is the joint rather than a model of it.', '');
-    L.push('**Push each chip along its row and note the first rung it enters. That rung is',
-        'the clearance that shape needs.** No camera and no inference: a photograph reads',
-        'clearances to about 0.18 mm, and your fingers do better than that.', '');
-    L.push('| chip | rungs, per-side clearance mm |');
+    L.push('# The bowtie ladder — a fit test, read by hand', '');
+    L.push(`One card, ${m.ladderCardSizeMm[0]} x ${m.ladderCardSizeMm[1]} mm and `
+        + `${m.ladderThicknessMm.toFixed(1)} mm thick. It is thick on purpose: a 1 mm`,
+        'hole is a knife-edge gauge and not a joint — the male part barely engages, so',
+        '"fits" comes down to how hard you pushed.', '');
+    L.push('**Push the printed `cal_key` along the row and note the first rung it enters.',
+        'That rung is the clearance the bowtie needs.** No camera and no inference: a',
+        'photograph reads clearances to about 0.18 mm, and your fingers do better.', '');
+    L.push('| rung | per-side clearance mm |');
     L.push('|---|---|');
-    for (const [chip, pre] of [['hex tenon 8.60', 'lad_hex'], ['gate pin Ø4.00', 'lad_pin'],
-                               ['bowtie key', 'lad_key']]) {
-        const rungs = m.features.filter(f => f.id.startsWith(pre))
-            .map(f => (f.mates ? `**${f.clearancePerSide.toFixed(2)}**` : f.clearancePerSide.toFixed(2)));
-        L.push(`| ${chip} | ${rungs.join(' · ')} |`);
+    for (const f of m.features) {
+        L.push(`| ${f.tag} | ${f.mates ? `**${f.clearancePerSide.toFixed(2)}** (ships today)`
+            : f.clearancePerSide.toFixed(2)} |`);
     }
-    L.push('', 'Bold rungs are what ships today. The bowtie cavity is the KEY\'s own outline',
-        'grown by the clearance — an assembled seam presents the whole bowtie, not the',
-        'half-pocket a single rib carries, so that is what the chip has to enter.', '');
-    L.push('', '## Which layer you are actually measuring', '');
-    L.push('Seen from above an island shows its WIDEST layer and a hole its NARROWEST,',
-        'and layer 1 is the odd one out at both ends. The slicer deflates it on',
-        'purpose: with `elefant_foot_compensation = 0.15` a 20.000 mm square is',
-        'programmed 19.700 on the first layer and 20.000 on every layer above it',
-        '(measured in the gcode, not assumed). The squish against the bed then spreads',
-        'it back by an amount nobody knows — that is the whole reason for measuring.', '');
-    L.push('So the section does NOT rest on those two cancelling. Every shape here is',
-        `chamfered ${SECTION.chamferMm} mm on its underside — islands inward, holes`,
-        'outward — which insets the bottom two layers by more than either effect can',
-        'move them. What the camera sees is the normal layers above, and those are the',
-        'layers a real part mates on. The bowtie key has carried the same chamfer for',
-        'the same reason since long before this card existed.', '');
-    L.push('It does mean the card cannot tell you how big your elephant foot is. If you',
-        'want that number, print one square WITHOUT the chamfer and compare.', '');
-    L.push('`SECTION_NOMINALS.json` carries every outline as nominal mm in card',
-        'coordinates plus where each part sits on the plate, so a script can match',
-        'a measured contour to its feature without anyone typing a number.', '');
+    L.push('', 'Rungs are 0.06 mm apart, not 0.05: half that is below what a hand can tell',
+        'apart, so a finer sweep is neighbours nobody can distinguish and half a card of',
+        'plastic buying nothing.', '');
+    L.push('The cavity is the KEY\'s own outline grown by the clearance — an assembled',
+        'seam presents the whole bowtie, not the half-pocket a single rib carries, so',
+        'that is what the key has to enter.', '');
+    L.push('## When to print this at all', '');
+    L.push('Not by default. The coupons answer "does it fit" directly, because each one',
+        'is cut from the real builder and mates with another real part: `cal_ramp` with',
+        '`cal_key`, the two posts with each other, `cal_gate_paddle` with',
+        '`cal_gate_bearing`. Print those on a new filament or a new printer. This card',
+        'only tells you HOW FAR OFF you are, and only for the bowtie — reach for it if',
+        'that fit misses.', '');
+    L.push('Every shape here is chamfered ' + SECTION.chamferMm + ' mm on its underside, so',
+        'the bottom two layers are inset past anything elephant-foot compensation or bed',
+        'squish can do to them. What you engage is the normal layers above, which are the',
+        'layers a real part mates on.', '');
     return L.join('\n');
 }
 

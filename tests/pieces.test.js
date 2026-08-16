@@ -1503,19 +1503,24 @@ describe('calibration coupons', () => {
     }, 240000);
 });
 
-describe('calibration section card', () => {
+describe('the bowtie ladder card', () => {
     /**
-     * The section is measured by camera, so the failure that matters is not a
-     * broken mesh but a card that LOOKS fine and measures something else: two
-     * holes packed close enough to share a distorted wall, a duplicate id, or a
-     * shape whose manifest centre is not where the geometry actually put it.
+     * The failure that matters is not a broken mesh but a card that LOOKS fine
+     * and gauges something else: two rungs packed close enough to share a
+     * distorted wall, a duplicate id, or a shape whose manifest centre is not
+     * where the geometry put it.
+     *
+     * ONE CARD NOW. The camera section card and every free chip were removed
+     * once the geometry was settled — that card built an XY error curve nothing
+     * reads any more, and the chips duplicated real coupons. See
+     * sectionFeatures for the full accounting.
      */
-    test('every section part is a watertight slab of the stated thickness', async () => {
+    test('every part is a watertight slab of the stated thickness', async () => {
         const { buildCalibrationSection, SECTION } = await import('../js/pieces.js');
         await initCSG();
         const { analyzeMesh: am } = await import('../js/mesh_utils.js');
         const { parts, manifest } = buildCalibrationSection();
-        expect(parts.length).toBeGreaterThan(5);
+        expect(parts.map(p => p.name)).toEqual(['ladder_card']);
         for (const p of parts) {
             // NOT expectWatertight: it floors volume at 100 mm3, and these are
             // 1 mm chips — the Ø4 gate pin disc is 12.6 mm3 and is meant to be.
@@ -1528,13 +1533,8 @@ describe('calibration section card', () => {
                 ? 'solid' : 'BROKEN'}`).toBe(`${p.name} solid`);
             let y0 = Infinity, y1 = -Infinity;
             for (let i = 1; i < pos.length; i += 3) { y0 = Math.min(y0, pos[i]); y1 = Math.max(y1, pos[i]); }
-            // NOT one thickness any more: the ladder card is thicker than the
-            // metrology card because a 1 mm hole cannot test a fit, and a ladder
-            // chip is the real part at real engagement height.
-            const want = p.name === 'ladder_card' ? SECTION.ladderThicknessMm
-                : p.name === 'section_card' ? SECTION.thicknessMm
-                : (manifest.features.find(f => `section_${f.id}` === p.name)?.heightMm
-                   ?? SECTION.thicknessMm);
+            // 3 mm, not 1: a 1 mm hole is a knife-edge gauge and not a joint.
+            const want = SECTION.ladderThicknessMm;
             expect(`${p.name} ${(y1 - y0).toFixed(3)}`).toBe(`${p.name} ${want.toFixed(3)}`);
         }
     }, 240000);
@@ -1545,7 +1545,7 @@ describe('calibration section card', () => {
         const { manifest } = buildCalibrationSection();
         // ONE CARD AT A TIME. Two holes at the same coordinates on DIFFERENT
         // cards are not close together, they are on different pieces of plastic.
-        for (const card of ['section', 'ladder']) {
+        for (const card of ['ladder']) {
         const holes = manifest.features.filter(f => f.kind === 'hole' && f.card === card).map(f => {
             let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
             for (const [x, y] of f.outlineMm) {
@@ -1571,18 +1571,26 @@ describe('calibration section card', () => {
      * The sizes that mate have to BE in the series, or the curve has to be
      * extrapolated to the only numbers anybody cares about.
      */
-    test('the mating sizes appear in the graded series', async () => {
-        const { buildCalibrationSection, GATE } = await import('../js/pieces.js');
+    /**
+     * The rung that ships has to BE on the ladder, or the card cannot tell you
+     * whether today's clearance is right — only that some other one is.
+     */
+    test('the shipped bowtie clearance is one of the rungs', async () => {
+        const { buildCalibrationSection } = await import('../js/pieces.js');
         await initCSG();
         const { manifest } = buildCalibrationSection();
-        const af = manifest.features.filter(f => f.group === 'hex').map(f => f.nominal.acrossFlats);
-        const dia = manifest.features.filter(f => f.group === 'round').map(f => f.nominal.diameter);
-        const near = (list, v) => list.some(x => Math.abs(x - v) < 1e-6);
-        expect(`socket ${near(af, SPEC.socket.hexAF) ? 'in' : 'MISSING'}`).toBe('socket in');
-        expect(`tenon ${near(af, SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm) ? 'in' : 'MISSING'}`)
-            .toBe('tenon in');
-        expect(`riser shaft ${near(af, 15) ? 'in' : 'MISSING'}`).toBe('riser shaft in');
-        expect(`gate bore ${near(dia, 2 * GATE.boreR) ? 'in' : 'MISSING'}`).toBe('gate bore in');
+        const K = SPEC.key;
+        const shipped = +(K.fitClearanceMm - K.printComp.tipMm).toFixed(3);
+        const rungs = manifest.features.map(f => f.clearancePerSide);
+        expect(`shipped ${shipped} ${rungs.some(c => Math.abs(c - shipped) < 1e-9) ? 'in' : 'MISSING'}`)
+            .toBe(`shipped ${shipped} in`);
+        expect(manifest.features.filter(f => f.mates).map(f => f.id)).toHaveLength(1);
+        // and the rungs must be far enough apart to tell apart by hand — Brett:
+        // ".05mm is not enough to make a difference"
+        const sorted = [...rungs].sort((a, b) => a - b);
+        for (let i = 1; i < sorted.length; i++) {
+            expect(sorted[i] - sorted[i - 1]).toBeGreaterThanOrEqual(0.049);
+        }
     }, 240000);
 });
 

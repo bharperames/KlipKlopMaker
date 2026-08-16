@@ -178,44 +178,43 @@ building, gait physics simulation, and watertight STL/3MF export.
   own thinness. Nominals for the measurement sheet are read off `SPEC`, and
   `tests/pieces.test.js` asserts that (and that every coupon sits on the bed —
   one balanced on a corner prints skewed and every reading off it is fiction).
-- **The XY section is measured by camera, not calipers.**
-  `buildCalibrationSection` emits five layers (1.0 mm) of the same plan
-  functions the parts are swept from — `bowtieKeyPlan`, `bowtiePocketPlan`,
-  `hexPlan`, `circlePlan` — as a card of holes plus free island chips, with
-  `SECTION_NOMINALS.json` carrying every outline in card coordinates so a
-  script can match a measured contour without anyone typing a number. It is a
-  GRADED series (Ø2–16, AF 6–15) because printed error is a curve, not a
-  number, and the sizes that mate are IN the series rather than extrapolated
-  to. Holes AND islands, because they carry opposite error. Two exact
-  reference squares let the camera check its own scale. The ArUco constants
-  are FossilRecord's (`tooth_cv/aruco.py`, DICT_4X4_50, ids 0-3, 30 mm, A4) —
-  a sheet drawn to different ones measures nothing. Caveat that decides
-  whether the numbers transfer: from above a hole shows its narrowest layer
-  and an island its widest, which on a 5-layer part is the squished first
-  layer, so slice it with production's first-layer settings.
-  **A LADDER CARD SETTLES A SHAPE QUESTION, NOT A MASS ONE**, and the pillar
-  joint is the case that proved the difference. Its fault was that ONE drawing
-  prints 0.08 mm wider across corners on a broad foot than on a slender riser,
-  so no rung on a 3 mm card — a third mass again — could have found it. What
-  found it was `scripts/tenon_sweep.mjs --compare`, which builds REAL 15 mm
-  risers and hands you the mating half from parts already printed. A `lad_bore`
-  rung for that joint was added and removed the same day for exactly this
-  reason: on the card it would look authoritative and answer nothing. The
-  ladder's real wins are the KEY (right, and CLAUDE.md says why: uniform insets
-  that report every direction at once) and the GATE PIN. Re-run the riser sweep
-  if the filament or printer changes.
-  The **ladder card** is the other half and is a HAND test: a separate,
-  thicker part (`SECTION.ladderThicknessMm` = 3) carrying each joint's female
-  feature cut at a sweep of per-side clearances, with the real male part as a
-  chip at real engagement height. Push the chip down the row; the first rung it
-  enters IS the clearance that shape needs. It exists because a photograph
-  reads a clearance to about 0.18 mm while fingers do better, and because a
-  1 mm hole is a knife-edge gauge rather than a joint. **THE MATERIAL IS PETG, AND ONLY PETG.** Brett: "I'm only going to
-  print PETG." Every fit in this system is therefore a PETG number and needs
-  no material hedging. Older PLA readings (riser sockets at 8.62-8.65, the
-  first calibration cards) are HISTORY, not constraints — do not preserve a
-  PLA-era value or re-open a decision on PLA grounds. If the filament ever
-  changes, the ladders on the calibration card re-measure everything.
+- **THE CALIBRATION SET TRANSFERS A SETTLED GEOMETRY; IT DOES NOT DISCOVER ONE.**
+  That is the whole reason it is 7 items and 83 g rather than the 20 items and
+  144 g it was. An article earns its place only if it answers something the real
+  coupons cannot, and once the fits were confirmed in plastic most of them
+  stopped doing that. Removed, with the reason in each case:
+  · the **section card** (140x100x1, plus 8 free islands and an ArUco workflow)
+    built a graded Ø2-16 / AF 6-15 XY error CURVE for predicting feature sizes.
+    Nothing reads that curve now — joints are measured directly and the joints
+    are the truth — and it could never answer a MASS question anyway.
+    `SECTION_NOMINALS.json` went with it; it existed so a script could match a
+    photographed contour, and there is no photograph.
+  · **`lad_pin`**, the gate-bore ladder. Brett: "if that is an approximation of
+    the gate pin, we don't need it, the calibration parts print the gate. and
+    the coupon that has the hole." The set already prints both halves as
+    themselves.
+  · **`lad_hex`**, the track-socket ladder — mass-dependent, see below.
+  · **every chip.** `chip_tenon` was a bare hex cylinder that `cal_post_15`
+    already carries as a real tenon; the two key chips were a 2.0-vs-2.4
+    comparison that 2.3 settled. Four keys were being printed where one is
+    needed — `cal_key` is now the ladder's chip as well as cal_ramp's mate.
+  What survives is **six coupons that mate with each other** — cal_ramp with
+  cal_key, the two posts with each other, cal_gate_paddle with cal_gate_bearing
+  — and **one ladder card for the bowtie**, the only ladder that ever worked.
+  Print the coupons on a new filament or printer; reach for the card only if a
+  fit misses, because it tells you HOW FAR off and the coupons only tell you
+  THAT. Its rungs are DERIVED from `fitClearanceMm - printComp.tipMm`, never
+  listed: a hardcoded list was coarsened to include 0.12 and silently stopped
+  containing 0.05, which is the rung that actually mates.
+- **A LADDER CARD SETTLES A SHAPE QUESTION, NOT A MASS ONE.** The pillar joint
+  proved the difference: its fault was that ONE drawing prints 0.08 mm wider
+  across corners on a broad foot than on a slender riser, so no rung on a 3 mm
+  card — a third mass again — could have found it. `scripts/tenon_sweep.mjs
+  --compare` did, by building REAL 15 mm risers and taking the mating half from
+  parts already printed. Re-run that if the filament or printer changes. The
+  card's genuine win is the KEY, and CLAUDE.md's own reason for it is the test
+  of whether a card applies: its holes are uniform insets, so they report every
+  direction at once.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
 - **THREE FITS ARE CONFIRMED IN PLASTIC AND MUST NOT BE "IMPROVED".** Measured

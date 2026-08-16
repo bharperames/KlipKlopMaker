@@ -2207,9 +2207,15 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
     }
     out.push({
         name: 'cal_key',
-        count: 2,
-        note: 'The shipped bowtie key, unchanged. Two so one can stay a reference '
-            + 'while the other is fitted.',
+        count: 1,
+        // ONE, and it is also the ladder's chip. It used to be two here plus
+        // two free chips on the section card — four keys for a set that needs
+        // one. Brett: "It seems like we are print four keys and only one is
+        // needed." The chips are gone and this key does both jobs: it mates
+        // with cal_ramp's pockets, and it is what you push down the bowtie
+        // ladder if that fit misses.
+        note: 'The shipped bowtie key, unchanged. Mates with cal_ramp, and is '
+            + 'the chip for the bowtie ladder.',
         build: () => buildKeyGeometry(spec, { code: partCode('KEY', GEOMETRY_VERSION) }),
         measures: [
             ['across the neck', 2 * K.neckHalf],
@@ -2432,17 +2438,40 @@ export const SECTION = {
      */
     ladderThicknessMm: 3.0,
     /**
-     * Per-side clearance, swept. You push the chip down the row and the first
-     * rung it enters IS the clearance that shape needs, read off the part
-     * rather than inferred from a photograph to +-0.18 mm. Brett's accidental
-     * zero-clearance pairs proved hexes need clearance and circles do not; this
-     * is the same experiment done on purpose and swept.
+     * The bowtie ladder is DERIVED FROM THE SHIPPED CLEARANCE, not listed.
      *
-     * 0.20 is the shipped hex (tenon 8.6 in socket 9.0) and 0.12 the shipped
-     * bowtie, so both land inside the ladder rather than off its end.
+     * A hardcoded list is how this broke: coarsening it to [0, 0.06, 0.12, ...]
+     * looked right because 0.12 is `fitClearanceMm` — but the rung that mates is
+     * `fitClearanceMm - printComp.tipMm` = 0.05, because the key is drawn 0.07
+     * wider on every flank than the pocket is cut. The list silently stopped
+     * containing the only rung that matters, and a ladder that cannot tell you
+     * whether TODAY'S clearance is right is worth nothing. Derived, it follows
+     * `printComp` and `fitClearanceMm` wherever they go.
+     *
+     * 0.06 APART. Brett: ".05mm is not enough to make a difference" — 0.025 per
+     * side, a third of the 0.07/side already recorded as unfeelable. The old
+     * eight-rung sweep had neighbours nobody could tell apart, which is half a
+     * card of plastic buying nothing.
+     *
+     * One rung TIGHTER than shipped (clamped at zero) because that end is
+     * informative: the recorded PETG reading was "will not enter 0.00,
+     * extremely snug at 0.05", and a rung the key refuses is what brackets the
+     * fit from below.
      */
-    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
+    ladderStepMm: 0.06,
+    ladderRungs: 5
 };
+
+/** Per-side clearances for the bowtie ladder, centred on what ships. */
+export function ladderSteps(spec = SPEC) {
+    const K = spec.key;
+    const shipped = +(K.fitClearanceMm - K.printComp.tipMm).toFixed(3);
+    const out = [];
+    for (let i = -1; i < SECTION.ladderRungs - 1; i++) {
+        out.push(+Math.max(0, shipped + i * SECTION.ladderStepMm).toFixed(3));
+    }
+    return [...new Set(out)].sort((a, b) => a - b);
+}
 
 /**
  * The nominal outlines, in one place, so geometry and manifest agree.
@@ -2457,143 +2486,51 @@ export const SECTION = {
  * bore Ø4) are IN the series, so they are read off the same curve.
  */
 function sectionFeatures(spec = SPEC) {
-    const K = spec.key, S = spec.socket;
-    const fit = K.fitClearanceMm ?? spec.jointClearanceMm;
-    const tenonAF = S.hexAF - 2 * spec.jointClearanceMm;
-    const square = (mm) => [[-mm / 2, -mm / 2], [mm / 2, -mm / 2], [mm / 2, mm / 2], [-mm / 2, mm / 2]];
+    const K = spec.key;
     const f = [];
 
-    // --- the shapes that actually mate, drawn by the shipped plan functions
-    f.push({ id: 'pocket', kind: 'hole', group: 'fit', label: 'key pocket', tag: 'KEY',
-        nominal: { acrossTips: 2 * (K.tipHalf + fit), acrossNeck: 2 * (K.neckHalf + fit) },
-        plan: bowtiePocketPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth,
-            clearance: fit, depthClearance: K.depthClearanceMm ?? fit }) });
-    f.push({ id: 'key', kind: 'island', group: 'fit', label: 'bowtie key',
-        nominal: { acrossTips: 2 * K.tipHalf, acrossNeck: 2 * K.neckHalf },
-        plan: bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: 0 }) });
-
-    // --- reference squares: how the camera checks its own scale
-    for (const mm of [20, 10]) {
-        f.push({ id: `ref_hole_${mm}`, kind: 'hole', group: 'reference', tag: String(mm),
-            label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
-        f.push({ id: `ref_island_${mm}`, kind: 'island', group: 'reference',
-            label: `reference square ${mm}`, nominal: { side: mm }, plan: square(mm) });
+    /**
+     * ONE LADDER, FOR ONE JOINT. Everything else that used to be on these cards
+     * has been removed, and the reason is the same each time: the calibration
+     * set now exists to TRANSFER a settled geometry to new filament or a new
+     * printer, not to discover it, so an article earns its place only if it
+     * answers something the real coupons cannot.
+     *
+     * Gone, and why:
+     *  · the whole SECTION CARD — a graded Ø2-16 / AF 6-15 series, reference
+     *    squares, islands and an ArUco workflow — existed to build an XY error
+     *    CURVE for predicting feature sizes. Nothing decides anything from that
+     *    curve any more; the joints are measured directly and the joints are the
+     *    truth. It also could not answer a mass question, and it carried its own
+     *    caveat that a 5-layer part shows the squished first layer.
+     *  · `lad_pin`, the gate bore. Brett: "if that is an approximation of the
+     *    gate pin, we don't need it, the calibration parts print the gate. and
+     *    the coupon that has the hole." Exactly — `cal_gate_paddle` is the real
+     *    pin and `cal_gate_bearing` is the real bore, so the ladder was gauging
+     *    a model of a joint that is already on the plate as itself.
+     *  · `lad_hex`, the track socket. Mass-dependent like the pillar joint was,
+     *    and a 3 mm card is a third mass again — see the note on SECTION.
+     *  · every CHIP. `chip_tenon` is a bare hex cylinder that `cal_post_15`
+     *    already carries as a real tenon; `chip_key_20`/`_24` were two keys for
+     *    a comparison that 2.3 settled. `cal_key` is the chip now.
+     *
+     * What survives is the bowtie ladder, because it is the one that worked:
+     * it read the key's clearance correctly, and CLAUDE.md records why — its
+     * holes are uniform insets, so they report every direction at once. The
+     * cavity is the KEY's own outline grown by the clearance (a true normal
+     * offset), not the half-pocket a single rib carries: an assembled seam
+     * presents the whole bowtie, and that is what the key has to pass.
+     */
+    for (const c of ladderSteps(spec)) {
+        const tag = String(Math.round(c * 100)).padStart(2, '0');
+        f.push({ id: `lad_key_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder', tag,
+            label: `bowtie cavity +${c.toFixed(2)}/side`, clearancePerSide: c,
+            nominal: { acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) },
+            plan: insetPolygon(bowtieKeyPlan({ neckHalf: K.neckHalf, tipHalf: K.tipHalf,
+                depth: K.depth, tipChamfer: K.tipChamfer }), -c),
+            mates: Math.abs(c - (K.fitClearanceMm - K.printComp.tipMm)) < 1e-9 ? 'ships today' : null });
     }
 
-    // --- round series. Ø4 is the gate bore and pin.
-    const ROUND = [2, 3, 4, 5, 6, 8, 10, 12, 16];
-    for (const d of ROUND) {
-        f.push({ id: `round_hole_${d}`, kind: 'hole', group: 'round', tag: String(d),
-            label: `round hole Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
-            mates: d === 2 * GATE.boreR ? 'gate bore' : null });
-    }
-    for (const d of [4, 6, 10, 16]) {
-        f.push({ id: `round_island_${d}`, kind: 'island', group: 'round',
-            label: `round island Ø${d}`, nominal: { diameter: d }, plan: circlePlan(d / 2),
-            mates: d === 2 * GATE.pinR ? 'gate pin' : null });
-    }
-
-    // --- CLEARANCE LADDERS: one male chip, the female cut at a sweep of
-    // per-side clearances. The bowtie cavity is the KEY's own outline grown by
-    // the clearance (a true normal offset), not the half-pocket a single rib
-    // carries — an assembled seam presents the whole bowtie, and that is what
-    // the key has to enter.
-    // FAMILY-MAJOR, so each chip has an unbroken row of its own. Ordered by
-    // clearance instead, the three shapes interleave and testing one chip means
-    // skipping every third hole — which is exactly the kind of thing that only
-    // shows up when you look at the plate.
-    const rung = (pre, group, mk, nom, shipped) => {
-        for (const c of SECTION.ladderSteps) {
-            const tag = String(Math.round(c * 100)).padStart(2, '0');
-            f.push({ id: `${pre}_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder', tag,
-                label: `${group} +${c.toFixed(2)}/side`, clearancePerSide: c,
-                nominal: nom(c), plan: mk(c),
-                mates: Math.abs(c - shipped) < 1e-9 ? 'ships today' : null });
-        }
-    };
-    // The TRACK BOSS still takes a hex tenon in a hex socket, so this ladder
-    // stays — but it is that joint's now, not the pillar's.
-    //
-    // AND THERE IS DELIBERATELY NO RUNG FOR THE PILLAR BORE. A rung was added
-    // here and removed the same day: the pillar joint is a hex tenon in a round
-    // bore, and its fault was never a shape question this card could answer. It
-    // was MASS — one drawing printing 0.08 mm wider across corners on a broad
-    // foot than on a slender riser — and a 3 mm card is a third mass again. A
-    // ladder card settles a SHAPE question; only a coupon cut from the real
-    // part settles a mass one, which is why `scripts/tenon_sweep.mjs --compare`
-    // builds actual 15 mm risers and is what settled 9.60. Re-run that if the
-    // filament or the printer ever changes; do not put it on this card, where
-    // it would look authoritative and answer nothing.
-    rung('lad_hex', 'track hex socket', (c) => hexPlan(tenonAF + 2 * c),
-        (c) => ({ acrossFlats: +(tenonAF + 2 * c).toFixed(3) }), 0.20);
-    rung('lad_pin', 'gate bore', (c) => circlePlan(GATE.pinR + c),
-        (c) => ({ diameter: +(2 * (GATE.pinR + c)).toFixed(3) }), 0);
-    rung('lad_key', 'bowtie cavity', (c) => insetPolygon(bowtieKeyPlan({
-            neckHalf: K.neckHalf, tipHalf: K.tipHalf, depth: K.depth, tipChamfer: K.tipChamfer }), -c),
-        (c) => ({ acrossTips: +(2 * K.tipHalf + 2 * c).toFixed(3) }), +(K.fitClearanceMm - K.printComp.tipMm).toFixed(3));
-
-    const MINOR_CODE = GEOMETRY_VERSION.split('.').slice(0, 2).join('.');
-    // the three chips you push down the ladders — the REAL parts, at real
-    // engagement height, so the test is the joint and not a model of it
-    f.push({ id: 'chip_tenon', kind: 'island', group: 'ladder', card: 'ladder',
-        label: 'hex tenon chip', heightMm: spec.socket.depth,
-        nominal: { acrossFlats: tenonAF }, plan: hexPlan(tenonAF) });
-    f.push({ id: 'chip_pin', kind: 'island', group: 'ladder', card: 'ladder',
-        label: 'gate pin chip', heightMm: spec.socket.depth,
-        nominal: { diameter: 2 * GATE.pinR }, plan: circlePlan(GATE.pinR) });
-    // TWO KEYS, and the plate is the only place they can be compared. 2.0 is
-    // the key already in Brett's hands, which the seam will not hold shut; 2.1
-    // is drawn `printComp` bigger on every flank. Printing both side by side is
-    // what turns "is it tighter?" into a thing you can feel, and it is cheap —
-    // the key is the smallest part in the system.
-    //
-    // The 2.0 chip is also the CONTROL for the ladder. Read the ladder with it
-    // and the rungs mean what they always meant, so this plate stays comparable
-    // to the PETG one already measured.
-    //
-    // This is the bug too: the chip used to build from raw `K.tipHalf` and so
-    // never saw printComp at all — the ladder would have gauged a key the track
-    // no longer ships, and read "correct" while the seam stayed open.
-    for (const v of [
-        { id: 'chip_key_20', comp: { neckMm: 0, tipMm: 0, depthMm: 0 },
-            label: 'bowtie key 2.0 (the loose one)' },
-        // NAMED FROM THE VERSION, never hardcoded. This chip said "2.1" while
-        // building the 2.3 key, because it reads printComp and the label did
-        // not. A calibration article that misreports which geometry it IS is
-        // worse than no article: it certifies the wrong number by name.
-        //
-        // Until 2.3 the pair was also INDISTINGUISHABLE ONCE PRINTED — 0.14 mm
-        // apart across the tips and nothing engraved on a free chip, so it was
-        // unusable the moment it left the plate. 2.3 moves the DEPTH 0.6 mm,
-        // which a caliper and the eye both catch.
-        { id: `chip_key_${MINOR_CODE.replace('.', '')}`, comp: K.printComp,
-            label: `bowtie key ${MINOR_CODE} (current — print both)` }
-    ]) {
-        const neckHalf = K.neckHalf - v.comp.neckMm, tipHalf = K.tipHalf + v.comp.tipMm;
-        f.push({ id: v.id, kind: 'island', group: 'ladder', card: 'ladder',
-            label: v.label, heightMm: K.height - 2 * spec.jointClearanceMm,
-            nominal: { acrossTips: +(2 * tipHalf).toFixed(3) },
-            mates: v.comp.tipMm ? `fits the ${(K.fitClearanceMm - v.comp.tipMm).toFixed(2)} rung` : null,
-            plan: bowtieKeyPlan({ neckHalf, tipHalf,
-                depth: K.depth + (v.comp.depthMm ?? 0), tipChamfer: K.tipChamfer }) });
-    }
-
-    // --- hex series. AF 8.6 is the tenon, 9 the socket, 15 the riser shaft.
-    const HEX = [6, 8, tenonAF, S.hexAF, 10, 12, 15];
-    for (const af of HEX) {
-        const tag = String(+af.toFixed(1)).replace('.', 'p');
-        f.push({ id: `hex_hole_${tag}`, kind: 'hole', group: 'hex', tag: String(+af.toFixed(2)),
-            label: `hex hole AF ${+af.toFixed(2)}`, nominal: { acrossFlats: +af.toFixed(3) },
-            plan: hexPlan(af),
-            mates: af === S.hexAF ? 'socket' : af === tenonAF ? 'tenon clearance' : null });
-    }
-    for (const af of [tenonAF, S.hexAF, 15]) {
-        const tag = String(+af.toFixed(1)).replace('.', 'p');
-        f.push({ id: `hex_island_${tag}`, kind: 'island', group: 'hex',
-            label: `hex island AF ${+af.toFixed(2)}`, nominal: { acrossFlats: +af.toFixed(3) },
-            plan: hexPlan(af),
-            mates: af === tenonAF ? 'tenon' : af === 15 ? 'riser shaft' : null });
-    }
     return f;
 }
 
@@ -2708,45 +2645,27 @@ export function buildCalibrationSection(spec = SPEC) {
                  size: [+(2 * halfW).toFixed(2), +(2 * halfD).toFixed(2)] };
     };
 
-    const isLadder = (f) => f.card === 'ladder';
-    const metro = buildCard(feats.filter(f => f.kind === 'hole' && !isLadder(f)), T,
-        ['fit', 'reference', 'round', 'hex']);
-    const ladder = buildCard(feats.filter(f => f.kind === 'hole' && isLadder(f)),
+    // ONE CARD. The section card and every free chip are gone — see
+    // sectionFeatures for what each was and why it stopped earning its place.
+    const ladder = buildCard(feats.filter(f => f.kind === 'hole'),
         SECTION.ladderThicknessMm, ['ladder']);
-
-    const parts = [
-        { name: 'section_card', geometry: metro.geometry },
-        { name: 'ladder_card', geometry: ladder.geometry }
-    ];
-    for (const f of feats.filter(f => f.kind === 'island')) {
-        f.centre = [0, 0];                 // each island is its own free chip
-        // a LADDER chip is the real part at real engagement height, so it can be
-        // held and pushed; a metrology chip stays a section
-        parts.push({ name: `section_${f.id}`,
-            geometry: toBufferGeometry(chamferedSlab(f.plan, f.heightMm ?? T, false)) });
-    }
+    const parts = [{ name: 'ladder_card', geometry: ladder.geometry }];
 
     return {
         parts,
         manifest: {
             geometryVersion: GEOMETRY_VERSION,
-            thicknessMm: T,
             ladderThicknessMm: SECTION.ladderThicknessMm,
-            cardSizeMm: metro.size,
             ladderCardSizeMm: ladder.size,
-            note: 'Outlines are nominal mm in card coordinates. A hole reads its '
-                + 'narrowest layer and an island its widest, and on a 5 layer part '
-                + 'that is the first layer in both cases — elephant foot included. '
-                + 'The ladder card is a HAND test, not a camera one: push each chip '
-                + 'down its row and the first rung it enters is the clearance that '
-                + 'shape needs.',
-            aruco: { dict: 'DICT_4X4_50', markerIds: [0, 1, 2, 3], markerSizeMm: 30,
-                sheet: 'A4', source: 'FossilRecord tooth_cv/aruco.py' },
+            note: 'A HAND test, not a camera one. Push the printed cal_key down '
+                + 'the row; the first rung it enters is the clearance that shape '
+                + 'needs. Rungs are 0.06 mm apart because 0.05 is below what a '
+                + 'hand can tell apart.',
             features: feats.map(f => ({
                 id: f.id, kind: f.kind, group: f.group, label: f.label, tag: f.tag ?? null,
-                card: f.card ?? 'section', nominal: f.nominal, mates: f.mates ?? null,
+                card: 'ladder', nominal: f.nominal, mates: f.mates ?? null,
                 clearancePerSide: f.clearancePerSide ?? null,
-                heightMm: f.heightMm ?? (isLadder(f) ? SECTION.ladderThicknessMm : T),
+                heightMm: f.heightMm ?? SECTION.ladderThicknessMm,
                 centreMm: f.centre ?? [0, 0],
                 outlineMm: f.plan.map(([x, zz]) => [+x.toFixed(4), +(-zz).toFixed(4)])
             }))
