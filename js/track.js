@@ -344,6 +344,38 @@ export const SPEC = {
      */
     jog: { armMm: 45, heightMm: 15 },
     /**
+     * UNDER-DECK SUPPORT for a `minimal` piece, and the shape is per piece type
+     * because the two fail differently.
+     *
+     * A minimal piece is tilted onto its underside, so the deck ceiling is a
+     * lid over an open cavity and the slicer bridges it. Left unsupported it
+     * SAGS: Brett, on shipped straights, "obvious strands of plastic across the
+     * underside of the deck, rough to feel and can grab and peel, not fully
+     * melted together". A curve does worse and comes off as spaghetti.
+     *
+     * SPINES for straights, RIBS for curves, and neither substitutes for the
+     * other. The rule is that the walls have to run ACROSS the direction the
+     * ceiling's spans run:
+     *
+     *   · a straight's ceiling bridges wall to wall across the 48 mm channel,
+     *     so lengthwise spines halve every span — two of them give 16 mm bays.
+     *     Measured: bridges over 40 mm go 13 099 -> 0 mm and the longest span
+     *     47.3 -> 23.4, for +3.0 g and +4 minutes.
+     *   · a curve's exposed ceiling runs ALONG the arc, so a spine lies
+     *     parallel to the spans and does nothing (three of them left the max at
+     *     45.2 against a 45.6 baseline). Radial ribs cut it: 14 mm pitch takes
+     *     the max to 17.4 for +12 g.
+     *
+     * Sized at the knee, not past it. One spine is not enough (half of 48 is
+     * 24, still over the 20 mm line); three buys nothing a second does not.
+     * A full honeycomb was tried first and is roughly nine times the material a
+     * straight needs and twice what a curve needs — half of it runs along the
+     * arc, where it does nothing.
+     *
+     * 0.8 mm is two extrusions. 1.6 measured identically and cost 27 g.
+     */
+    underside: { spines: 2, spineMm: 0.8, ribPitchMm: 14, ribMm: 0.8 },
+    /**
      * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
      * the 15 mm grid. Same move as the jog: the track piece keeps one shape and
      * the support absorbs the remainder.

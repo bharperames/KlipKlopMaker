@@ -969,6 +969,69 @@ export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {})
     return cut ? [{ op: SUBTRACTION, geometry: cut }] : [];
 }
 
+/**
+ * The walls that hold a `minimal` piece's deck ceiling up — see SPEC.underside.
+ *
+ * Both shapes are built the same way: a thin wall swept from the underside
+ * PLANE (the surface the part is laid on, so every wall reaches the bed) up to
+ * the deck ceiling. The top is pushed 0.3 mm INTO the floor, which is already
+ * solid, so the union's shape is unchanged and the floor stays `floorThk` — but
+ * no face is exactly coplanar with the shell's ceiling. On a curve the two
+ * surfaces are tessellated at different angles and never quite coincide; on a
+ * STRAIGHT they are exactly parallel over a big flat rectangle, and without the
+ * offset the union came back with 18 non-manifold edges.
+ *
+ * Both stop `key.ribThk + 0.5` from each face, clear of the end ribs and their
+ * bowtie pockets — the key rises through that space.
+ */
+function undersideSupportOps(piece, spec) {
+    if (!laysOnUnderside(piece, spec)) return [];      // no cavity to hold up
+    const U = spec.underside;
+    if (!U) return [];
+    const pl = undersidePlane(piece, spec);
+    const uHalf = piece.innerWidth / 2 + spec.wall / 2;   // reach into the rails
+    const sMargin = spec.key.ribThk + 0.5;
+    const s0 = sMargin, s1 = piece.planLen - sMargin;
+    if (s1 - s0 < 5) return [];
+    const top = -spec.floorThk + 0.3;
+
+    /** A wall as a sweep: `at(s)` gives its lateral span at that station. */
+    const wall = (sFrom, sTo, at, steps) => {
+        const stations = [], profiles = [];
+        for (let i = 0; i <= steps; i++) {
+            const sAt = sFrom + ((sTo - sFrom) * i) / steps;
+            const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
+            const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+            stations.push({ s: sAt, origin: [p.x, y, p.z], right });
+            const bot = (u) => pl.at(p.x + right[0] * u, p.z + right[2] * u) - y;
+            const [uA, uB] = at(sAt);
+            profiles.push([[uA, bot(uA)], [uB, bot(uB)], [uB, top], [uA, top]]);
+        }
+        return { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) };
+    };
+
+    if (piece.radius) {
+        // RIBS across the channel, at a pitch along the arc.
+        const n = Math.max(1, Math.round((s1 - s0) / U.ribPitchMm));
+        const ops = [];
+        for (let i = 0; i <= n; i++) {
+            const sc = s0 + ((s1 - s0) * i) / n;
+            const a = Math.max(s0, sc - U.ribMm / 2), b = Math.min(s1, sc + U.ribMm / 2);
+            if (b - a < 0.05) continue;
+            ops.push(wall(a, b, () => [-uHalf, uHalf], 1));
+        }
+        return ops;
+    }
+    // SPINES along the piece, dividing the channel into equal bays.
+    const steps = Math.max(2, Math.ceil((s1 - s0) / 3));
+    const ops = [];
+    for (let i = 1; i <= U.spines; i++) {
+        const u = -uHalf + (2 * uHalf * i) / (U.spines + 1);
+        ops.push(wall(s0, s1, () => [u - U.spineMm / 2, u + U.spineMm / 2], steps));
+    }
+    return ops;
+}
+
 export function buildPieceExportGeometry(piece, opts = {}) {
     // Do the booleans at the origin, not at the piece's address in the tower.
     // The display path needs world coordinates and these builders share its
@@ -1054,6 +1117,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     // BEFORE bossOps deliberately — the boss subtracts its socket bore, and an
     // addition after that would fill the bore back in.
     if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
+    else ops.push(...undersideSupportOps(piece, spec));
     ops.push(...bossOps(piece, spec, opts.support));
     ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
     const solid = csgChain(shell, ops, opts.simplifyTol);
@@ -1173,6 +1237,11 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
     }
+    // Each ROLE takes the rule for its own shape — the main half is a straight
+    // and wants spines, the branch is a curve and wants ribs. They share one
+    // underside plane (planeGroup), so both sets reach the same bed.
+    ops.push(...undersideSupportOps(mainPiece, spec));
+    ops.push(...undersideSupportOps(branchPiece, spec));
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
@@ -2364,7 +2433,29 @@ export const SECTION = {
      * 0.20 is the shipped hex (tenon 8.6 in socket 9.0) and 0.12 the shipped
      * bowtie, so both land inside the ladder rather than off its end.
      */
-    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30]
+    ladderSteps: [0, 0.05, 0.10, 0.12, 0.15, 0.20, 0.25, 0.30],
+    /**
+     * THE PILLAR JOINT'S OWN LADDER, because it is no longer hex in hex.
+     *
+     * A hex tenon in a ROUND bore lands on its six CORNERS, so the number that
+     * decides the fit is INTERFERENCE against the tenon's ACROSS-CORNERS, not
+     * clearance against its across-flats. Swept the other way from
+     * `ladderSteps`: bore diameter = tenon AC - 2 * i.
+     *
+     * COARSER ON PURPOSE. Brett, on the 0.05 sweep: ".05mm is not enough to
+     * make a difference" — 0.025 per side, a third of the 0.07/side already
+     * recorded as unfeelable. These are 0.08 apart, which is 0.16 mm of
+     * diameter between rungs.
+     *
+     * 0.165 is what ships (tenon AC 9.93 drawn, bore 9.60) and sits mid-ladder.
+     *
+     * CAVEAT, and it is the reason this card did not settle the joint: a 3 mm
+     * card is a third plastic mass again, and the whole fault here was
+     * mass-dependent — the same drawing printing 0.08 wider on a broad foot
+     * than on a slender riser. What settled it was a sweep of REAL 15 mm
+     * risers. Read this ladder as a shape check, not as a substitute for that.
+     */
+    boreSteps: [0, 0.08, 0.165, 0.25, 0.33]
 };
 
 /**
@@ -2434,8 +2525,21 @@ function sectionFeatures(spec = SPEC) {
                 mates: Math.abs(c - shipped) < 1e-9 ? 'ships today' : null });
         }
     };
-    rung('lad_hex', 'hex', (c) => hexPlan(tenonAF + 2 * c),
+    // The TRACK BOSS still takes a hex tenon in a hex socket, so this ladder
+    // stays — but it is that joint's now, not the pillar's.
+    rung('lad_hex', 'track hex socket', (c) => hexPlan(tenonAF + 2 * c),
         (c) => ({ acrossFlats: +(tenonAF + 2 * c).toFixed(3) }), 0.20);
+    // THE PILLAR JOINT: the same hex tenon, but in a ROUND bore, so the rungs
+    // sweep INTERFERENCE against its across-corners. See SECTION.boreSteps.
+    const tenonAC = tenonAF / Math.cos(Math.PI / 6);
+    for (const i of SECTION.boreSteps) {
+        const dia = tenonAC - 2 * i;
+        const tag = String(Math.round(i * 100)).padStart(2, '0');
+        f.push({ id: `lad_bore_${tag}`, kind: 'hole', group: 'ladder', card: 'ladder', tag,
+            label: `pillar bore -${i.toFixed(3)}/side`, clearancePerSide: -i,
+            nominal: { diameter: +dia.toFixed(3) }, plan: circlePlan(dia / 2, 96),
+            mates: Math.abs(dia - S.boreDia) < 0.02 ? 'ships today' : null });
+    }
     rung('lad_pin', 'gate bore', (c) => circlePlan(GATE.pinR + c),
         (c) => ({ diameter: +(2 * (GATE.pinR + c)).toFixed(3) }), 0);
     rung('lad_key', 'bowtie cavity', (c) => insetPolygon(bowtieKeyPlan({

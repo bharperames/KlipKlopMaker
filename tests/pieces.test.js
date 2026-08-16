@@ -1585,3 +1585,102 @@ describe('calibration section card', () => {
         expect(`gate bore ${near(dia, 2 * GATE.boreR) ? 'in' : 'MISSING'}`).toBe('gate bore in');
     }, 240000);
 });
+
+/**
+ * The walls that hold a `minimal` piece's deck ceiling up — SPEC.underside.
+ *
+ * Brett printed a shipped straight and found "obvious strands of plastic across
+ * the underside of the deck"; a curve came off as spaghetti. The fix is per
+ * piece type and the two do not substitute: a straight's ceiling bridges ACROSS
+ * the channel so lengthwise SPINES halve every span, while a curve's runs ALONG
+ * the arc so only radial RIBS shorten it. Three spines on a curve left the max
+ * span at 45.2 mm against a 45.6 baseline — that is what this guards.
+ */
+describe('the deck ceiling is held up', () => {
+    /** Solid intervals a horizontal scan crosses, at one station and height. */
+    const wallsAcross = (g, piece, s, yFrac) => {
+        const p = planPosAt(piece, s), deck = deckYAt(piece, s);
+        const pl = undersidePlane(piece, SPEC);
+        const right = [Math.sin(p.h), -Math.cos(p.h)];
+        const bottom = pl.at(p.x, p.z), ceil = deck - SPEC.floorThk;
+        const y = bottom + (ceil - bottom) * yFrac;
+        const Wi = piece.innerWidth / 2;
+        let runs = 0, inside = false;
+        for (let u = -Wi + 0.6; u <= Wi - 0.6; u += 0.1) {
+            const x = p.x + right[0] * u, z = p.z + right[1] * u;
+            const solid = solidAt(g, x, y, z);
+            if (solid && !inside) runs++;
+            inside = solid;
+        }
+        return runs;
+    };
+    /** Is (x,y,z) inside the mesh? Vertical ray parity. */
+    const solidAt = (g, x, y, z) => {
+        const { positions: P, indices: I } = g;
+        let below = 0;
+        for (let t = 0; t < I.length; t += 3) {
+            const A = I[t] * 3, B = I[t + 1] * 3, C = I[t + 2] * 3;
+            const ax = P[A], az = P[A + 2], bx = P[B], bz = P[B + 2], cx = P[C], cz = P[C + 2];
+            const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+            if (Math.abs(d) < 1e-12) continue;
+            const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
+            const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
+            const l3 = 1 - l1 - l2;
+            if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+            if (l1 * P[A + 1] + l2 * P[B + 1] + l3 * P[C + 1] < y) below++;
+        }
+        return below % 2 === 1;
+    };
+
+    const build = (type) => {
+        const { pieces } = layoutTrack(['start', 'straight', type, 'straight', 'end'],
+            { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+        const world = pieces.find((q) => q.type === type);
+        const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
+        return { g: buildPieceExportGeometry(world, { support: sup }), pc: pieceInFrame(world) };
+    };
+
+    test('a straight carries SPEC.underside.spines walls along it', async () => {
+        await initCSG();
+        const { g, pc } = build('straight');
+        // scanned away from the boss, mid-cavity: only the spines are there
+        const at = pc.planLen * 0.30;
+        expect(`spines at 30%: ${wallsAcross(g, pc, at, 0.5)}`)
+            .toBe(`spines at 30%: ${SPEC.underside.spines}`);
+        // and they run the length, not just at one station
+        expect(wallsAcross(g, pc, pc.planLen * 0.70, 0.5)).toBe(SPEC.underside.spines);
+    });
+
+    test('a curve carries ribs across it, not spines along it', async () => {
+        await initCSG();
+        const { g, pc } = build('curveR');
+        const m = SPEC.key.ribThk + 0.5;
+        const usable = pc.planLen - 2 * m;
+        const n = Math.round(usable / SPEC.underside.ribPitchMm);
+        // AT LEAST one run, not exactly one: a rib does span the channel, but
+        // the station nearest the boss is crossed by the socket BORE, which
+        // splits the scan into two legitimately.
+        let onRib = 0;
+        for (let i = 0; i <= n; i++) {
+            if (wallsAcross(g, pc, m + (usable * i) / n, 0.5) >= 1) onRib++;
+        }
+        expect(`${onRib} of ${n + 1} rib stations carry material`)
+            .toBe(`${n + 1} of ${n + 1} rib stations carry material`);
+        // and between two ribs there is open cavity — sampled in the second bay,
+        // which is clear of both the boss and the end ribs
+        const bay = m + (usable * 1.5) / n;
+        expect(`between ribs: ${wallsAcross(g, pc, bay, 0.5)}`).toBe('between ribs: 0');
+    });
+
+    test('a flat tile has no cavity and gets nothing', async () => {
+        await initCSG();
+        const { pieces } = layoutTrack(['start', 'straight', 'powered', 'end'],
+            { skirtStyle: 'minimal' });
+        const pc = pieces.find((q) => q.type === 'powered');
+        expect(printsLyingDown(pc)).toBe(false);
+        const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === pc.index);
+        const g = buildPieceExportGeometry(pc, { support: sup });
+        const r = analyzeMesh(g.positions, g.indices);
+        expect(r.isManifold && r.isConsistent && r.windsOutward).toBe(true);
+    });
+});
