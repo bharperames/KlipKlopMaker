@@ -351,6 +351,25 @@ function spineCapOps({ count, thickMm, capMm, capH }) {
 }
 
 /**
+ * THE CAVITY FILLED SOLID — a control, not a candidate.
+ *
+ * It answers one question nothing else can: is Bambu's cantilever warning about
+ * the under-deck cavity at all? If a curve with NO cavity still warns, then no
+ * amount of ribbing, spining or honeycombing will ever clear it and the warning
+ * is reading something else — the deck's own slope, most likely, which is fixed
+ * by the Klip Klop Standard. If it goes quiet, there is a geometry path.
+ *
+ * Nobody has run this on a MINIMAL curve. The 2026-08-05 test that "suppressed
+ * the arcade entirely" was a VIADUCT, a different underside altogether.
+ */
+const solidUnderside = () => ({
+    name: 'solid_underside',
+    note: 'cavity filled solid — a control for the cantilever warning',
+    kind: 'control',
+    ops: cavityOps({ pitchMm: 1000, holePlan: circlePlan(0.05, 8) })
+});
+
+/**
  * RIBS WITH A CAPITAL — the same fix as the spine's, rotated 90 degrees.
  *
  * A curve's ribs run ACROSS the channel while its long bridge moves sweep ALONG
@@ -504,6 +523,7 @@ const VARIANTS = [
     // He is right — 12/1.6 added 46 cm3 to an 86 cm3 part. These are the sparse
     // end of the same family, kept alongside the heavy ones so the mass/benefit
     // curve is visible rather than asserted.
+    solidUnderside(),
     cell(12, 0.8), cell(12, 1.6), cell(8, 0.8), cell(8, 1.6),
     cell(16, 0.8), cell(20, 0.8), cell(24, 0.8), cell(16, 0.45), cell(24, 0.45),
     posts(14, 3), posts(18, 3), posts(22, 3.5),
@@ -950,11 +970,20 @@ function slice(name, f3mf) {
     }
     const gc = path.join(out, 'plate_1.gcode');
     fs.copyFileSync(gc, path.join(OUT, `${name}.gcode`));
+    // BAMBU'S OWN WARNING, read from result.json rather than guessed at. It is
+    // the thing Brett sees in the GUI, and until now nothing in this harness
+    // could see it — so every claim about what does or does not clear it was
+    // inference. `sliced_plates[0].warning_message` carries it verbatim.
+    let warning = '';
+    try {
+        const rj = JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8'));
+        warning = rj.sliced_plates?.[0]?.warning_message ?? '';
+    } catch { /* older CLI: no result.json */ }
     const txt = fs.readFileSync(gc, 'utf8');
     const grams = parseFloat(/^; total filament weight \[g\] : ([0-9.]+)/m.exec(txt)?.[1] ?? '0');
     const secs = parseInt(/^; model printing time: .*\n; total estimated time: (\d+)/m.exec(txt)?.[1] ?? '0', 10);
     const time = (/^; model printing time: ([^;\n]+)/m.exec(txt)?.[1] ?? '?').trim();
-    return { grams, time, secs, ...score(gc) };
+    return { grams, time, secs, warning, ...score(gc) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,8 +1088,11 @@ for (const v of VARIANTS) {
     if (DO_SLICE) {
         const s = slice(v.name, f3mf);
         if (s.failed) console.log(`      SLICE FAILED: ${s.failed}`);
-        else console.log(`      ${s.grams.toFixed(1)} g  ${s.time}  open-ended ${s.open.toFixed(0)} mm ` +
-            `(>5 ${s.over5.toFixed(0)}, >10 ${s.over10.toFixed(0)}, >20 ${s.over20.toFixed(0)}, max ${s.openMax.toFixed(1)})`);
+        else {
+            console.log(`      ${s.grams.toFixed(1)} g  ${s.time}  open-ended ${s.open.toFixed(0)} mm ` +
+                `(>5 ${s.over5.toFixed(0)}, >10 ${s.over10.toFixed(0)}, >20 ${s.over20.toFixed(0)}, max ${s.openMax.toFixed(1)})`);
+            console.log(`      bambu: ${s.warning ? s.warning : '(no warning)'}`);
+        }
         Object.assign(row, s);
     }
     rows.push(row);
