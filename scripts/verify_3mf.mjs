@@ -124,11 +124,16 @@ for (const o of objs) {
     for (let i = 2; i < o.P.length; i += 3) { zMin = Math.min(zMin, o.P[i]); zMax = Math.max(zMax, o.P[i]); }
     const bore = feature(o.P, o.I, zMin + 5, true);
     const tenon = feature(o.P, o.I, zMax - 5, false);
-    // notches: shaft radius on +x at each groove height, against an uncut band
+    // NOTCHES ARE A COUPON FEATURE AND THE TEST ONLY MEANS ANYTHING ON A 15 AF
+    // RISER SHAFT. On a spacer the sample heights land in the tenon, which is
+    // narrower than the Ø18 body below it, so all three read as "grooves" — a
+    // false 3 on a part whose rings are its real label. Gate on the reference
+    // band actually being a 15 AF shaft (radius 7.5) before counting.
     const uncut = ray(o.P, o.I, zMin + 10.2, 0, false);
-    const notches = [11.2, 12.5, 13.8]
+    const riserShaft = uncut !== null && Math.abs(uncut - 7.5) < 0.4;
+    const notches = !riserShaft ? null : [11.2, 12.5, 13.8]
         .map(h => ray(o.P, o.I, zMin + h, 0, false))
-        .filter(v => v !== null && uncut !== null && v < uncut - 0.5).length;
+        .filter(v => v !== null && v < uncut - 0.5).length;
     table.push({ o, r, ok, bore, tenon, notches });
 }
 
@@ -136,26 +141,32 @@ for (const t of table) {
     // A "bore" wider than the 15 AF shaft is the ray leaving the part, not a
     // hole; and an off-axis bore (the jog's, 45 mm out on its arm) is invisible
     // to an on-axis cast. Say so rather than print a number that looks real.
-    const d = (f, isBore) => !f ? 'none'
-        : isBore && f.min > 12 ? `none on the axis (min ${f.min.toFixed(2)} is the outer shell)`
+    // Anything wider than the 15 AF shaft is the ray leaving the part, not a
+    // feature: an off-axis bore (the jog's, 45 mm out on its arm) is invisible
+    // to an on-axis cast, and a part with no socket or tenon at all (a key, a
+    // track tile) just reports its own outline. Say so rather than print a
+    // number that looks like a mating dimension.
+    const d = (f, what) => !f ? 'none'
+        : f.min > 12 ? `no on-axis ${what} (min ${f.min.toFixed(2)} is the outer shell)`
         : f.round ? `round D ${f.min.toFixed(2)}`
         : `hex AF ${f.min.toFixed(2)} / AC ${f.max.toFixed(2)}`;
-    console.log(`${t.o.name.padEnd(19)} ${t.o.hash}  ${t.ok ? 'watertight' : '*** NOT WATERTIGHT ***'}  ${(t.r.volumeMm3 / 1000).toFixed(2)} cm3   ${t.notches} notch${t.notches === 1 ? '' : 'es'}`);
-    console.log(`   bore  ${d(t.bore, true)}`);
-    console.log(`   tenon ${d(t.tenon, false)}`);
+    console.log(`${t.o.name.padEnd(19)} ${t.o.hash}  ${t.ok ? 'watertight' : '*** NOT WATERTIGHT ***'}  ${(t.r.volumeMm3 / 1000).toFixed(2)} cm3` +
+        (t.notches === null ? '' : `   ${t.notches} notch${t.notches === 1 ? '' : 'es'}`));
+    console.log(`   bore  ${d(t.bore, 'bore')}`);
+    console.log(`   tenon ${d(t.tenon, 'tenon')}`);
 }
 
 console.log('\n--- WHAT SUCCESS LOOKS LIKE -------------------------------------------');
 for (const t of table) {
     if (t.tenon?.round && t.tenon.min < 12) {
         const D = t.tenon.min;
-        console.log(`\n${t.notches} notch${t.notches === 1 ? ' ' : 'es'}  ROUND TENON D ${D.toFixed(2)}  ->  your existing HEX SOCKET (AF ${SOCK_AF.toFixed(2)}, AC ${SOCK_AC.toFixed(2)})`);
+        console.log(`\n${t.notches ?? '-'} notch${t.notches === 1 ? ' ' : 'es'}  ROUND TENON D ${D.toFixed(2)}  ->  your existing HEX SOCKET (AF ${SOCK_AF.toFixed(2)}, AC ${SOCK_AC.toFixed(2)})`);
         console.log(`         contact on the six FLATS.  snug when D = AF = ${SOCK_AF.toFixed(2)}`);
         console.log(`         drawn interference ${(((D - SOCK_AF) / 2) >= 0 ? '+' : '')}${((D - SOCK_AF) / 2).toFixed(3)} /side;  will not enter past D ${SOCK_AC.toFixed(2)}`);
     } else if (t.bore?.round && t.bore.min < 12) {
         const D = t.bore.min;
         for (const [who, ac] of Object.entries(MEASURED_TENON_AC)) {
-            console.log(`\n${t.notches} notch${t.notches === 1 ? ' ' : 'es'}  ROUND BORE D ${D.toFixed(2)}  <-  your ${who} HEX TENON (measured AC ${ac})`);
+            console.log(`\n${t.notches ?? '-'} notch${t.notches === 1 ? ' ' : 'es'}  ROUND BORE D ${D.toFixed(2)}  <-  your ${who} HEX TENON (measured AC ${ac})`);
             console.log(`         contact on the six CORNERS.  snug when D = AC = ${ac}`);
             console.log(`         interference ${(((ac - D) / 2) >= 0 ? '+' : '')}${((ac - D) / 2).toFixed(3)} /side;  will not enter below D ${t.tenon.min.toFixed(2)} (tenon AF)`);
         }
