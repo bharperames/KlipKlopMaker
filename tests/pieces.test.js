@@ -1654,21 +1654,24 @@ describe('the deck ceiling is held up', () => {
     test('a curve carries ribs across it, not spines along it', async () => {
         await initCSG();
         const { g, pc } = build('curveR');
-        const m = SPEC.key.ribThk + 0.5;
-        const usable = pc.planLen - 2 * m;
-        const n = Math.round(usable / SPEC.underside.ribPitchMm);
+        // Ribs are INTERIOR only: the end ribs close the first and last bay, so
+        // the run between their inner faces carries n-1 ribs, every one full
+        // width. A rib clamped at the boundary would be a half-width fin
+        // attached to nothing, which is the defect this replaced.
+        const s0 = SPEC.key.ribThk, s1 = pc.planLen - SPEC.key.ribThk;
+        const n = Math.round((s1 - s0) / SPEC.underside.ribPitchMm);
         // AT LEAST one run, not exactly one: a rib does span the channel, but
         // the station nearest the boss is crossed by the socket BORE, which
         // splits the scan into two legitimately.
         let onRib = 0;
-        for (let i = 0; i <= n; i++) {
-            if (wallsAcross(g, pc, m + (usable * i) / n, 0.5) >= 1) onRib++;
+        for (let i = 1; i < n; i++) {
+            if (wallsAcross(g, pc, s0 + ((s1 - s0) * i) / n, 0.5) >= 1) onRib++;
         }
-        expect(`${onRib} of ${n + 1} rib stations carry material`)
-            .toBe(`${n + 1} of ${n + 1} rib stations carry material`);
+        expect(`${onRib} of ${n - 1} rib stations carry material`)
+            .toBe(`${n - 1} of ${n - 1} rib stations carry material`);
         // and between two ribs there is open cavity — sampled in the second bay,
         // which is clear of both the boss and the end ribs
-        const bay = m + (usable * 1.5) / n;
+        const bay = s0 + ((s1 - s0) * 1.5) / n;
         expect(`between ribs: ${wallsAcross(g, pc, bay, 0.5)}`).toBe('between ribs: 0');
     });
 

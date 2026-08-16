@@ -990,8 +990,12 @@ function undersideSupportOps(piece, spec) {
     if (!U) return [];
     const pl = undersidePlane(piece, spec);
     const uHalf = piece.innerWidth / 2 + spec.wall / 2;   // reach into the rails
-    const sMargin = spec.key.ribThk + 0.5;
-    const s0 = sMargin, s1 = piece.planLen - sMargin;
+    // THE END RIBS ARE THE TERMINAL ANCHORS. They are full-width walls already,
+    // `key.ribThk` deep at each face, so the run between their INNER faces is
+    // what needs dividing. Sizing off `ribThk + 0.5` instead left a rib clamped
+    // to half width sitting 0.5 mm short of the end rib at each end — a 0.40 mm
+    // fin attached to nothing, which is what Brett saw in the preview.
+    const s0 = spec.key.ribThk, s1 = piece.planLen - spec.key.ribThk;
     if (s1 - s0 < 5) return [];
     const top = -spec.floorThk + 0.3;
 
@@ -1011,23 +1015,27 @@ function undersideSupportOps(piece, spec) {
     };
 
     if (piece.radius) {
-        // RIBS across the channel, at a pitch along the arc.
+        // RIBS across the channel — INTERIOR ONLY. The end ribs close the first
+        // and last bay, so the run between them is divided into n bays by n-1
+        // ribs, every one of them full width and standing clear of both faces.
         const n = Math.max(1, Math.round((s1 - s0) / U.ribPitchMm));
         const ops = [];
-        for (let i = 0; i <= n; i++) {
+        for (let i = 1; i < n; i++) {
             const sc = s0 + ((s1 - s0) * i) / n;
-            const a = Math.max(s0, sc - U.ribMm / 2), b = Math.min(s1, sc + U.ribMm / 2);
-            if (b - a < 0.05) continue;
-            ops.push(wall(a, b, () => [-uHalf, uHalf], 1));
+            ops.push(wall(sc - U.ribMm / 2, sc + U.ribMm / 2, () => [-uHalf, uHalf], 1));
         }
         return ops;
     }
-    // SPINES along the piece, dividing the channel into equal bays.
-    const steps = Math.max(2, Math.ceil((s1 - s0) / 3));
+    // SPINES along the piece, dividing the channel into equal bays. They run
+    // 0.5 mm INTO each end rib rather than stopping short of it: a butt joint
+    // on the rib's inner face is a coplanar pair the boolean has to resolve,
+    // and stopping short leaves the same orphan gap the ribs had.
+    const a = s0 - 0.5, b = s1 + 0.5;
+    const steps = Math.max(2, Math.ceil((b - a) / 3));
     const ops = [];
     for (let i = 1; i <= U.spines; i++) {
         const u = -uHalf + (2 * uHalf * i) / (U.spines + 1);
-        ops.push(wall(s0, s1, () => [u - U.spineMm / 2, u + U.spineMm / 2], steps));
+        ops.push(wall(a, b, () => [u - U.spineMm / 2, u + U.spineMm / 2], steps));
     }
     return ops;
 }
