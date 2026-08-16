@@ -1451,7 +1451,7 @@ function stackedHex(levels) {
  * on the blind end so the slicer does not plant support inside a hole that can
  * never be reached.
  */
-function roundSocketSolid(dia, yOpen, yEnd, roofY = null) {
+function roundSocketSolid(dia, yOpen, yEnd, roofY = null, cx = 0, cz = 0) {
     const r = dia / 2;
     const dir = Math.sign(yEnd - yOpen);
     const levels = [
@@ -1462,7 +1462,7 @@ function roundSocketSolid(dia, yOpen, yEnd, roofY = null) {
     if (roofY != null && dir * (roofY - yEnd) > 0.2) {
         levels.push({ y: roofY, r: Math.max(0.3, r - Math.abs(roofY - yEnd)) });
     }
-    const profiles = levels.map(l => circlePlan(l.r, 96).map(([x, z]) => [x, -z]));
+    const profiles = levels.map(l => circlePlan(l.r, 96).map(([x, z]) => [cx + x, -(cz + z)]));
     const stations = levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }));
     return toBufferGeometry(sweepSolid(profiles, stations));
 }
@@ -1571,7 +1571,7 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
         { op: ADDITION, geometry: bar },
         { op: ADDITION, geometry: ends[1] },
         { op: ADDITION, geometry: tenon },
-        { op: SUBTRACTION, geometry: hexSocketSolid(arm, 0, -0.5, spec.socket.depth, spec) },
+        { op: SUBTRACTION, geometry: roundSocketSolid(spec.socket.boreDia, -0.5, spec.socket.depth, null, arm, 0) },
         ...hexFlatEngraveOps(opts.code ?? null, 15, 0, H, spec, { capHeight: 1.6 })
     ]);
 }
@@ -1676,8 +1676,9 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
         ].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
     ));
     const ops = [
-        // the socket the riser stack plugs into, opening downward
-        { op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        // the socket the riser stack plugs into, opening downward — a ROUND
+        // bore now; see SPEC.socket.boreDia
+        { op: SUBTRACTION, geometry: roundSocketSolid(spec.socket.boreDia, -0.5, spec.socket.depth) },
         // the flat: a slab taken off one side of the body only
         {
             op: SUBTRACTION,
@@ -1751,9 +1752,8 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     return csgChain(body, [
         ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(
             roundTenon(round, sizeMm - 0.4, sizeMm + spec.socket.depth - 1)) }] : []),
-        { op: SUBTRACTION, geometry: opts.roundSocketDia
-            ? roundSocketSolid(opts.roundSocketDia, -0.5, spec.socket.depth)
-            : hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec) },
+        { op: SUBTRACTION, geometry: roundSocketSolid(
+            opts.roundSocketDia ?? spec.socket.boreDia, -0.5, spec.socket.depth) },
         ...gridMarks(sizeMm, spec),
         // BETWEEN two grid marks, not across one. hexFlatEngraveOps centres the
         // block on the span it is given, and given the whole shaft that centre

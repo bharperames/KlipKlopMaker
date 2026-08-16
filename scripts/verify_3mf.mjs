@@ -116,31 +116,43 @@ for (const o of objs) {
     const r = analyzeMesh(o.P, o.I);
     const ok = r.isManifold && r.isConsistent && r.windsOutward;
     if (!ok) bad++;
-    const bore = feature(o.P, o.I, 5, true);
-    const tenon = feature(o.P, o.I, 19, false);
+    // SAMPLE HEIGHTS FROM THE PART, NOT FROM A CONSTANT. Fixed z=5/z=19 is only
+    // right for a 15 mm riser: on a 30 it reads the shaft as the "tenon", and
+    // on a foot (which has no socket at all) it reads the flare as a "bore".
+    // A socket opens at the bottom and a tenon is the last feature at the top.
+    let zMin = Infinity, zMax = -Infinity;
+    for (let i = 2; i < o.P.length; i += 3) { zMin = Math.min(zMin, o.P[i]); zMax = Math.max(zMax, o.P[i]); }
+    const bore = feature(o.P, o.I, zMin + 5, true);
+    const tenon = feature(o.P, o.I, zMax - 5, false);
     // notches: shaft radius on +x at each groove height, against an uncut band
-    const uncut = ray(o.P, o.I, 10.2, 0, false);
+    const uncut = ray(o.P, o.I, zMin + 10.2, 0, false);
     const notches = [11.2, 12.5, 13.8]
-        .map(h => ray(o.P, o.I, h, 0, false))
+        .map(h => ray(o.P, o.I, zMin + h, 0, false))
         .filter(v => v !== null && uncut !== null && v < uncut - 0.5).length;
     table.push({ o, r, ok, bore, tenon, notches });
 }
 
 for (const t of table) {
-    const d = (f) => !f ? 'none' : f.round ? `round D ${f.min.toFixed(2)}` : `hex AF ${f.min.toFixed(2)} / AC ${f.max.toFixed(2)}`;
+    // A "bore" wider than the 15 AF shaft is the ray leaving the part, not a
+    // hole; and an off-axis bore (the jog's, 45 mm out on its arm) is invisible
+    // to an on-axis cast. Say so rather than print a number that looks real.
+    const d = (f, isBore) => !f ? 'none'
+        : isBore && f.min > 12 ? `none on the axis (min ${f.min.toFixed(2)} is the outer shell)`
+        : f.round ? `round D ${f.min.toFixed(2)}`
+        : `hex AF ${f.min.toFixed(2)} / AC ${f.max.toFixed(2)}`;
     console.log(`${t.o.name.padEnd(19)} ${t.o.hash}  ${t.ok ? 'watertight' : '*** NOT WATERTIGHT ***'}  ${(t.r.volumeMm3 / 1000).toFixed(2)} cm3   ${t.notches} notch${t.notches === 1 ? '' : 'es'}`);
-    console.log(`   bore  ${d(t.bore)}`);
-    console.log(`   tenon ${d(t.tenon)}`);
+    console.log(`   bore  ${d(t.bore, true)}`);
+    console.log(`   tenon ${d(t.tenon, false)}`);
 }
 
 console.log('\n--- WHAT SUCCESS LOOKS LIKE -------------------------------------------');
 for (const t of table) {
-    if (t.tenon?.round) {
+    if (t.tenon?.round && t.tenon.min < 12) {
         const D = t.tenon.min;
         console.log(`\n${t.notches} notch${t.notches === 1 ? ' ' : 'es'}  ROUND TENON D ${D.toFixed(2)}  ->  your existing HEX SOCKET (AF ${SOCK_AF.toFixed(2)}, AC ${SOCK_AC.toFixed(2)})`);
         console.log(`         contact on the six FLATS.  snug when D = AF = ${SOCK_AF.toFixed(2)}`);
         console.log(`         drawn interference ${(((D - SOCK_AF) / 2) >= 0 ? '+' : '')}${((D - SOCK_AF) / 2).toFixed(3)} /side;  will not enter past D ${SOCK_AC.toFixed(2)}`);
-    } else if (t.bore?.round) {
+    } else if (t.bore?.round && t.bore.min < 12) {
         const D = t.bore.min;
         for (const [who, ac] of Object.entries(MEASURED_TENON_AC)) {
             console.log(`\n${t.notches} notch${t.notches === 1 ? ' ' : 'es'}  ROUND BORE D ${D.toFixed(2)}  <-  your ${who} HEX TENON (measured AC ${ac})`);

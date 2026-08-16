@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.3.0';
+export const GEOMETRY_VERSION = '2.4.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -200,6 +200,45 @@ export const SPEC = {
     clearanceHeight: 100,
     socket: {
         hexAF: 9, depth: 10, bossR: 9.5, pillarR: 7,
+        /**
+         * THE PILLAR SOCKET IS A ROUND BORE, AND THE TENON STAYS HEX.
+         *
+         * Brett's inversion, and it is measured, not reasoned: a plate of three
+         * round bores took his existing hex tenons and read 9.60 "a pleasing
+         * snug fit, easy to push in, doesn't fall out", 9.85 "kinda loose",
+         * 10.10 "really loose". Cylinder-in-hex, tested on the same plate, has
+         * almost no window at all — 8.89 enters and 9.10 already will not.
+         *
+         * WHY THE HEX GOES OUTSIDE. FDM cannot cut a sharp INTERNAL corner: the
+         * nozzle leaves roughly its own radius in each of a hex socket's six,
+         * and how much varies with the part. That rounding, not any drawn
+         * clearance, is what set the old fit — which is why one drawing gave
+         * "very tight" in a foot and "loose" in a riser off the same plate. An
+         * external corner is only a direction change and comes out crisp, and a
+         * round hole has no internal corners to lose. Each feature is now where
+         * the process is good at it.
+         *
+         * A hex in a round bore lands on its six CORNERS, so it is SNUG when
+         * the bore equals the tenon's ACROSS-CORNERS and jams when the bore
+         * falls to its ACROSS-FLATS. Sharp corners displace little material, so
+         * they yield gracefully over that whole band — the opposite of a
+         * cylinder on six flats, which is a broad contact that jams almost at
+         * once. (I had that backwards and the print corrected it.)
+         *
+         * 9.60 against a tenon printing 9.65-9.73 across corners. It does not
+         * remove the 0.08 mm spread between a broad foot and a slender riser —
+         * nothing will, they are the same drawing — but it accommodates all of
+         * it, snug to firm, where the hex socket ran loose to jammed.
+         *
+         * THE TENON IS UNCHANGED, so this is backward compatible in the
+         * direction that matters: a new riser still plugs into every hex socket
+         * already printed, and an old riser plugs into the new bore better than
+         * it did into a hex one.
+         *
+         * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
+         * round bore would let a 45 mm offset arm swing anywhere.
+         */
+        boreDia: 9.6,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
