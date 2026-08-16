@@ -32,9 +32,12 @@ import * as fflate from 'fflate';
 import { layoutTrack, planPillarPositions, spacerHeightMm, spacerVariant,
          SPEC, GEOMETRY_VERSION } from '../js/track.js';
 import { partCode, pieceCode } from '../js/engrave.js';
+import * as trackFns from '../js/track.js';
+import { ADDITION as ADDITION_OP, toBufferGeometry as toBG } from '../js/pieces.js';
 import { initCSG, buildPieceExportGeometry, buildSupportFootGeometry,
          buildRiserGeometry, buildSpacerGeometry, buildJogGeometry,
          buildKeyGeometry } from '../js/pieces.js';
+import { sweepSolid } from '../js/geometry.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
 
@@ -42,6 +45,26 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'test-parts', 'assembly_2_4_0');
 const BED = 256, MARGIN = 6;
 const DO_SLICE = process.argv.includes('--slice');
+
+/** The whole cavity as one solid — the underside that silences the warning. */
+function solidCavityOps(piece, spec) {
+    const { undersidePlane, planPosAt, deckYAt } = trackFns;
+    const pl = undersidePlane(piece, spec);
+    const uHalf = piece.innerWidth / 2 + spec.wall / 2;
+    const s0 = spec.key.ribThk - 0.5, s1 = piece.planLen - spec.key.ribThk + 0.5;
+    const N = Math.max(2, Math.ceil((s1 - s0) / 3) + 1);
+    const stations = [], profiles = [];
+    for (let i = 0; i < N; i++) {
+        const sA = s0 + ((s1 - s0) * i) / (N - 1);
+        const p = planPosAt(piece, sA), y = deckYAt(piece, sA);
+        const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+        stations.push({ s: sA, origin: [p.x, y, p.z], right });
+        const bot = (u) => pl.at(p.x + right[0] * u, p.z + right[2] * u) - y;
+        const top = -spec.floorThk + 0.3;
+        profiles.push([[-uHalf, bot(-uHalf)], [uHalf, bot(uHalf)], [uHalf, top], [-uHalf, top]]);
+    }
+    return [{ op: ADDITION_OP, geometry: toBG(sweepSolid(profiles, stations)) }];
+}
 
 const arrays = (g) => {
     if (g.positions) return g;
@@ -61,8 +84,10 @@ const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'
 const sup = planPillarPositions(pieces);
 const track = (type) => {
     const pc = pieces.find(p => p.type === type);
+    const extraOps = (SOLID_CURVE && type === 'curveR')
+        ? (piece, spec) => solidCavityOps(piece, spec) : undefined;
     return buildPieceExportGeometry(pc, {
-        support: sup.find(s => s.pieceIndex === pc.index), forPrint: true });
+        support: sup.find(s => s.pieceIndex === pc.index), forPrint: true, extraOps });
 };
 const curvePiece = pieces.find(p => p.type === 'curveR');
 const spcH = spacerHeightMm(curvePiece, SPEC);
@@ -74,6 +99,15 @@ const spcV = spacerVariant(spcH);
 // mates; adding them here only costs bed space the curve needs. `--supports`
 // puts them back for a from-scratch set.
 const WITH_SUPPORTS = process.argv.includes('--supports');
+// `--curve-only` puts just the curve on the plate. It is the piece with an open
+// question and the only one whose answer is still moving; the straight is
+// already in Brett's hands.
+const CURVE_ONLY = process.argv.includes('--curve-only');
+// `--solid-curve` fills the curve's under-deck cavity instead of ribbing it.
+// The control that made Bambu's cantilever warning go silent, and it is 41 min
+// FASTER than ribs+spine for 13 g — sparse infill prints quicker than thousands
+// of bridge and overhang moves.
+const SOLID_CURVE = process.argv.includes('--solid-curve');
 const items = [
     { name: 'curve_R', n: 1, code: pieceCode(pieces.find(p => p.type === 'curveR'), GEOMETRY_VERSION), g: () => track('curveR') },
     { name: 'straight', n: 1, code: pieceCode(pieces.find(p => p.type === 'straight'), GEOMETRY_VERSION), g: () => track('straight') },
@@ -82,7 +116,8 @@ const items = [
     { name: `spacer_${spcV?.code ?? 'SPC'}`, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION), n: 1, g: () => buildSpacerGeometry(spcH, SPEC, { rings: spcV?.rings ?? 1, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION) }) },
     { name: 'support_jog', code: partCode('JOG', GEOMETRY_VERSION), n: 1, g: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
     { name: 'bowtie_key', code: partCode('KEY', GEOMETRY_VERSION), n: 2, g: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) }
-].filter(it => WITH_SUPPORTS || it.name === 'curve_R' || it.name === 'straight');
+].filter(it => CURVE_ONLY ? it.name === 'curve_R'
+    : (WITH_SUPPORTS || it.name === 'curve_R' || it.name === 'straight'));
 
 // Build once per NAME, gate it, then place n copies. A part that fails the mesh
 // gate stops the whole plate — the rule the curve experiments did not have.
@@ -128,7 +163,8 @@ if (bad) { console.error(`\n${bad} part(s) failed the mesh gate — NOTHING WRIT
 // stop the deck's first layer sagging? Printing them side by side means one
 // answer covers both, and the supports ride along so the result is assemblable.
 const plates = [
-    { file: 'plate_curve_and_straight', keep: () => true }
+    { file: CURVE_ONLY ? (SOLID_CURVE ? 'plate_curve_solid' : 'plate_curve_ribbed')
+        : 'plate_curve_and_straight', keep: () => true }
 ];
 
 // SKYLINE, not shelves. The curve is 179x178 on a 244 mm usable bed, which
