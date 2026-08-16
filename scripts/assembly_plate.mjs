@@ -82,9 +82,9 @@ fs.mkdirSync(OUT, { recursive: true });
 const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
     { skirtStyle: 'minimal', slopeDeg: 11.2167 });
 const sup = planPillarPositions(pieces);
-const track = (type) => {
+const track = (type, solidIt = false) => {
     const pc = pieces.find(p => p.type === type);
-    const extraOps = (SOLID_CURVE && type === 'curveR')
+    const extraOps = ((SOLID_CURVE && type === 'curveR') || (solidIt && type === 'straight'))
         ? (piece, spec) => solidCavityOps(piece, spec) : undefined;
     return buildPieceExportGeometry(pc, {
         support: sup.find(s => s.pieceIndex === pc.index), forPrint: true, extraOps });
@@ -108,15 +108,32 @@ const CURVE_ONLY = process.argv.includes('--curve-only');
 // FASTER than ribs+spine for 13 g — sparse infill prints quicker than thousands
 // of bridge and overhang moves.
 const SOLID_CURVE = process.argv.includes('--solid-curve');
+// `--both-straights` adds a SECOND straight with its cavity filled, beside the
+// spined one. Brett: "maybe the straight wins by using infill too". On the
+// harness it does not — +10.4 g for identical bridge stats — but the harness
+// said the same of the curve and was wrong for his machine, where a ribbed part
+// costs 24 g more than it does here and a solid one costs 2 g less. Two on one
+// plate settles it in his slicer and in plastic at once.
+const BOTH_STRAIGHTS = process.argv.includes('--both-straights');
+// A 179x178 curve plus two 159x53 straights is 302 mm of depth on a 244 mm bed,
+// so the set is split by errand rather than crammed. Each mode names its plate.
+const STRAIGHTS_ONLY = process.argv.includes('--straights-only');
+const SUPPORTS_ONLY = process.argv.includes('--supports-only');
+const isTrack = (n) => n === 'curve_R' || n === 'straight' || n === 'straight_solid';
 const items = [
     { name: 'curve_R', n: 1, code: pieceCode(pieces.find(p => p.type === 'curveR'), GEOMETRY_VERSION), g: () => track('curveR') },
     { name: 'straight', n: 1, code: pieceCode(pieces.find(p => p.type === 'straight'), GEOMETRY_VERSION), g: () => track('straight') },
+    { name: 'straight_solid', n: 1, code: pieceCode(pieces.find(p => p.type === 'straight'), GEOMETRY_VERSION), g: () => track('straight', true) },
     { name: 'support_foot', code: partCode('FOOT', GEOMETRY_VERSION), n: 1, g: () => buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) }) },
     { name: 'riser_15', code: partCode('R15', GEOMETRY_VERSION), n: 2, g: () => buildRiserGeometry(15, SPEC, { code: partCode('R15', GEOMETRY_VERSION) }) },
     { name: `spacer_${spcV?.code ?? 'SPC'}`, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION), n: 1, g: () => buildSpacerGeometry(spcH, SPEC, { rings: spcV?.rings ?? 1, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION) }) },
     { name: 'support_jog', code: partCode('JOG', GEOMETRY_VERSION), n: 1, g: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
     { name: 'bowtie_key', code: partCode('KEY', GEOMETRY_VERSION), n: 2, g: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) }
-].filter(it => CURVE_ONLY ? it.name === 'curve_R'
+].filter(it =>
+    SUPPORTS_ONLY ? !isTrack(it.name)
+    : STRAIGHTS_ONLY ? (it.name === 'straight' || (it.name === 'straight_solid' && BOTH_STRAIGHTS))
+    : CURVE_ONLY ? it.name === 'curve_R'
+    : it.name === 'straight_solid' ? BOTH_STRAIGHTS
     : (WITH_SUPPORTS || it.name === 'curve_R' || it.name === 'straight'));
 
 // Build once per NAME, gate it, then place n copies. A part that fails the mesh
@@ -163,7 +180,9 @@ if (bad) { console.error(`\n${bad} part(s) failed the mesh gate — NOTHING WRIT
 // stop the deck's first layer sagging? Printing them side by side means one
 // answer covers both, and the supports ride along so the result is assemblable.
 const plates = [
-    { file: CURVE_ONLY ? (SOLID_CURVE ? 'plate_curve_solid' : 'plate_curve_ribbed')
+    { file: SUPPORTS_ONLY ? 'plate_supports'
+        : STRAIGHTS_ONLY ? (BOTH_STRAIGHTS ? 'plate_straights_both' : 'plate_straight')
+        : CURVE_ONLY ? (SOLID_CURVE ? 'plate_curve_solid' : 'plate_curve_ribbed')
         : 'plate_curve_and_straight', keep: () => true }
 ];
 
