@@ -1294,8 +1294,21 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     // Each ROLE takes the rule for its own shape — the main half is a straight
     // and wants spines, the branch is a curve and wants ribs. They share one
     // underside plane (planeGroup), so both sets reach the same bed.
-    ops.push(...undersideSupportOps(mainPiece, spec));
-    ops.push(...undersideSupportOps(branchPiece, spec));
+    //
+    // `extraOps` REPLACES that per role, exactly as it does on a single piece.
+    // It was missing here, and silently: a solid-cavity switch was built,
+    // sliced and compared against the ribbed one, and the two came out
+    // byte-identical at 142.6 cm3 because the hook was ignored. A seam that
+    // accepts an argument and drops it is worse than none.
+    //
+    // Returning nothing for a role falls back to that role's default, so a
+    // caller can override ONE half and leave the other alone. The switch is the
+    // one part with two shapes in it, and the two shapes want opposite things:
+    // the curved branch wants filling, the straight main wants its capped spine.
+    // Without this the choice is all-or-nothing across a part that is not.
+    for (const pc of [mainPiece, branchPiece]) {
+        ops.push(...(opts.extraOps?.(pc, spec) ?? undersideSupportOps(pc, spec)));
+    }
     ops.push(...bossOps(mainPiece, spec, opts.support));
 
     ops.push(...gateSeatOps(mainPiece, branchPiece, spec));
