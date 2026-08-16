@@ -1659,6 +1659,46 @@ describe('the deck ceiling is held up', () => {
         expect(wallsAcross(g, pc, pc.planLen * 0.70, 0.5)).toBe(SPEC.underside.spines);
     });
 
+    /**
+     * A SPINE MUST REACH BOTH END RIBS, and this test exists because one did
+     * not and it reached Brett's printer. Spines used to run `ribThk + 0.5` to
+     * `planLen - ribThk - 0.5` — deliberately SHORT of the ribs — leaving a
+     * 0.4 mm gap at each end, so the spine ended in a free rounded tip holding
+     * nothing up. He spotted it in the print; the test above did not, because
+     * it only asked whether spines EXIST at two stations, never whether they
+     * are attached to anything.
+     */
+    test('a spine is fused into the end rib at both ends', async () => {
+        await initCSG();
+        const { g, pc } = build('straight');
+        const pl = undersidePlane(pc, SPEC);
+        const uHalf = pc.innerWidth / 2 + SPEC.wall / 2;
+        const u = -uHalf + (2 * uHalf) / (SPEC.underside.spines + 1);
+        // walk the length at mid-cavity height on the spine's own line
+        const runs = [];
+        let inside = false, start = 0;
+        for (let s = 0; s <= pc.planLen; s += 0.2) {
+            const p = planPosAt(pc, s), deck = deckYAt(pc, s);
+            const right = [Math.sin(p.h), -Math.cos(p.h)];
+            const x = p.x + right[0] * u, z = p.z + right[1] * u;
+            const bottom = pl.at(x, z);
+            const solid = solidAt(g, x, bottom + (deck - SPEC.floorThk - bottom) * 0.5, z);
+            if (solid && !inside) { inside = true; start = s; }
+            if (!solid && inside) { inside = false; runs.push([start, s]); }
+        }
+        if (inside) runs.push([start, pc.planLen]);
+        // ONE run, and it has to reach inside both ribs (which span 0..ribThk
+        // and planLen-ribThk..planLen). Two runs means a gap at an end.
+        const spanning = runs.filter(([a, b]) => b - a > 20);
+        expect(`${spanning.length} continuous run(s) on the spine`)
+            .toBe('1 continuous run(s) on the spine');
+        const [a, b] = spanning[0];
+        expect(`starts inside the entry rib: ${a < SPEC.key.ribThk}`)
+            .toBe('starts inside the entry rib: true');
+        expect(`ends inside the exit rib: ${b > pc.planLen - SPEC.key.ribThk}`)
+            .toBe('ends inside the exit rib: true');
+    });
+
     test('a curve carries ribs across it, not spines along it', async () => {
         await initCSG();
         const { g, pc } = build('curveR');
