@@ -530,6 +530,7 @@ const VARIANTS = [
     spines(1, 0.8), spines(1, 1.6), spines(2, 0.8), spines(3, 0.8),
     capped(2, 0.8, 2), capped(2, 0.8, 3), capped(2, 0.8, 5),
     capped(1, 0.8, 3), capped(1, 0.8, 5), capped(1, 1.6, 5),
+    capped(1, 1.2, 3), capped(1, 1.6, 3), capped(1, 2.4, 3),
     ribs(10, 0.8), ribs(14, 0.8), ribs(18, 0.8), ribs(24, 0.8),
     cappedRibs(14, 0.8, 3), cappedRibs(18, 0.8, 3), cappedRibs(14, 0.8, 5),
     gridCap(14, 1, 0.8, 3), gridCap(18, 1, 0.8, 3), gridCap(14, 2, 0.8, 3),

@@ -383,7 +383,19 @@ export const SPEC = {
      * straight needs and twice what a curve needs — half of it runs along the
      * arc, where it does nothing.
      *
-     * 0.8 mm is two extrusions. 1.6 measured identically and cost 27 g.
+     * THE SPINE IS 1.6 mm, THE RIBS 0.8. Not an oversight — they do different
+     * jobs. Anchoring is the CAPITAL's job, and the measurements say so: taking
+     * the spine shaft 0.8 -> 1.2 -> 1.6 -> 2.4 leaves every bridge column
+     * identical (232 long moves, 317 mm open-ended, 71.9 max, all four). So
+     * shaft thickness buys nothing but STIFFNESS, and stiffness is what Brett
+     * reported missing — "these printed ones ... are flimsy". 1.6 is four
+     * extrusions instead of two, for +1.5 g and no extra time, on a web that
+     * carries the walking surface. The ribs stay 0.8 because a curve has
+     * thirteen of them and they are braced by the spine crossing every one.
+     *
+     * (The flimsy ones he held were also the version with 0.4 mm gaps at BOTH
+     * ends and no capital — free fins joined to nothing but the bed. Thickening
+     * is insurance on top of that fix, not a substitute for it.)
      *
      * THE TOP HAS TO BE 3 mm WIDE OR THE SLICER IGNORES IT. Brett, watching a
      * printed straight: "the sagging (caught by the ribs, but not anchored to
@@ -412,7 +424,7 @@ export const SPEC = {
      * shipped before it. At u=0 it also runs through the boss, so it is braced
      * mid-span instead of standing as a lone 129 mm fin.
      */
-    underside: { spines: 1, spineMm: 0.8, capMm: 3, ribPitchMm: 18, ribMm: 0.8 },
+    underside: { spines: 1, spineMm: 1.6, capMm: 3, ribPitchMm: 18, ribMm: 0.8 },
     /**
      * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
      * the 15 mm grid. Same move as the jog: the track piece keeps one shape and
