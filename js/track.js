@@ -361,10 +361,21 @@ export const SPEC = {
      *     so lengthwise spines halve every span — two of them give 16 mm bays.
      *     Measured: bridges over 40 mm go 13 099 -> 0 mm and the longest span
      *     47.3 -> 23.4, for +3.0 g and +4 minutes.
-     *   · a curve's exposed ceiling runs ALONG the arc, so a spine lies
-     *     parallel to the spans and does nothing (three of them left the max at
-     *     45.2 against a 45.6 baseline). Radial ribs cut it: 14 mm pitch takes
-     *     the max to 17.4 for +12 g.
+     *   · a curve takes RIBS AND ONE SPINE. Radial ribs alone cut one family of
+     *     long moves and leave the other: capping them takes the 75 deg family
+     *     105 -> 0 but the 45 deg family only 94 -> 74, because a curve sweeps
+     *     90 deg of azimuth so a radial rib is PARALLEL to the fill at some part
+     *     of the arc. A spine along the arc crosses exactly those. Neither works
+     *     alone — a capped spine on its own is worse than plain ribs (open-ended
+     *     over 20 mm goes 0 -> 1068) — and together they are better than either:
+     *
+     *       plain ribs @14        88.9 g   moves >30mm 209   open>20    0
+     *       capped ribs @14       89.1 g               87              115
+     *       capped spine only     81.0 g              262             1068
+     *       capped @18 + spine    89.8 g               72                0
+     *
+     *     18 mm pitch beats 14 once a spine is there, so the spine buys back
+     *     more than the coarser ribs give up.
      *
      * Sized at the knee, not past it. One spine is not enough (half of 48 is
      * 24, still over the 20 mm line); three buys nothing a second does not.
@@ -401,7 +412,7 @@ export const SPEC = {
      * shipped before it. At u=0 it also runs through the boss, so it is braced
      * mid-span instead of standing as a lone 129 mm fin.
      */
-    underside: { spines: 1, spineMm: 0.8, capMm: 3, ribPitchMm: 14, ribMm: 0.8 },
+    underside: { spines: 1, spineMm: 0.8, capMm: 3, ribPitchMm: 18, ribMm: 0.8 },
     /**
      * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
      * the 15 mm grid. Same move as the jog: the track piece keeps one shape and

@@ -68,6 +68,12 @@ const curvePiece = pieces.find(p => p.type === 'curveR');
 const spcH = spacerHeightMm(curvePiece, SPEC);
 const spcV = spacerVariant(spcH);
 
+// SUPPORTS ARE OPT-IN. The plate Brett asked for is the two TRACK pieces — they
+// are what changed and what is being judged. The foot, risers, spacer, jog and
+// keys are untouched by the underside work, so a set already printed still
+// mates; adding them here only costs bed space the curve needs. `--supports`
+// puts them back for a from-scratch set.
+const WITH_SUPPORTS = process.argv.includes('--supports');
 const items = [
     { name: 'curve_R', n: 1, code: pieceCode(pieces.find(p => p.type === 'curveR'), GEOMETRY_VERSION), g: () => track('curveR') },
     { name: 'straight', n: 1, code: pieceCode(pieces.find(p => p.type === 'straight'), GEOMETRY_VERSION), g: () => track('straight') },
@@ -76,7 +82,7 @@ const items = [
     { name: `spacer_${spcV?.code ?? 'SPC'}`, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION), n: 1, g: () => buildSpacerGeometry(spcH, SPEC, { rings: spcV?.rings ?? 1, code: partCode(spcV?.code ?? 'SPC', GEOMETRY_VERSION) }) },
     { name: 'support_jog', code: partCode('JOG', GEOMETRY_VERSION), n: 1, g: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
     { name: 'bowtie_key', code: partCode('KEY', GEOMETRY_VERSION), n: 2, g: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) }
-];
+].filter(it => WITH_SUPPORTS || it.name === 'curve_R' || it.name === 'straight');
 
 // Build once per NAME, gate it, then place n copies. A part that fails the mesh
 // gate stops the whole plate — the rule the curve experiments did not have.
@@ -117,25 +123,44 @@ if (bad) { console.error(`\n${bad} part(s) failed the mesh gate — NOTHING WRIT
 //
 // Printer space is X=x, Y=-z, Z=y, so a part's bed footprint is (w, d) and the
 // build item translation centres it there. Z is HEIGHT: -y0 puts it on the bed.
+// ONE PLATE, curve and straight together, because that is what Brett asked
+// for and both are now the same question: does the capped under-deck structure
+// stop the deck's first layer sagging? Printing them side by side means one
+// answer covers both, and the supports ride along so the result is assemblable.
 const plates = [
-    { file: 'plate1_curve', keep: (b) => b.name === 'curve_R' },
-    { file: 'plate2_straight_and_supports', keep: (b) => b.name !== 'curve_R' }
+    { file: 'plate_curve_and_straight', keep: () => true }
 ];
 
+// SKYLINE, not shelves. The curve is 179x178 on a 244 mm usable bed, which
+// leaves a 59 mm column beside it that a shelf packer cannot reach — it puts
+// the straight on the next shelf and then has nowhere for a 24 mm key. A
+// skyline drops each part at the lowest point it fits, so the column gets used.
 const layOut = (list) => {
     const queue = [];
     for (const b of list) for (let i = 0; i < b.n; i++) queue.push(b);
-    queue.sort((a, b) => (b.d - a.d) || (b.w - a.w));
+    queue.sort((a, b) => (b.w * b.d) - (a.w * a.d));      // largest first
+
+    const usable = BED - 2 * MARGIN;
+    const STEP = 1;
+    const cols = Math.floor(usable / STEP);
+    const sky = new Array(cols).fill(0);
     const out = [];
-    let shelfY = MARGIN, shelfH = 0, penX = MARGIN;
     for (const b of queue) {
-        if (penX + b.w + MARGIN > BED) { shelfY += shelfH + MARGIN; penX = MARGIN; shelfH = 0; }
-        if (shelfY + b.d + MARGIN > BED) return null;
+        const w = b.w + MARGIN, d = b.d + MARGIN;
+        const nw = Math.ceil(w / STEP);
+        let best = null;
+        for (let i = 0; i + nw <= cols; i++) {
+            let y = 0;
+            for (let k = i; k < i + nw; k++) y = Math.max(y, sky[k]);
+            if (y + d > usable + MARGIN) continue;
+            if (!best || y < best.y) best = { i, y };
+        }
+        if (!best) { console.error(`   packer stuck on ${b.name} (${b.w.toFixed(0)}x${b.d.toFixed(0)}); skyline max ${Math.max(...sky).toFixed(0)} min ${Math.min(...sky).toFixed(0)}`); return null; }
+        for (let k = best.i; k < best.i + nw; k++) sky[k] = best.y + d;
+        const x = MARGIN + best.i * STEP, y = MARGIN + best.y;
         out.push({ name: b.name, positions: b.g.positions, indices: b.g.indices,
             meshKey: b.name,
-            at: [penX + b.w / 2 - b.cx, BED - (shelfY + b.d / 2) + b.cz, -b.y0] });
-        penX += b.w + MARGIN;
-        shelfH = Math.max(shelfH, b.d);
+            at: [x + b.w / 2 - b.cx, BED - (y + b.d / 2) + b.cz, -b.y0] });
     }
     return out;
 };

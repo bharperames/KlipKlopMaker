@@ -404,6 +404,29 @@ function ribCapOps({ pitchMm, thickMm, capMm }) {
     };
 }
 
+/**
+ * CAPPED RIBS **AND** A CAPPED CENTRE SPINE — anchors in both directions.
+ *
+ * Capping the ribs killed one family of long moves outright and left the other:
+ * headings on the residual go 105 -> 0 at 75 deg but only 94 -> 74 at 45 deg.
+ * A curve sweeps 90 deg of azimuth, so a radial rib is parallel to the fill at
+ * some part of the arc and cannot break it there — the surviving family is the
+ * one running radially. A spine along the arc is what crosses those.
+ *
+ * This is Brett's original honeycomb instinct — "it is the anchor points that
+ * are key" — arriving at last in a form the slicer can actually see, and sparse:
+ * 13 ribs plus one spine, not a filled cavity.
+ */
+const gridCap = (pitchMm, spines, thickMm, capMm) => ({
+    name: `gridcap_${pitchMm}_${spines}sp_top${String(capMm).replace('.', 'p')}`,
+    note: `capped ribs every ${pitchMm} mm + ${spines} capped spine(s)`,
+    kind: 'gridcap',
+    ops: (piece, spec) => [
+        ...ribCapOps({ pitchMm, thickMm, capMm })(piece, spec),
+        ...spineCapOps({ count: spines, thickMm, capMm, capH: 1.5 })(piece, spec)
+    ]
+});
+
 const cappedRibs = (pitchMm, thickMm, capMm) => ({
     name: `ribcap_${pitchMm}_${String(thickMm).replace('.', 'p')}_top${String(capMm).replace('.', 'p')}`,
     note: `ribs every ${pitchMm} mm, ${thickMm} mm with a ${capMm} mm capital`,
@@ -489,6 +512,7 @@ const VARIANTS = [
     capped(1, 0.8, 3), capped(1, 0.8, 5), capped(1, 1.6, 5),
     ribs(10, 0.8), ribs(14, 0.8), ribs(18, 0.8), ribs(24, 0.8),
     cappedRibs(14, 0.8, 3), cappedRibs(18, 0.8, 3), cappedRibs(14, 0.8, 5),
+    gridCap(14, 1, 0.8, 3), gridCap(18, 1, 0.8, 3), gridCap(14, 2, 0.8, 3),
     // A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK. This one
     // runs the comb straight through the end ribs, sealing the bowtie throat;
     // `--selftest` builds it and PASSES ONLY IF IT IS REJECTED. Without it the

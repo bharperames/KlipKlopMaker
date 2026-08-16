@@ -1014,17 +1014,44 @@ function undersideSupportOps(piece, spec) {
         return { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) };
     };
 
+    const capW = U.capMm ?? U.spineMm;
+    const ceil = -spec.floorThk - 0.2;              // one layer below the ceiling
+    const rise = Math.max(0, (capW - U.spineMm) / 2);      // 45 deg flare
+
+    const ribOps = [];
     if (piece.radius) {
         // RIBS across the channel — INTERIOR ONLY. The end ribs close the first
         // and last bay, so the run between them is divided into n bays by n-1
         // ribs, every one of them full width and standing clear of both faces.
+        //
+        // Each carries a CAPITAL, for the same reason the spine does: a 0.8 mm
+        // strip is below the slicer's sliver cleanup and it bridges straight
+        // over it. Built by sweeping the rib's silhouette ALONG u, because the
+        // capital has to widen in S and a profile swept along s cannot do that.
         const n = Math.max(1, Math.round((s1 - s0) / U.ribPitchMm));
-        const ops = [];
         for (let i = 1; i < n; i++) {
             const sc = s0 + ((s1 - s0) * i) / n;
-            ops.push(wall(sc - U.ribMm / 2, sc + U.ribMm / 2, () => [-uHalf, uHalf], 1));
+            const p = planPosAt(piece, sc), y = deckYAt(piece, sc);
+            const dir = [Math.cos(p.h), 0, Math.sin(p.h)];
+            const rt = [Math.sin(p.h), 0, -Math.cos(p.h)];
+            const stations = [], profiles = [];
+            for (let k = 0; k <= 8; k++) {
+                const u = -uHalf + (2 * uHalf * k) / 8;
+                stations.push({ origin: [p.x + rt[0] * u, y, p.z + rt[2] * u],
+                    right: dir, up: [0, 1, 0] });
+                // the foot follows the plane along the arc too, or the downhill
+                // edge pokes through by grad * ribMm/2
+                const bot = (ds) => pl.at(p.x + rt[0] * u + dir[0] * ds,
+                    p.z + rt[2] * u + dir[2] * ds) - y;
+                profiles.push([
+                    [-U.ribMm / 2, bot(-U.ribMm / 2)], [U.ribMm / 2, bot(U.ribMm / 2)],
+                    [U.ribMm / 2, ceil - rise], [capW / 2, ceil],
+                    [capW / 2, top], [-capW / 2, top],
+                    [-capW / 2, ceil], [-U.ribMm / 2, ceil - rise]
+                ]);
+            }
+            ribOps.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
         }
-        return ops;
     }
     // SPINES along the piece, each carrying a CAPITAL at the ceiling so the
     // slicer will actually anchor its bridges to it — see SPEC.underside. They
@@ -1033,10 +1060,7 @@ function undersideSupportOps(piece, spec) {
     // resolve, and stopping short leaves the orphan gap the ribs once had.
     const a = s0 - 0.5, b = s1 + 0.5;
     const steps = Math.max(2, Math.ceil((b - a) / 3));
-    const capW = U.capMm ?? U.spineMm;
-    const ceil = -spec.floorThk - 0.2;          // one layer below the ceiling
-    const rise = Math.max(0, (capW - U.spineMm) / 2);   // 45 deg
-    const ops = [];
+    const ops = ribOps;
     for (let i = 1; i <= U.spines; i++) {
         const u = -uHalf + (2 * uHalf * i) / (U.spines + 1);
         const stations = [], profiles = [];

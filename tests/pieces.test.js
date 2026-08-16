@@ -1725,10 +1725,13 @@ describe('the deck ceiling is held up', () => {
         }
         expect(`${onRib} of ${n - 1} rib stations carry material`)
             .toBe(`${n - 1} of ${n - 1} rib stations carry material`);
-        // and between two ribs there is open cavity — sampled in the second bay,
-        // which is clear of both the boss and the end ribs
+        // Between two ribs there is open cavity EXCEPT for the centre spine.
+        // A curve takes both: radial ribs cut the along-arc fill, and the spine
+        // cuts the radial fill the ribs run parallel to. So a bay reads exactly
+        // one wall — the spine — not zero and not the full span.
         const bay = s0 + ((s1 - s0) * 1.5) / n;
-        expect(`between ribs: ${wallsAcross(g, pc, bay, 0.5)}`).toBe('between ribs: 0');
+        expect(`between ribs: ${wallsAcross(g, pc, bay, 0.5)}`)
+            .toBe(`between ribs: ${SPEC.underside.spines}`);
     });
 
     test('a flat tile has no cavity and gets nothing', async () => {
