@@ -1417,11 +1417,26 @@ describe('calibration coupons', () => {
         await initCSG();
         const s = await src();
         const base = buildCalibrationCoupons(s);
-        const keyOf = (set) => set.find(c => c.name === 'cal_key')
-            .measures.find(([l]) => l === 'across the tips')[1];
-        expect(keyOf(base)).toBeCloseTo(2 * SPEC.key.tipHalf, 6);
+        // THE KEY HAS TWO TIP DIMENSIONS NOW — it carries a drive taper, so the
+        // grip end is over nominal and the lead end under it. The sheet lists
+        // both, and both have to track SPEC: a sheet that quoted one number for
+        // a directional part would certify whichever end the reader happened to
+        // measure.
+        const tips = (set, which) => set.find(c => c.name === 'cal_key')
+            .measures.find(([l]) => l.startsWith(`across the tips, ${which}`))[1];
+        expect(tips(base, 'GRIP')).toBeCloseTo(2 * (SPEC.key.tipHalf + SPEC.key.taperGripMm), 6);
+        expect(tips(base, 'LEAD')).toBeCloseTo(2 * (SPEC.key.tipHalf - SPEC.key.taperLeadMm), 6);
         const wider = { ...SPEC, key: { ...SPEC.key, tipHalf: SPEC.key.tipHalf + 1 } };
-        expect(keyOf(buildCalibrationCoupons(s, wider))).toBeCloseTo(2 * (SPEC.key.tipHalf + 1), 6);
+        expect(tips(buildCalibrationCoupons(s, wider), 'GRIP'))
+            .toBeCloseTo(2 * (SPEC.key.tipHalf + 1 + SPEC.key.taperGripMm), 6);
+
+        // and the bore, which is the fit that actually failed in the field
+        const boreOf = (set) => set.find(c => c.name === 'cal_post_15')
+            .measures.find(([l]) => l.startsWith('socket bore DIAMETER'))[1];
+        expect(boreOf(base)).toBeCloseTo(SPEC.socket.boreDia, 6);
+        const bigger = { ...SPEC, socket: { ...SPEC.socket, boreDia: SPEC.socket.boreDia + 0.5 } };
+        expect(boreOf(buildCalibrationCoupons(s, bigger)))
+            .toBeCloseTo(SPEC.socket.boreDia + 0.5, 6);
     }, 240000);
 
     /**

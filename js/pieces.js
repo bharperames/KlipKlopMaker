@@ -2270,6 +2270,8 @@ function sideCutters(face, pxFrom, pxTo) {
 export function buildCalibrationCoupons(src, spec = SPEC) {
     const K = spec.key, S = spec.socket;
     const tenonAF = S.hexAF - 2 * spec.jointClearanceMm;
+    const tenonTipAFc = tenonAF - (S.tenonTaperAF ?? 0);
+    const ac = (af) => af / Math.cos(Math.PI / 6);
     const fit = K.fitClearanceMm ?? spec.jointClearanceMm;
     const out = [];
 
@@ -2289,7 +2291,15 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
                 ['rib thickness', K.ribThk],
                 ['channel width between rails', src.piece.innerWidth],
                 ['socket across flats', S.hexAF],
-                ['socket depth from its mouth', S.depth]
+                ['socket depth from its mouth', S.depth],
+                // THE MOUTH IS A LAND PLUS A CONE now, not a flat annulus, and
+                // this coupon is the only place in the set that carries one.
+                // It is the feature that was throwing strands on every printed
+                // socket and the one that tripped the slicer's cantilever
+                // warning; a sheet that did not list it would certify a mouth
+                // nobody has looked at.
+                ['socket mouth, flat bearing land (radial width)', S.mouthLandMm ?? 0],
+                ['counterbore diameter where it meets the sole', 2 * S.collarBoreR]
             ]
         });
     }
@@ -2302,12 +2312,21 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
         // needed." The chips are gone and this key does both jobs: it mates
         // with cal_ramp's pockets, and it is what you push down the bowtie
         // ladder if that fit misses.
-        note: 'The shipped bowtie key, unchanged. Mates with cal_ramp, and is '
-            + 'the chip for the bowtie ladder.',
+        // IT IS DIRECTIONAL NOW. The key carries a drive taper — the lead end
+        // is under nominal so it enters, the grip end over nominal so it wedges
+        // as the last of it is driven home. Brett's complaint was never
+        // clearance ("they are still also a little loose in their slots"); a
+        // prismatic key has exactly ONE fit and the ladder says the drawn one is
+        // already in the proven band. A taper has a range and the user drives it
+        // to the one that grips.
+        note: 'The shipped bowtie key. DIRECTIONAL: the engraved face is the LEAD '
+            + 'end and goes in first — driven the other way round it stops early. '
+            + 'Mates with cal_ramp, and is the chip for the bowtie ladder.',
         build: () => buildKeyGeometry(spec, { code: partCode('KEY', GEOMETRY_VERSION) }),
         measures: [
             ['across the neck', 2 * K.neckHalf],
-            ['across the tips', 2 * K.tipHalf],
+            ['across the tips, GRIP end (engraving down)', 2 * (K.tipHalf + (K.taperGripMm ?? 0))],
+            ['across the tips, LEAD end (engraving up)', 2 * (K.tipHalf - (K.taperLeadMm ?? 0))],
             ['depth', K.depth],
             ['height', K.height - 2 * spec.jointClearanceMm]
         ]
@@ -2318,10 +2337,16 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
         note: 'One grid unit of hex post: the tenon that goes into the socket above '
             + 'and the socket that takes the tenon below. Mates with cal_socket.',
         build: () => buildRiserGeometry(15, spec, { code: partCode('R15', GEOMETRY_VERSION) }),
+        // THE SOCKET IN A POST IS A ROUND BORE, not a hex. This sheet still
+        // asked for it "across flats", which is a reading you cannot take on a
+        // round hole — and the bore is the fit that failed in the field, so it
+        // is the one measurement here that most needed to be right.
         measures: [
-            ['tenon across flats', tenonAF],
+            ['tenon across flats (shoulder)', tenonAF],
+            ['tenon ACROSS CORNERS at the shoulder', +ac(tenonAF).toFixed(2)],
+            ['tenon ACROSS CORNERS at the tip (lead-in taper)', +ac(tenonTipAFc).toFixed(2)],
             ['shaft across flats', 15],
-            ['socket in the base, across flats', S.hexAF],
+            ['socket bore DIAMETER in the base', S.boreDia],
             ['height, shoulder to shoulder', 15]
         ]
     });
@@ -2343,9 +2368,11 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
             + 'so it is not a grid unit and cannot be built into a tower.',
         build: () => buildRiserGeometry(12, spec, { code: partCode('R12', GEOMETRY_VERSION) }),
         measures: [
-            ['tenon across flats', tenonAF],
+            ['tenon across flats (shoulder)', tenonAF],
+            ['tenon ACROSS CORNERS at the shoulder', +ac(tenonAF).toFixed(2)],
+            ['tenon ACROSS CORNERS at the tip (lead-in taper)', +ac(tenonTipAFc).toFixed(2)],
             ['shaft across flats', 15],
-            ['socket in the base, across flats', S.hexAF],
+            ['socket bore DIAMETER in the base', S.boreDia],
             ['height, shoulder to shoulder', 12]
         ]
     });
