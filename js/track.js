@@ -298,6 +298,31 @@ export const SPEC = {
          */
         boreDia: 9.75,
         /**
+         * A LEAD-IN TAPER ON THE TENON, so it finds the bore before it has to
+         * fit it. Brett: "I would like to consider a smaller taper on the
+         * tenon, can we experiment with a slightly smaller top dimension, like
+         * a fillet really."
+         *
+         * The tenon is a straight hex prism with an abrupt 1.4 mm chamfer in
+         * the last millimetre — a lead-in so short that the joint is either
+         * aligned when it arrives or it binds on a corner. Raking the whole
+         * length instead gives the tip somewhere to start: the top is drawn
+         * `tenonTaperAF` smaller across flats than the shoulder, so it enters a
+         * bore that the shoulder will only just pass, and the fit tightens as
+         * it seats. Same idea as the bowtie key's drive taper.
+         *
+         * 0.20 AF, which is 0.23 across corners: the tip goes in at 9.70 a/c
+         * where the shoulder is 9.93, against a 9.75 bore. Small on purpose —
+         * this is a lead-in, not a wedge, and the tenon must still SEAT on its
+         * shoulder rather than jam part way. Anything much larger starts
+         * eating the bearing length that stops two pillars rocking.
+         *
+         * It costs nothing on the hex-socket side. Hex-in-hex bears on the
+         * FLATS along the whole engagement, so a tenon that is 0.2 narrower at
+         * its tip still beds on its shoulder in every socket already printed.
+         */
+        tenonTaperAF: 0.2,
+        /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
          *
