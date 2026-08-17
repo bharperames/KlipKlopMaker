@@ -207,8 +207,12 @@ building, gait physics simulation, and watertight STL/3MF export.
   listed: a hardcoded list was coarsened to include 0.12 and silently stopped
   containing 0.05, which is the rung that actually mates.
 - **A LADDER CARD SETTLES A SHAPE QUESTION, NOT A MASS ONE.** The pillar joint
-  proved the difference: its fault was that ONE drawing prints 0.08 mm wider
-  across corners on a broad foot than on a slender riser, so no rung on a 3 mm
+  proved the difference: its fault was believed to be that ONE drawing prints
+  0.08 mm wider across corners on a broad foot than on a slender riser — since
+  RETRACTED, Brett having remeasured: "Remove special cases for the foot tenon,
+  it is behaving similar to a 15mm pillar as far as tenon size." The mass effect
+  is real between a riser tube and a track boss (see the socket note); it is not
+  real between a foot and a riser. Either way no rung on a 3 mm
   card — a third mass again — could have found it. `scripts/tenon_sweep.mjs
   --compare` did, by building REAL 15 mm risers and taking the mating half from
   parts already printed. Re-run that if the filament or printer changes. The
@@ -221,7 +225,9 @@ building, gait physics simulation, and watertight STL/3MF export.
   by hand off PETG prints, August 2026:
   · **hex tenon in socket** (0.20 mm/side) — "very nice and tight" pillar into
     pillar, and "about just right" tenon into the track boss. The interlock
-    standard is right as drawn.
+    standard is right as drawn. The ROUND BORE that a hex tenon plugs into is a
+    different question and it moved: see `SPEC.socket.boreDia`, now 9.75, after
+    an identical file assembled on one plate and would not on another.
   · **gate pin in its bore** (0.00 mm/side, the split C grips) — "a great fit,
     perfect".
   · **zero-clearance round and square pairs** on the calibration card — disks

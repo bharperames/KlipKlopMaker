@@ -32,7 +32,7 @@
  *       biting   D  <  tenon AC           (corners swage the bore)
  *       cannot enter at all once D < tenon AF.
  *     So the usable band is tenon AF -> tenon AC: 8.60 -> 9.93 drawn, and
- *     8.60 -> 9.65/9.73 on Brett's MEASURED printed tenons.
+ *     8.60 -> 9.65 on Brett's MEASURED printed tenons.
  *
  * Both bands are ~1.3 mm wide, against a process spread near 0.1 mm. That is
  * the point of going round: the hex-in-hex joint has no band at all, because
@@ -104,8 +104,13 @@ function feature(P, I, h, inner) {
 
 const SOCK_AF = SPEC.socket.hexAF - SPEC.socket.socketShrinkAF;
 const SOCK_AC = SOCK_AF / Math.cos(Math.PI / 6);
-// Brett's tenons, MEASURED off printed parts with calipers, across corners.
-const MEASURED_TENON_AC = { riser: 9.65, foot: 9.73 };
+// Brett's tenon, MEASURED off printed parts with calipers, across corners.
+// ONE NUMBER, NOT TWO. This carried a separate 9.73 for the foot on the theory
+// that a broad part prints wider across corners than a slender one. Brett, on a
+// later set: "Remove special cases for the foot tenon, it is behaving similar to
+// a 15mm pillar as far as tenon size." So the foot is not a special case and
+// does not set the bore.
+const MEASURED_TENON_AC = { tenon: 9.65 };
 
 console.log(`\n${file}`);
 console.log(`${objs.length} objects   Metadata/: ${Object.keys(zip).some(k => k.startsWith('Metadata/')) ? 'PRESENT (unexpected)' : 'none (geometry only, as intended)'}\n`);
@@ -166,7 +171,7 @@ for (const t of table) {
     } else if (t.bore?.round && t.bore.min < 12) {
         const D = t.bore.min;
         for (const [who, ac] of Object.entries(MEASURED_TENON_AC)) {
-            console.log(`\n${t.notches ?? '-'} notch${t.notches === 1 ? ' ' : 'es'}  ROUND BORE D ${D.toFixed(2)}  <-  your ${who} HEX TENON (measured AC ${ac})`);
+            console.log(`\n${t.notches ?? '-'} notch${t.notches === 1 ? ' ' : 'es'}  ROUND BORE D ${D.toFixed(2)}  <-  your HEX TENON (measured AC ${ac})`);
             console.log(`         contact on the six CORNERS.  snug when D = AC = ${ac}`);
             console.log(`         interference ${(((ac - D) / 2) >= 0 ? '+' : '')}${((ac - D) / 2).toFixed(3)} /side;  will not enter below D ${t.tenon.min.toFixed(2)} (tenon AF)`);
         }

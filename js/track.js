@@ -225,7 +225,7 @@ export const SPEC = {
          * cylinder on six flats, which is a broad contact that jams almost at
          * once. (I had that backwards and the print corrected it.)
          *
-         * 9.60 against a tenon printing 9.65-9.73 across corners. It does not
+         * 9.60 against a tenon printing 9.65 across corners. It does not
          * remove the 0.08 mm spread between a broad foot and a slender riser —
          * nothing will, they are the same drawing — but it accommodates all of
          * it, snug to firm, where the hex socket ran loose to jammed.
@@ -257,24 +257,31 @@ export const SPEC = {
          * transferred to the real parts." It did not get lost; the file is the
          * same file.
          *
-         * So the fault is MARGIN, and 9.60 has none. Against the tenons as they
-         * actually print — 9.65 across corners on a riser, 9.73 on a foot,
-         * measured with calipers — 9.60 is INTERFERENCE on both, 0.025 and
-         * 0.065 per side. It assembles only because sharp hex corners yield,
+         * So the fault is MARGIN, and 9.60 has none. Against the tenon as it
+         * actually prints — 9.65 across corners, measured with calipers — 9.60
+         * is INTERFERENCE of 0.025 per side. It assembles only because sharp
+         * hex corners yield,
          * and a plate that cools differently (15 parts including three big
          * track pieces, against 5 small support parts) takes it from snug to
          * impossible with nothing in between.
          *
-         *     bore     vs riser 9.65      vs foot 9.73
-         *     9.600    -0.025 interf      -0.065 interf     fails on a busy plate
-         *     9.725    +0.037 clear       -0.003 interf     exact half-step, still bites
-         *     9.750    +0.050 clear       +0.010 clear      <- here
-         *     9.850    +0.100 clear       +0.060 clear      "very loose"
+         *     bore     vs tenon 9.65
+         *     9.600    -0.025 interf     fails on a busy plate
+         *     9.725    +0.037 clear      exact half-step of the ladder
+         *     9.750    +0.050 clear      <- here
+         *     9.850    +0.100 clear      "very loose"
          *
-         * 9.75 is the SMALLEST step that clears both tenons, and it is a step
-         * you can feel from either neighbour: +0.15 over 9.60, -0.10 under
-         * 9.85. It turns both joints from interference into a light clearance
-         * without going near the rung that rattled.
+         * THE FOOT IS NOT A SPECIAL CASE. This was briefly sized against a
+         * separate 9.73 measured on a foot's tenon, on the theory that a broad
+         * part prints wider across corners than a slender one. Brett, on a
+         * later set: "Remove special cases for the foot tenon, it is behaving
+         * similar to a 15mm pillar as far as tenon size." One tenon size, one
+         * bore.
+         *
+         * 9.75 sits just above the ladder's half-step and is a step you can
+         * feel from either neighbour: +0.15 over 9.60, -0.10 under 9.85. It
+         * turns the joint from interference into a light clearance with margin
+         * to spare, without going near the rung that rattled.
          *
          * DO NOT SIZE AGAINST THE DRAWN ACROSS-CORNERS of 9.930. That was tried
          * here for one commit and it pushes the bore to 10.00, past everything

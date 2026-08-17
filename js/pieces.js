@@ -1595,7 +1595,8 @@ function roundSocketSolid(dia, yOpen, yEnd, roofY = null, cx = 0, cz = 0) {
  * A hex tenon in a hex socket is FACE contact: six flats, 4.3 mm wide by 8 mm
  * engaged. Face contact has almost no compliance, so 0.035 mm of interference
  * goes straight from "loose" to "will not move" — which is exactly the window
- * measured between a foot's tenon (9.73 across corners) and a riser's (9.65),
+ * once thought to be measured between a foot's tenon and a riser's — but the
+ * foot has since been remeasured at a riser's size and is NOT a special case,
  * and exactly the spread seen between three nominally identical feet off one
  * plate. When the process spread is as wide as the whole tolerance window, no
  * sizing change can work.
@@ -1712,7 +1713,8 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
  */
 export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
     // The foot takes the round tenon too — see roundTenon. It has to: the foot's
-    // tenon is the one measuring 9.73 across corners against a riser's 9.65, and
+    // tenon was once thought to measure 9.73 against a riser's 9.65; it does not,
+    // it prints like a 15 mm pillar's, and
     // it is the joint Brett found "too tight" on one of three otherwise
     // identical prints. Leaving it hex would fix the loose end and keep the
     // tight one. The JOG is the only part that keeps a hex tenon, because its
