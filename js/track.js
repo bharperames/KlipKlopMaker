@@ -238,51 +238,58 @@ export const SPEC = {
          * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
          * round bore would let a 45 mm offset arm swing anywhere.
          *
-         * 9.85 — ONE RUNG UP BRETT'S OWN LADDER, AND THE GEOMETRY IS INNOCENT.
+         * 9.75 — A HALF RUNG, BECAUSE BOTH OF THE LADDER'S BIGGER BORES WERE
+         * TOO LOOSE AND ITS SMALLEST HAS NO MARGIN.
          *
-         * Brett: "the hex tenons I have (and also just printed more) don't fit
-         * in them. The pillars just can't be put together." Then: "It isn't a
-         * 'longer riser' issue, no hex tenon fits in any circular hole
-         * printed." Then, decisively: "we for sure did a test print where I
-         * confirmed a nice snug fit for the existing tenons and the bores,
-         * somehow that got lost and never transferred to the real parts."
+         * The ladder Brett printed and held: 9.60 snug, 9.85 and 10.10 both
+         * "very loose". The rungs are 0.25 apart, so the answer is between the
+         * two smallest, and this note briefly said 9.85 — wrong, because that
+         * is a rung he had already rejected.
          *
-         * IT DID NOT GET LOST. The 15 mm riser in the plate that ASSEMBLES
-         * (plate_supports_2_4_0) and the one in the plate that DOES NOT
-         * (plate_01_15parts_323g) have the same geometry hash, 487867f6 —
-         * byte-identical vertices, the same round 9.60 bore, both watertight.
-         * `roundSocketSolid` is unchanged since the sweep plate too, bar a
-         * cx/cz argument that defaults to 0. One drawing, two prints, two
-         * outcomes.
+         * THE GEOMETRY IS INNOCENT, and that is settled rather than argued.
+         * The 15 mm riser in the plate that ASSEMBLES (plate_supports_2_4_0)
+         * and the one in the plate that does NOT (plate_01_15parts_323g) carry
+         * the same geometry hash, 487867f6 — identical vertices, the same round
+         * 9.60 bore, both watertight. `roundSocketSolid` is unchanged since the
+         * sweep plate too, bar a cx/cz argument defaulting to 0. One drawing,
+         * two prints, two outcomes. Brett: "we for sure did a test print where
+         * I confirmed a nice snug fit ... somehow that got lost and never
+         * transferred to the real parts." It did not get lost; the file is the
+         * same file.
          *
-         * So this is PROCESS variation, not a modelling error, and the fix is
-         * MARGIN rather than a different number. What the failure shows is that
-         * 9.60 had none: it sits 0.027-0.067 mm/side inside the tenons as they
-         * actually print (9.65 and 9.73 across corners, measured), so the whole
-         * fit is the corner rounding, and a plate that cools differently — 15
-         * parts including three big track pieces, against 5 small support parts
-         * — moves it straight from snug to impossible.
+         * So the fault is MARGIN, and 9.60 has none. Against the tenons as they
+         * actually print — 9.65 across corners on a riser, 9.73 on a foot,
+         * measured with calipers — 9.60 is INTERFERENCE on both, 0.025 and
+         * 0.065 per side. It assembles only because sharp hex corners yield,
+         * and a plate that cools differently (15 parts including three big
+         * track pieces, against 5 small support parts) takes it from snug to
+         * impossible with nothing in between.
          *
-         * WHY NOT SIZE AGAINST THE DRAWN 9.930 ACROSS CORNERS. That was tried
-         * here for one commit and it is wrong: a hex's convex corners always
-         * round, the process never delivers 9.93, and designing to a dimension
-         * that never occurs opens the hole to 10.00 — past the 9.85 Brett read
-         * as "kinda loose" and towards the 10.10 he read as "really loose".
-         * The ladder he printed beats the arithmetic, because it measured the
-         * two things that actually mate.
+         *     bore     vs riser 9.65      vs foot 9.73
+         *     9.600    -0.025 interf      -0.065 interf     fails on a busy plate
+         *     9.725    +0.037 clear       -0.003 interf     exact half-step, still bites
+         *     9.750    +0.050 clear       +0.010 clear      <- here
+         *     9.850    +0.100 clear       +0.060 clear      "very loose"
          *
-         * 9.85 clears his measured tenons by 0.06-0.10 mm/side. That is enough
-         * to absorb the plate-to-plate shift that broke 9.60, and it is a rung
-         * he has already held in his hand and called usable.
+         * 9.75 is the SMALLEST step that clears both tenons, and it is a step
+         * you can feel from either neighbour: +0.15 over 9.60, -0.10 under
+         * 9.85. It turns both joints from interference into a light clearance
+         * without going near the rung that rattled.
          *
-         * IF IT IS STILL TIGHT, the answer is not another 0.1 on this number.
-         * The tenon's across-corners varies 9.65-9.93 depending on how sharply
-         * the nozzle turns, which is wider than any fit window. TRUNCATE THE
-         * TENON'S CORNERS so the mating dimension is a drawn FLAT, which prints
-         * accurately. Hex-in-hex bears on the flats, so every socket already
-         * printed keeps its fit and nothing in the field is invalidated.
+         * DO NOT SIZE AGAINST THE DRAWN ACROSS-CORNERS of 9.930. That was tried
+         * here for one commit and it pushes the bore to 10.00, past everything
+         * Brett rejected. A hex's convex corners always round, the process
+         * never delivers 9.93, and a dimension that never occurs is not a
+         * design target. The ladder measured the two things that actually mate.
+         *
+         * IF 9.75 IS STILL TIGHT, the answer is not another 0.1 here. The
+         * tenon's across-corners spans 9.65-9.93 depending on how sharply the
+         * nozzle turns, which is wider than any fit window a diameter can
+         * chase. TRUNCATE THE TENON'S CORNERS so the mating dimension is a
+         * drawn FLAT, which prints accurately. Hex-in-hex bears on the flats,
+         * so every socket already printed keeps its fit.
          */
-        boreDia: 9.85,
+        boreDia: 9.75,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
