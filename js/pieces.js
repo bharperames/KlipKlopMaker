@@ -270,6 +270,18 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     const hasEntryJoint = !piece.isImplicitStart;
     const hasExitJoint = piece.type !== 'end';
 
+    // THE SAME FILL THE EXPORT USES, so the scene cannot tell a different story
+    // from the plate. Brett, looking at a start piece in the app: "Can we update
+    // the visual representation of the start/end tracks to show that the back is
+    // not open anymore". It was not open in the export — the cavity has been
+    // filled since the underside work — but the display shell is drawn straight
+    // from `pieceProfiles`, which still describes a channel with an open bottom,
+    // so the scene showed a trough that no longer exists. Calling the production
+    // builder rather than approximating it is what stops the two drifting again.
+    //
+    // Before the joints, exactly as in the export: everything after this carves.
+    ops.push(...undersideSupportOps(piece, spec));
+
     if (hasEntryJoint) {
         ops.push(...jointOps(
             { ...piece.entry }, piece.entryDeck,
