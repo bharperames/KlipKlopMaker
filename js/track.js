@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.4.0';
+export const GEOMETRY_VERSION = '2.5.0';
 
 export const STANDARD = {
     gridMm: 15,
