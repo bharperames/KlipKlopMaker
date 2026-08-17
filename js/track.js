@@ -237,8 +237,32 @@ export const SPEC = {
          *
          * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
          * round bore would let a 45 mm offset arm swing anywhere.
+         *
+         * 9.80, RAISED FROM 9.60, BECAUSE 9.60 DOES NOT ASSEMBLE. Brett, on a
+         * fresh print of pillars and tenons: "the hex tenons I have (and also
+         * just printed more) don't fit in them. The pillars just can't be put
+         * together on this last print."
+         *
+         * 9.60 was always an interference fit and the arithmetic above says so
+         * — a hex is snug when the bore equals its ACROSS-CORNERS, and these
+         * tenons measure 9.65 on a riser and 9.73 on a foot. 9.60 is under
+         * BOTH, by 0.05 and 0.13 of diameter. It read "a pleasing snug fit" on
+         * the coupon plate and that reading did not carry, which is the
+         * mass-dependence this project has already been bitten by twice: a hole
+         * prints to a size that depends on the plastic around it, and a bore in
+         * a slender riser is not a bore in a test coupon.
+         *
+         * 9.80 clears the widest tenon on record by 0.035/side and the
+         * narrowest by 0.075, so every tenon in the drawer enters. It stays
+         * under the 9.85 that read "kinda loose" on the plate, and a hex still
+         * lands on six corners rather than a face, so it locates even at the
+         * loose end. +0.20 because +0.05 is not a step anyone can feel —
+         * Brett's rule, and it is the reason this is not being nudged.
+         *
+         * Erring OPEN is deliberate. A joint slightly loose is a tower that
+         * goes together; a joint slightly tight is a part that is scrap.
          */
-        boreDia: 9.6,
+        boreDia: 9.8,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
@@ -495,6 +519,48 @@ export const SPEC = {
         // in. So the throat is its own lead-in, and nothing unintended is
         // gripping anywhere along it.
         fitClearanceMm: 0.12,
+        /**
+         * A DRIVE TAPER, so the key CLAMPS instead of merely locating.
+         *
+         * The standing complaint is not clearance, it is that nothing pulls the
+         * two pieces together. Brett: "the biggest problem I have had
+         * connecting ramps is that the key won't keep them tight together and
+         * any exposed seam stops the klipklop", and later, of the current key,
+         * "they are still also a little loose in their slots".
+         *
+         * A prismatic key in a prismatic pocket has exactly one fit, and the
+         * ladder says the drawn one is already in the proven band — so there is
+         * no single clearance that is both enterable and tight. A taper has a
+         * RANGE of fits along its length and the user drives it to the one that
+         * grips, which is how every drift key and cotter ever made works.
+         *
+         * The key rises into its seat from the rim, so the LEADING end is the
+         * top and the trailing end is the bottom. Small end leads:
+         *
+         *     lead  (top, enters first)  0.05 UNDER nominal -> 0.17/side, drops in
+         *     grip  (bottom, last in)    0.08 OVER  nominal -> 0.04/side, wedges
+         *
+         * 0.04 is just inside the ladder's "extremely snug at 0.05" and short
+         * of the "will not enter at 0.00" that bounds it, which is what a
+         * driven fit wants: it arrives tight rather than starting tight.
+         *
+         * This also makes the key DIRECTIONAL on purpose, which is the point
+         * Brett was making — "the user naturally tries both orientations and
+         * will hopefully find that putting it in with smaller first and then
+         * pushing through the taper will work." Wrong way round it stops early
+         * and obviously, rather than going in and feeling vaguely wrong.
+         *
+         * BACKWARD COMPATIBLE where it matters: the grip end is 0.08/side over
+         * a key that already entered every pocket in the field with 0.12 to
+         * spare, so it still enters them — harder, which is the intent. The
+         * POCKET is untouched, so no printed track piece is invalidated.
+         *
+         * The pocket's own throat already drifts 0.15 mm over 39 mm and runs
+         * the helpful way, widest where the key goes in; this works with that
+         * rather than against it.
+         */
+        taperLeadMm: 0.05,
+        taperGripMm: 0.08,
         /**
          * The FAR WALL gets its own, much bigger clearance, and it is the one
          * that was jamming the key.

@@ -1442,14 +1442,22 @@ export function buildKeyGeometry(spec = SPEC, opts = {}) {
         neckHalf: K.neckHalf - comp.neckMm, tipHalf: K.tipHalf + comp.tipMm,
         depth: K.depth + (comp.depthMm ?? 0), tipChamfer: K.tipChamfer
     };
-    const full = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
+    const nominal = bowtieKeyPlan(shape).map(([x, z]) => [x, -z]);
+    // THE DRIVE TAPER — see SPEC.key.taperLeadMm. The key rises into its seat
+    // from the rim, so the LEADING end is the top: it is drawn under nominal so
+    // it enters, and the trailing end over nominal so it wedges as the last of
+    // it is driven home. A negative offset is an OUTWARD one; insetPolygon
+    // re-intersects the offset edges either way, so the bowtie's rake is
+    // preserved at both ends instead of being scaled about a centre (which
+    // would move the tips and the waist by different amounts).
+    const grip = insetPolygon(nominal, -(K.taperGripMm ?? 0));
+    const lead = insetPolygon(nominal, K.taperLeadMm ?? 0);
     // a TRUE inward offset, so the chamfer band's quads stay planar and the
     // chamfer is the same 0.5 mm on every edge — see insetPolygon
-    const inset = insetPolygon(full, 0.5);
     // 0.5 mm chamfers top and bottom: elephant-foot proof and drops into
     // its pockets without snagging a sharp corner
     return sweepSolid(
-        [inset, full, full, inset],
+        [insetPolygon(grip, 0.5), grip, lead, insetPolygon(lead, 0.5)],
         [0, 0.5, h - 0.5, h].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
     );
 }
@@ -1847,63 +1855,35 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
             roundTenon(round, sizeMm - 0.4, sizeMm + spec.socket.depth - 1)) }] : []),
         { op: SUBTRACTION, geometry: roundSocketSolid(
             opts.roundSocketDia ?? spec.socket.boreDia, -0.5, spec.socket.depth) },
-        ...gridMarks(sizeMm, spec),
-        // BETWEEN two grid marks, not across one. hexFlatEngraveOps centres the
-        // block on the span it is given, and given the whole shaft that centre
-        // is sizeMm/2 — which on a 30 and a 60 is exactly where a groove runs,
-        // so the code came out bisected. It gets the band above the last mark
-        // instead: 14 mm on any marked riser, against a 5.9 mm block.
-        ...hexFlatEngraveOps(opts.code ?? null, 15, lastGridMark(sizeMm) + 1, sizeMm, spec)
+        // The code gets the WHOLE shaft to centre itself on now. It used to be
+        // pushed into the band above the last grid mark, because centring on
+        // sizeMm/2 put it exactly where a groove ran on a 30 and a 60 and the
+        // code came out bisected. With the grooves gone there is nothing to
+        // avoid, and a 60 mm riser gives the block 60 mm to sit in rather than
+        // the 14 it was squeezed into.
+        ...hexFlatEngraveOps(opts.code ?? null, 15, 1, sizeMm, spec)
     ]);
 }
 
-/**
- * A shallow groove at every 15 mm line up a riser.
+/*
+ * THE 15 mm GRID MARKS ARE GONE, and they were a legibility idea that misread
+ * as a structural one.
  *
- * They are not decoration and they are not the spacer's ring count either.
- * The ladder is built out of ONE unit and a riser is a whole number of them,
- * so cutting the unit into the part makes the part say how tall it is: a 60
- * carries three grooves, a 30 carries one, and the eye reads "four units"
- * rather than "the long one". It also teaches 15 mm — pick up any riser and
- * the spacing between two grooves IS the grid, which is the number every
- * height in the system is made of.
+ * A shallow V groove was cut at every 15 mm line so a riser would say how tall
+ * it was — a 60 wore three of them, and you could count units instead of
+ * reaching for calipers. Brett, on a printed set: "the indents every 15mm of
+ * the longer pillars just end up looking like connected sections that can be
+ * pulled apart, this is confusing, we can eliminate those height markers."
  *
- * 0.4 mm deep on the flats. Deep enough to catch the light and a fingernail,
- * shallow enough to leave the 15 AF section that mates a socket untouched
- * — the groove sits between joints, never at one.
+ * That is the whole case against them. Every OTHER horizontal line in this
+ * system is a joint — risers stack, spacers ring, tenons shoulder — so a
+ * groove around a shaft reads as a seam, and a part that looks like four parts
+ * invites someone to pull it apart. The engraved code already says which riser
+ * it is, on a surface that cannot be mistaken for a joint.
  *
- * THE CUTTER IS A TUBE. Sweeping closed profiles makes a solid of REVOLUTION
- * that contains the axis, so subtracting one straight would core the riser out
- * rather than groove it; that is exactly what it did to the spacer, and left a
- * 0.76 mm shell where the part looked severed. So the bicone has its own bore
- * taken out first and only the annular V is subtracted.
+ * Do not reintroduce them as "just a scribe line" or a shallower groove: the
+ * problem is the RING, not its depth.
  */
-/** Height of the topmost grid mark on a riser, or 0 if it carries none. */
-function lastGridMark(sizeMm) {
-    const G = STANDARD.gridMm;
-    return Math.max(0, Math.floor((sizeMm - 1) / G) * G);
-}
-
-function gridMarks(sizeMm, spec = SPEC) {
-    const G = STANDARD.gridMm, AF = 15, waist = AF - 0.8, n = 24;
-    const ops = [];
-    for (let y = G; y <= sizeMm - 1; y += G) {
-        const band = 1.2;
-        const lvl = (af, yy) => ({ plan: hexRingPlan(af, n).map(([x, z]) => [x, -z]), y: yy });
-        const cone = [lvl(AF + 3, y - band / 2), lvl(waist, y), lvl(AF + 3, y + band / 2)];
-        const bore = [lvl(waist, y - band), lvl(waist, y + band)];
-        const sweep = (levels) => toBufferGeometry(sweepSolid(
-            levels.map(l => l.plan),
-            levels.map(l => ({ origin: [0, l.y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
-        ));
-        ops.push({
-            op: SUBTRACTION,
-            geometry: toBufferGeometry(csgChain(sweep(cone),
-                [{ op: SUBTRACTION, geometry: sweep(bore) }]))
-        });
-    }
-    return ops;
-}
 
 /**
  * Puts a whole code on ONE flat of a hex prism, as two stacked lines turned on
