@@ -5110,17 +5110,25 @@ async function openPrintShop(opts = {}) {
                     };
                 }).filter(Boolean);
 
-            // a merged switch part, if the design has no switch of its own
+            // BOTH HANDS, because a switch is CHIRAL. This built one part named
+            // `standard_switch`, hardcoded to switchL — so the store offered a
+            // single row for two parts that are mirror images and cannot
+            // substitute for each other. Brett: "the part store only has one
+            // switch". Curves already get this right, because SIMPLE_TYPES
+            // carries curveL and curveR separately; the switch was a special
+            // case that forgot it was one.
             if (!parts.some(p => /switch/.test(p.name))) {
-                try {
-                    const sw = layoutTrack([{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }], STD);
-                    const main = sw.pieces.find(p => p.role === 'main');
-                    const branch = sw.pieces.find(p => p.role === 'branch');
-                    if (main && branch) canonical.push({
-                        name: 'standard_switch', kind: 'track', count: 0,
-                        build: () => buildSwitchExportGeometry(main, branch, { forPrint: true })
-                    });
-                } catch (e) { console.warn('no standard switch part:', e.message); }
+                for (const hand of ['switchL', 'switchR']) {
+                    try {
+                        const sw = layoutTrack([{ type: hand, gate: 'main', main: ['straight'], branch: ['straight'] }], STD);
+                        const main = sw.pieces.find(p => p.role === 'main');
+                        const branch = sw.pieces.find(p => p.role === 'branch');
+                        if (main && branch) canonical.push({
+                            name: `standard_${hand}`, kind: 'track', count: 0,
+                            build: () => buildSwitchExportGeometry(main, branch, { forPrint: true })
+                        });
+                    } catch (e) { console.warn(`no standard ${hand} part:`, e.message); }
+                }
             }
 
             const catalogue = [
