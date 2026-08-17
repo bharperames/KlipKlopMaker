@@ -19,6 +19,7 @@ import {
     engraveOps, engravePoint, printsLyingDown
 } from '../js/pieces.js';
 import { analyzeMesh, bedStability, verifyManifold, buildTopologyFromIndices, deduplicateGeometry } from '../js/mesh_utils.js';
+import { audit } from '../scripts/overhang_audit.mjs';
 
 beforeAll(async () => { await initCSG(); });
 
@@ -1605,144 +1606,53 @@ describe('the bowtie ladder card', () => {
  * span at 45.2 mm against a 45.6 baseline — that is what this guards.
  */
 describe('the deck ceiling is held up', () => {
-    /** Solid intervals a horizontal scan crosses, at one station and height. */
-    const wallsAcross = (g, piece, s, yFrac) => {
-        const p = planPosAt(piece, s), deck = deckYAt(piece, s);
-        const pl = undersidePlane(piece, SPEC);
-        const right = [Math.sin(p.h), -Math.cos(p.h)];
-        const bottom = pl.at(p.x, p.z), ceil = deck - SPEC.floorThk;
-        const y = bottom + (ceil - bottom) * yFrac;
-        const Wi = piece.innerWidth / 2;
-        let runs = 0, inside = false;
-        for (let u = -Wi + 0.6; u <= Wi - 0.6; u += 0.1) {
-            const x = p.x + right[0] * u, z = p.z + right[1] * u;
-            const solid = solidAt(g, x, y, z);
-            if (solid && !inside) runs++;
-            inside = solid;
-        }
-        return runs;
-    };
-    /** Is (x,y,z) inside the mesh? Vertical ray parity. */
-    const solidAt = (g, x, y, z) => {
-        const { positions: P, indices: I } = g;
-        let below = 0;
-        for (let t = 0; t < I.length; t += 3) {
-            const A = I[t] * 3, B = I[t + 1] * 3, C = I[t + 2] * 3;
-            const ax = P[A], az = P[A + 2], bx = P[B], bz = P[B + 2], cx = P[C], cz = P[C + 2];
-            const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
-            if (Math.abs(d) < 1e-12) continue;
-            const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d;
-            const l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
-            const l3 = 1 - l1 - l2;
-            if (l1 < 0 || l2 < 0 || l3 < 0) continue;
-            if (l1 * P[A + 1] + l2 * P[B + 1] + l3 * P[C + 1] < y) below++;
-        }
-        return below % 2 === 1;
-    };
-
-    const build = (type) => {
-        const { pieces } = layoutTrack(['start', 'straight', type, 'straight', 'end'],
-            { skirtStyle: 'minimal', slopeDeg: 11.2167 });
-        const world = pieces.find((q) => q.type === type);
-        const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
-        return { g: buildPieceExportGeometry(world, { support: sup }), pc: pieceInFrame(world), sup };
-    };
-
-    test('a straight carries SPEC.underside.spines walls along it', async () => {
-        await initCSG();
-        const { g, pc } = build('straight');
-        // scanned away from the boss, mid-cavity: only the spines are there
-        const at = pc.planLen * 0.30;
-        expect(`spines at 30%: ${wallsAcross(g, pc, at, 0.5)}`)
-            .toBe(`spines at 30%: ${SPEC.underside.spines}`);
-        // and they run the length, not just at one station
-        expect(wallsAcross(g, pc, pc.planLen * 0.70, 0.5)).toBe(SPEC.underside.spines);
-    });
-
     /**
-     * A SPINE MUST REACH BOTH END RIBS, and this test exists because one did
-     * not and it reached Brett's printer. Spines used to run `ribThk + 0.5` to
-     * `planLen - ribThk - 0.5` — deliberately SHORT of the ribs — leaving a
-     * 0.4 mm gap at each end, so the spine ended in a free rounded tip holding
-     * nothing up. He spotted it in the print; the test above did not, because
-     * it only asked whether spines EXIST at two stations, never whether they
-     * are attached to anything.
+     * MEASURE THE PROPERTY, NOT THE MECHANISM.
+     *
+     * This used to assert that a straight carried `SPEC.underside.spines` walls
+     * and a curve carried ribs at `ribPitchMm`. Both of those passed against a
+     * SOLID cavity too — a scan across a filled channel finds exactly one run,
+     * and `spines` is 1 — so they went on passing after the mechanism they
+     * described had been deleted. A test that survives the removal of its own
+     * subject is not testing anything.
+     *
+     * What actually matters is how far the deck has to bridge before it lands
+     * on something. `scripts/overhang_audit.mjs` measures that from the mesh:
+     * downward faces, how far they fall, and how wide the unsupported stretch
+     * is. 20 mm is the line this project already uses — half of a 48 mm channel
+     * is 24 and that strands, which is what Brett found on the shipped straight
+     * ("obvious strands of plastic across the underside of the deck").
      */
-    test('a spine is fused into the end rib at both ends', async () => {
-        await initCSG();
-        const { g, pc, sup } = build('straight');
-        const pl = undersidePlane(pc, SPEC);
-        const uHalf = pc.innerWidth / 2 + SPEC.wall / 2;
-        const u = -uHalf + (2 * uHalf) / (SPEC.underside.spines + 1);
-        // walk the length at mid-cavity height on the spine's own line
-        const runs = [];
-        let inside = false, start = 0;
-        for (let s = 0; s <= pc.planLen; s += 0.2) {
-            const p = planPosAt(pc, s), deck = deckYAt(pc, s);
-            const right = [Math.sin(p.h), -Math.cos(p.h)];
-            const x = p.x + right[0] * u, z = p.z + right[1] * u;
-            const bottom = pl.at(x, z);
-            const solid = solidAt(g, x, bottom + (deck - SPEC.floorThk - bottom) * 0.5, z);
-            if (solid && !inside) { inside = true; start = s; }
-            if (!solid && inside) { inside = false; runs.push([start, s]); }
-        }
-        if (inside) runs.push([start, pc.planLen]);
-        // It has to reach inside both ribs (which span 0..ribThk and
-        // planLen-ribThk..planLen), and the ONLY break allowed is the socket
-        // bore. A single CENTRE spine runs through the boss, so the bore
-        // legitimately interrupts it — measured 10.6 mm at the boss station,
-        // which is the 9.6 bore plus its mouth flare. Any other gap, or one
-        // anywhere else, is a spine attached to nothing.
-        const spanning = runs.filter(([a, b]) => b - a > 5);
-        expect(`starts inside the entry rib: ${spanning[0][0] < SPEC.key.ribThk}`)
-            .toBe('starts inside the entry rib: true');
-        expect(`ends inside the exit rib: ${spanning.at(-1)[1] > pc.planLen - SPEC.key.ribThk}`)
-            .toBe('ends inside the exit rib: true');
-        for (let i = 1; i < spanning.length; i++) {
-            const from = spanning[i - 1][1], to = spanning[i][0];
-            const atBoss = Math.abs((from + to) / 2 - (sup?.s ?? pc.planLen / 2)) < SPEC.socket.collarR;
-            expect(`gap ${from.toFixed(1)}..${to.toFixed(1)} is the socket bore: `
-                + `${to - from < 12 && atBoss}`)
-                .toBe(`gap ${from.toFixed(1)}..${to.toFixed(1)} is the socket bore: true`);
-        }
-    });
+    const SPAN_LIMIT = 20;
 
-    test('a curve carries ribs across it, not spines along it', async () => {
-        await initCSG();
-        const { g, pc } = build('curveR');
-        // Ribs are INTERIOR only: the end ribs close the first and last bay, so
-        // the run between their inner faces carries n-1 ribs, every one full
-        // width. A rib clamped at the boundary would be a half-width fin
-        // attached to nothing, which is the defect this replaced.
-        const s0 = SPEC.key.ribThk, s1 = pc.planLen - SPEC.key.ribThk;
-        const n = Math.round((s1 - s0) / SPEC.underside.ribPitchMm);
-        // AT LEAST one run, not exactly one: a rib does span the channel, but
-        // the station nearest the boss is crossed by the socket BORE, which
-        // splits the scan into two legitimately.
-        let onRib = 0;
-        for (let i = 1; i < n; i++) {
-            if (wallsAcross(g, pc, s0 + ((s1 - s0) * i) / n, 0.5) >= 1) onRib++;
+    /** Built mesh in the PRINT orientation, as the audit wants it: Z is height.
+     *  Same proper rotation the exporter uses (X=x, Y=-z, Z=y) — never an axis
+     *  swap, which would mirror the chiral parts. */
+    const asPrinted = (g) => {
+        const V = [], T = [];
+        for (let i = 0; i < g.positions.length; i += 3) {
+            V.push([g.positions[i], -g.positions[i + 2], g.positions[i + 1]]);
         }
-        expect(`${onRib} of ${n - 1} rib stations carry material`)
-            .toBe(`${n - 1} of ${n - 1} rib stations carry material`);
-        // Between two ribs there is open cavity EXCEPT for the centre spine.
-        // A curve takes both: radial ribs cut the along-arc fill, and the spine
-        // cuts the radial fill the ribs run parallel to. So a bay reads exactly
-        // one wall — the spine — not zero and not the full span.
-        const bay = s0 + ((s1 - s0) * 1.5) / n;
-        expect(`between ribs: ${wallsAcross(g, pc, bay, 0.5)}`)
-            .toBe(`between ribs: ${SPEC.underside.spines}`);
-    });
+        for (let i = 0; i < g.indices.length; i += 3) {
+            T.push([g.indices[i], g.indices[i + 1], g.indices[i + 2]]);
+        }
+        return { name: 'part', V, T };
+    };
 
-    test('a flat tile has no cavity and gets nothing', async () => {
-        await initCSG();
-        const { pieces } = layoutTrack(['start', 'straight', 'powered', 'end'],
-            { skirtStyle: 'minimal' });
-        const pc = pieces.find((q) => q.type === 'powered');
-        expect(printsLyingDown(pc)).toBe(false);
-        const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === pc.index);
-        const g = buildPieceExportGeometry(pc, { support: sup });
-        const r = analyzeMesh(g.positions, g.indices);
-        expect(r.isManifold && r.isConsistent && r.windsOutward).toBe(true);
-    });
+    test.each(['start', 'straight', 'curveR', 'end'])(
+        'a %s bridges nothing wider than the limit', async (type) => {
+            await initCSG();
+            const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
+                { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+            const world = pieces.find((q) => q.type === type);
+            const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
+            const g = buildPieceExportGeometry(world, { support: sup, forPrint: true });
+            const rows = audit(asPrinted(g), 5);
+            const worst = rows[0]?.span ?? 0;
+            const over = rows.filter((r) => r.span > SPAN_LIMIT);
+            expect(`${type}: ${over.length} span(s) over ${SPAN_LIMIT} mm`)
+                .toBe(`${type}: 0 span(s) over ${SPAN_LIMIT} mm`);
+            expect(`${type}: worst span ${worst <= SPAN_LIMIT}`)
+                .toBe(`${type}: worst span true`);
+        }, 120000);
 });

@@ -984,144 +984,61 @@ export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {})
  * Both stop `key.ribThk + 0.5` from each face, clear of the end ribs and their
  * bowtie pockets — the key rises through that space.
  */
+/**
+ * FILL THE CAVITY. One rule for every piece that has one.
+ *
+ * This used to be three rules chosen by shape — spines along a straight, ribs
+ * across a curve, nothing at all for the flat platforms — each with a capital
+ * flared at the ceiling so the slicer would anchor to it. Audited from the
+ * geometry (`scripts/overhang_audit.mjs`, which measures how far a ceiling has
+ * to bridge before it lands on something) that scheme leaves 24 mm spans on a
+ * straight, 24 on a curve and 36 on a platform, against 6-12 mm when the cavity
+ * is simply filled. The filled part is also FASTER despite being heavier,
+ * because sparse infill lays down quicker than tall thin walls: the curve goes
+ * 3h46 -> 3h01 for +9 g and the straight 1h20 -> 1h15 for +6 g.
+ *
+ * It is one solid swept between the underside and the floor, so it carries no
+ * shape-specific reasoning at all and cannot be got wrong for the next piece
+ * type. Brett, on the ribbed switch: "it looks more like a CSG union of the two
+ * without really looking at it from a new minimalistic but print ready
+ * structure." This is that structure. The slicer, not us, decides how much
+ * plastic goes inside it.
+ */
 function undersideSupportOps(piece, spec) {
     // A CAVITY IS NOT A TILT. This asked `laysOnUnderside`, which answers "is
-    // this printed tilted onto its underside plane" — and that is FALSE for the
-    // flat start and end platforms, because it requires a non-zero drop. They
-    // were therefore given nothing at all, while having the very thing the
-    // spine exists for: a deck bridging the full channel over an open tray.
-    // Brett, looking at their undersides: "we need to add the center rib down
-    // the length of the start and end pieces too, since they would have the
-    // same unsupported underside." The two questions are separate and this is
-    // the one that matters here.
-    const U = spec.underside;
-    if (!U) return [];
+    // this printed tilted onto its underside plane" and is FALSE for the flat
+    // start and end platforms, their drop being zero. They were therefore given
+    // nothing while having the plainest cavity in the project.
     if (piece.skirtStyle !== 'minimal') return [];     // the arcade holds a viaduct up
     if (piece.isElevator || piece.type === 'elevator') return [];   // solid block, no cavity
     if (!(piece.planLen > 0)) return [];
     const lying = laysOnUnderside(piece, spec);
     const pl0 = undersidePlane(piece, spec);
-    // THE SAME EXPRESSION `skirtBottom` USES, for the same reason it gives: a
-    // rim-down piece's cavity floor is its RIM, not the underside plane, and
-    // three places expressing one surface is what once put the boss in mid-air.
-    const pl = { at: (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z))) };
+    // THE SAME EXPRESSION `skirtBottom` USES: a rim-down piece's cavity floor is
+    // its RIM, not the underside plane, and three places expressing one surface
+    // is what once put the boss in mid-air.
+    const floorAt = (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z)));
+
     const uHalf = piece.innerWidth / 2 + spec.wall / 2;   // reach into the rails
-    // THE END RIBS ARE THE TERMINAL ANCHORS. They are full-width walls already,
-    // `key.ribThk` deep at each face, so the run between their INNER faces is
-    // what needs dividing. Sizing off `ribThk + 0.5` instead left a rib clamped
-    // to half width sitting 0.5 mm short of the end rib at each end — a 0.40 mm
-    // fin attached to nothing, which is what Brett saw in the preview.
-    const s0 = spec.key.ribThk, s1 = piece.planLen - spec.key.ribThk;
-    if (s1 - s0 < 5) return [];
-    const top = -spec.floorThk + 0.3;
-
-    /** A wall as a sweep: `at(s)` gives its lateral span at that station. */
-    const wall = (sFrom, sTo, at, steps) => {
-        const stations = [], profiles = [];
-        for (let i = 0; i <= steps; i++) {
-            const sAt = sFrom + ((sTo - sFrom) * i) / steps;
-            const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
-            const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
-            stations.push({ s: sAt, origin: [p.x, y, p.z], right });
-            const bot = (u) => pl.at(p.x + right[0] * u, p.z + right[2] * u) - y;
-            const [uA, uB] = at(sAt);
-            profiles.push([[uA, bot(uA)], [uB, bot(uB)], [uB, top], [uA, top]]);
-        }
-        return { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) };
-    };
-
-    const capW = U.capMm ?? U.spineMm;
-    const ceil = -spec.floorThk - 0.2;              // one layer below the ceiling
-    const rise = Math.max(0, (capW - U.spineMm) / 2);      // 45 deg flare
-
-    const ribOps = [];
-    // CROSS RIBS ON A FLAT PLATFORM WERE TRIED AND DO NOTHING. Sliced: they
-    // take the start from 208 bridge moves over 40 mm to 200 and the end from
-    // 210 to 210, for +2.6 g and +9 minutes. The survivors run lengthwise and
-    // cross every rib, so they are one long MOVE that is in fact anchored every
-    // 18 mm — the move-length metric overstates them. Do not re-add ribs here
-    // on the reasoning that they must divide the long axis; measure instead.
-    if (piece.radius) {
-        // RIBS across the channel — INTERIOR ONLY. The end ribs close the first
-        // and last bay, so the run between them is divided into n bays by n-1
-        // ribs, every one of them full width and standing clear of both faces.
-        //
-        // Each carries a CAPITAL, for the same reason the spine does: a 0.8 mm
-        // strip is below the slicer's sliver cleanup and it bridges straight
-        // over it. Built by sweeping the rib's silhouette ALONG u, because the
-        // capital has to widen in S and a profile swept along s cannot do that.
-        const n = Math.max(1, Math.round((s1 - s0) / U.ribPitchMm));
-        for (let i = 1; i < n; i++) {
-            const sc = s0 + ((s1 - s0) * i) / n;
-            const p = planPosAt(piece, sc), y = deckYAt(piece, sc);
-            const dir = [Math.cos(p.h), 0, Math.sin(p.h)];
-            const rt = [Math.sin(p.h), 0, -Math.cos(p.h)];
-            const stations = [], profiles = [];
-            for (let k = 0; k <= 8; k++) {
-                const u = -uHalf + (2 * uHalf * k) / 8;
-                stations.push({ origin: [p.x + rt[0] * u, y, p.z + rt[2] * u],
-                    right: dir, up: [0, 1, 0] });
-                // the foot follows the plane along the arc too, or the downhill
-                // edge pokes through by grad * ribMm/2
-                const bot = (ds) => pl.at(p.x + rt[0] * u + dir[0] * ds,
-                    p.z + rt[2] * u + dir[2] * ds) - y;
-                // AND SO DOES THE TOP — the reason this is here at all. A LEVEL
-                // capital 3 mm wide is wrong at both edges, because the deck
-                // falls 0.595 mm across those 3 mm while the top pokes only
-                // 0.300 into the floor: the downhill edge buries 0.60 deep and
-                // the UPHILL edge clears the ceiling by 0.0025 mm. So the strip
-                // the slicer could anchor to tapers to nothing, the sliver
-                // cleanup drops what is left, and the bridges arc straight over
-                // a rib that is physically touching. Following the deck gives
-                // the whole 3 mm footprint the same 0.3 mm bite. This is the
-                // same rule as the socket boss and the end rib — nothing under
-                // the deck may have a level top — and the rib is where it was
-                // still being broken, in the one direction (along the arc) that
-                // a cross-channel wall makes easy to miss.
-                const fall = (ds) => deckYAt(piece, Math.min(Math.max(sc + ds, 0), piece.planLen)) - y;
-                const topAt = (ds) => fall(ds) + top;
-                const ceilAt = (ds) => fall(ds) + ceil;
-                profiles.push([
-                    [-U.ribMm / 2, bot(-U.ribMm / 2)], [U.ribMm / 2, bot(U.ribMm / 2)],
-                    [U.ribMm / 2, ceilAt(U.ribMm / 2) - rise], [capW / 2, ceilAt(capW / 2)],
-                    [capW / 2, topAt(capW / 2)], [-capW / 2, topAt(-capW / 2)],
-                    [-capW / 2, ceilAt(-capW / 2)], [-U.ribMm / 2, ceilAt(-U.ribMm / 2) - rise]
-                ]);
-            }
-            ribOps.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
-        }
+    // FULL LENGTH, not rib to rib. Inside an end rib this is a union with solid
+    // material and adds nothing; at a face that has NO rib — the start
+    // platform's bumper end — stopping at `ribThk` left a 24 mm span hanging
+    // over the first 11.5 mm, which was the last cluster on the whole part.
+    // 0.5 mm shy of each face so nothing can protrude past it.
+    const s0 = 0.5, s1 = piece.planLen - 0.5;
+    if (s1 - s0 < 2) return [];
+    const top = -spec.floorThk + 0.3;   // into the floor, so no coplanar faces
+    const N = Math.max(2, Math.ceil((s1 - s0) / 3) + 1);
+    const stations = [], profiles = [];
+    for (let i = 0; i < N; i++) {
+        const s = s0 + ((s1 - s0) * i) / (N - 1);
+        const p = planPosAt(piece, s), y = deckYAt(piece, s);
+        const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+        stations.push({ s, origin: [p.x, y, p.z], right });
+        const bot = (u) => floorAt(p.x + right[0] * u, p.z + right[2] * u) - y;
+        profiles.push([[-uHalf, bot(-uHalf)], [uHalf, bot(uHalf)], [uHalf, top], [-uHalf, top]]);
     }
-    // SPINES along the piece, each carrying a CAPITAL at the ceiling so the
-    // slicer will actually anchor its bridges to it — see SPEC.underside. They
-    // run 0.5 mm INTO each end rib rather than stopping short of it: a butt
-    // joint on the rib's inner face is a coplanar pair the boolean has to
-    // resolve, and stopping short leaves the orphan gap the ribs once had.
-    const a = s0 - 0.5, b = s1 + 0.5;
-    const steps = Math.max(2, Math.ceil((b - a) / 3));
-    const ops = ribOps;
-    for (let i = 1; i <= U.spines; i++) {
-        const u = -uHalf + (2 * uHalf * i) / (U.spines + 1);
-        const stations = [], profiles = [];
-        for (let k = 0; k <= steps; k++) {
-            const sAt = a + ((b - a) * k) / steps;
-            const p = planPosAt(piece, sAt), y = deckYAt(piece, sAt);
-            const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
-            stations.push({ s: sAt, origin: [p.x, y, p.z], right });
-            const bot = (uu) => pl.at(p.x + right[0] * uu, p.z + right[2] * uu) - y;
-            profiles.push([
-                [u - U.spineMm / 2, bot(u - U.spineMm / 2)],
-                [u + U.spineMm / 2, bot(u + U.spineMm / 2)],
-                [u + U.spineMm / 2, ceil - rise],
-                [u + capW / 2, ceil],
-                [u + capW / 2, top],
-                [u - capW / 2, top],
-                [u - capW / 2, ceil],
-                [u - U.spineMm / 2, ceil - rise]
-            ]);
-        }
-        ops.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });
-    }
-    return ops;
+    return [{ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) }];
 }
 
 export function buildPieceExportGeometry(piece, opts = {}) {
@@ -1178,6 +1095,24 @@ export function buildPieceExportGeometry(piece, opts = {}) {
         });
     }
 
+    // UNDER-DECK FILL AND EXPERIMENTS ENTER HERE, AND ONLY HERE.
+    //
+    // Four curve variants were built in scratchpad scripts that CONCATENATED
+    // ribs and lattice onto the shell instead of unioning them, and every score
+    // taken off the resulting non-manifold meshes was void (see HANDOFF §3.2).
+    // The fix is not discipline, it is a seam: `extraOps` is handed the piece
+    // already in its own frame and its ops go through `csgChain` with the rest,
+    // so an experiment is manifold by construction or it is not built at all.
+    //
+    // BEFORE THE JOINTS AND THE BOSS, because everything after this CARVES: the
+    // bowtie pocket, the socket bore, the engraved code. Filling last put the
+    // plastic straight back into the pocket that had just been cut — the key
+    // throat tests caught that — and sealed what was left of it into an
+    // internal void, so the part exported as two shells. Fill the cavity first,
+    // then cut the features out of it; the order is the intent.
+    if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
+    else ops.push(...undersideSupportOps(piece, spec));
+
     if (hasEntryJoint) {
         // seam's uphill deck = this entry + the waterfall step
         ops.push(...jointOps(
@@ -1197,19 +1132,6 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             (d) => deckYAt(piece, Math.max(0, piece.planLen - d))
         ));
     }
-    // UNDER-DECK EXPERIMENTS ENTER HERE, AND ONLY HERE.
-    //
-    // Four curve variants were built in scratchpad scripts that CONCATENATED
-    // ribs and lattice onto the shell instead of unioning them, and every score
-    // taken off the resulting non-manifold meshes was void (see HANDOFF §3.2).
-    // The fix is not discipline, it is a seam: `extraOps` is handed the piece
-    // already in its own frame and its ops go through `csgChain` with the rest,
-    // so an experiment is manifold by construction or it is not built at all.
-    //
-    // BEFORE bossOps deliberately — the boss subtracts its socket bore, and an
-    // addition after that would fill the bore back in.
-    if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
-    else ops.push(...undersideSupportOps(piece, spec));
     ops.push(...bossOps(piece, spec, opts.support));
     ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
     const solid = csgChain(shell, ops, opts.simplifyTol);
@@ -1307,6 +1229,21 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     const shell = fineShell(mainPiece, spec, stations);
     const ops = [{ op: ADDITION, geometry: fineShell(branchPiece, spec) }];
 
+    // THE FILL GOES IN FIRST, before the frog is opened and before the joints.
+    // Everything after this CARVES — the route envelopes, the bowtie pockets,
+    // the socket bore, the gate seat, the code — so a cavity filled here is one
+    // the carving still gets to cut through. Filled last it put plastic back
+    // into the pockets and sealed them into internal voids.
+    //
+    // One fill per ROLE, and `extraOps` overrides per role: returning nothing
+    // for one falls back to that role's default, so a caller can treat the two
+    // halves differently. The hook used to be missing here entirely, silently —
+    // a solid-cavity switch was built, sliced and compared against the ribbed
+    // one and the two came out byte-identical at 142.6 cm3.
+    for (const pc of [mainPiece, branchPiece]) {
+        ops.push(...(opts.extraOps?.(pc, spec) ?? undersideSupportOps(pc, spec)));
+    }
+
     // open the frog: neither route's rails may cross the other's channel
     ops.push(
         { op: SUBTRACTION, geometry: toBufferGeometry(routeClearanceEnvelope(mainPiece, spec, 4)) },
@@ -1328,24 +1265,6 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
             pc.exitWidth ?? pc.innerWidth, spec,
             (d) => deckYAt(pc, Math.max(0, pc.planLen - d))
         ));
-    }
-    // Each ROLE takes the rule for its own shape — the main half is a straight
-    // and wants spines, the branch is a curve and wants ribs. They share one
-    // underside plane (planeGroup), so both sets reach the same bed.
-    //
-    // `extraOps` REPLACES that per role, exactly as it does on a single piece.
-    // It was missing here, and silently: a solid-cavity switch was built,
-    // sliced and compared against the ribbed one, and the two came out
-    // byte-identical at 142.6 cm3 because the hook was ignored. A seam that
-    // accepts an argument and drops it is worse than none.
-    //
-    // Returning nothing for a role falls back to that role's default, so a
-    // caller can override ONE half and leave the other alone. The switch is the
-    // one part with two shapes in it, and the two shapes want opposite things:
-    // the curved branch wants filling, the straight main wants its capped spine.
-    // Without this the choice is all-or-nothing across a part that is not.
-    for (const pc of [mainPiece, branchPiece]) {
-        ops.push(...(opts.extraOps?.(pc, spec) ?? undersideSupportOps(pc, spec)));
     }
     ops.push(...bossOps(mainPiece, spec, opts.support));
 

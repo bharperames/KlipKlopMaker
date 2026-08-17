@@ -424,7 +424,14 @@ export const SPEC = {
      * shipped before it. At u=0 it also runs through the boss, so it is braced
      * mid-span instead of standing as a lone 129 mm fin.
      */
-    underside: { spines: 1, spineMm: 1.6, capMm: 3, ribPitchMm: 18, ribMm: 0.8 },
+    // NO UNDER-DECK TUNING KNOBS ANY MORE. This was
+    // `{ spines, spineMm, capMm, ribPitchMm, ribMm }` — a spine count for
+    // straights, a rib pitch for curves, and a capital width to flare at the
+    // ceiling so the slicer would anchor to it. All five are gone with the
+    // scheme: the cavity is simply filled (`undersideSupportOps`), which
+    // measured better on every part and printed FASTER despite weighing more,
+    // and a filled cavity has nothing to tune. The slicer decides how much
+    // plastic goes inside it, which is what infill density is for.
     /**
      * SPACER — the adapter that puts a `minimal` piece's socket mouth back on
      * the 15 mm grid. Same move as the jog: the track piece keeps one shape and

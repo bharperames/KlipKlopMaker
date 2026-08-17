@@ -329,49 +329,55 @@ viaduct curve 71 mm.
   carries 13 m of bridges in the 40–48 mm band, spanning the channel. That is
   what strands. Score both columns, always.
 
-- **THE UNDER-DECK FIX IS PER PIECE TYPE, and the two do not substitute.**
-  A minimal piece's deck ceiling has to be held up or it sags and leaves
-  strands on the walking surface's underside — Brett, on shipped straights:
-  "obvious strands of plastic across the underside of the deck, rough to feel
-  and can grab and peel, not fully melted together."
-  · **STRAIGHTS take SPINES along the piece** — 2 of them, 0.8 mm, bed to deck
-    ceiling. A straight's ceiling bridges ACROSS the channel, so a lengthwise
-    wall halves every span: 48 → 16 mm at two spines. Measured, sliced: bridges
-    over 40 mm go 13 099 → 0 mm and the longest span 47.3 → 23.4, for +3.0 g and
-    +4 minutes. ONE spine is not enough — half of 48 is 24, still over the 20 mm
-    line, and 13 m stays in the >20 band.
-  · **CURVES take the HONEYCOMB** — 12 mm hex cells, 0.8 mm walls, bed to deck.
-    Spines do almost nothing on a curve (three of them leave the max span at
-    45.2 against a 45.6 baseline) because a curve's exposed ceiling runs ALONG
-    the arc, so a spine lies parallel to the spans. The honeycomb takes the max
-    to 12.2 for +27 g. This is the one part of the old "spines refuted" verdict
-    that survives, and only for curves.
-  · **FLAT PLATFORMS (`start`, `end`) TAKE THE SPINE TOO.** They were getting
-    nothing, because the guard asked `laysOnUnderside` — which answers "is this
-    printed tilted" and is false for them, their drop being 0 — when the
-    question is whether there is a cavity to hold up. Brett, on their
-    undersides: "we need to add the center rib down the length of the start and
-    end pieces too, since they would have the same unsupported underside."
-    Sliced: bridge moves over 40 mm go 497 -> 208 on the start and 499 -> 210 on
-    the end, for +2.0 g and +2.5 min. CROSS ribs on top of that were tried and
-    do nothing (208 -> 200, 210 -> 210, +2.6 g, +9 min): the survivors run
-    lengthwise across every rib, so they are one long MOVE that is anchored
-    every 18 mm and the metric overstates them.
-  · **A RIB'S CAPITAL MUST FOLLOW THE DECK, and it is worth almost nothing.**
-    The capital is 3 mm wide along the arc while the deck falls 0.595 mm across
-    those 3 mm, so a LEVEL top that pokes 0.300 into the floor buried its
-    downhill edge 0.60 deep and cleared the ceiling by 0.0025 mm at the uphill
-    edge — a contact strip tapering to nothing. Following the deck gives the
-    whole footprint the same 0.3 mm bite. It is the right shape and it is now
-    drawn that way, but MEASURE BEFORE CLAIMING IT HELPS: sliced before and
-    after, bridge moves over 40 mm are 32 either way and the longest goes 61.3
-    -> 59.3 mm. The ribs were already anchoring; against no under-deck structure
-    at all the same curve is 110 moves and 66.1 mm.
-  Cell size below 20 mm buys nothing on the max span, and 8 mm cells or 1.6 mm
-  walls cost 13–27 g for numbers that do not move. `scripts/curve_variants.mjs`
-  builds and gates all of it. **CONFIRMED IN PLASTIC** for the straight
-  honeycomb: Brett, "the honeycomb has eliminated the stray strands from the
-  underside of the walking surface".
+- **THE UNDER-DECK FIX IS ONE RULE: FILL THE CAVITY.** It used to be three
+  rules chosen by shape — spines along a straight, ribs across a curve, nothing
+  at all for the flat platforms — each with a flared capital at the ceiling so
+  the slicer would anchor to it. `scripts/overhang_audit.mjs` measures the thing
+  that actually decides whether a ceiling sags: how far a bridge has to reach
+  before it lands on something. On that measure the old scheme left **24 mm**
+  spans on a straight, 24 on a curve, 26 on a switch and **36** on a platform.
+  Filling the cavity gives **6-12 mm** everywhere, and the filled part is
+  FASTER despite weighing more, because sparse infill lays down quicker than
+  tall thin walls:
+
+  | part | before | after | worst span |
+  |---|---|---|---|
+  | start | 43.99 g / 1h17:52 | 51.86 g / 1h17:09 | 50 -> 10 |
+  | straight | 50.36 g / 1h20:29 | 56.73 g / 1h15:12 | 24 -> 10 |
+  | curve | 92.84 g / 3h46:00 | 100.74 g / 2h55:40 | 24 -> 12 |
+  | end | 39.14 g / 1h03:05 | 47.12 g / 1h02:53 | 50 -> 18 |
+  | switch | 134.16 g / 5h23:17 | 138.03 g / 3h57:15 | 26 -> 12 |
+
+  The fill runs the FULL LENGTH, not rib to rib: inside an end rib it is a
+  union with solid material and adds nothing, but at a face with NO rib — the
+  start platform's bumper end — stopping at `ribThk` left a 24 mm span hanging
+  over the first 11.5 mm, and that was the last cluster on the part.
+  It goes in BEFORE the joints and the boss, because everything after it CARVES
+  (bowtie pocket, socket bore, gate seat, engraved code). Filling last put the
+  plastic back into the pocket that had just been cut and sealed the remains
+  into an internal void, so the part exported as TWO SHELLS.
+  `SPEC.underside` is gone with the scheme — a filled cavity has nothing to
+  tune, and the slicer's infill density is the knob.
+- **JUDGE A PART WITH `overhang_audit.mjs`, NOT WITH BRIDGE-MOVE COUNTS.** Once
+  a cavity is filled, most "bridge" moves in the gcode are solid infill laid
+  over SPARSE INFILL, not over air: a filled start platform still reports 180
+  moves over 40 mm and has no unsupported ceiling at all. The audit reads the
+  MESH — downward faces, how far they fall, how wide the unsupported stretch is
+  — so it cannot be confused by infill and does not depend on a slicer profile.
+  `tests/pieces.test.js` gates every minimal piece at **no span over 20 mm**,
+  and that gate is known to reject: with the fill suppressed the same four
+  parts report 20, 10, 57 and 14 spans over the limit.
+- **THE VIADUCT STYLE FAILS THIS AUDIT AND IS LEFT ALONE DELIBERATELY.**
+  `viaduct_straight` measures a 56 mm worst span over 14 clusters and
+  `viaduct_curveR` 66 mm over 73, with 1067 mm2 ceilings open all the way to
+  the bed. That is not a regression and not a false positive: the viaduct skirt
+  is piers and arches with **nothing internal** by design, so its deck bridges
+  the full channel. It also matches the one print result on record — the
+  viaduct curve failed on its arched skirts. Filling it would erase the style,
+  and bulkheads inside the arcade were tried and deleted once already. It stays
+  excluded from the fill and from the test gate; the minimal style is what
+  ships. Reopen this only with a design decision, not a tweak.
+
 - **The strands around a track socket's mouth are KNOWN, MINOR AND ACCEPTED —
   do not "fix" them.** The collar is bored out to `collarBoreR` 9.2 so the
   spacer's Ø18 body can tuck up inside, and the top of that recess is an
