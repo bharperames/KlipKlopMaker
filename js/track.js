@@ -238,49 +238,51 @@ export const SPEC = {
          * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
          * round bore would let a 45 mm offset arm swing anywhere.
          *
-         * 10.00, AND THE REASON IS NOT THE ONE THIS NOTE FIRST GAVE.
+         * 9.85 — ONE RUNG UP BRETT'S OWN LADDER, AND THE GEOMETRY IS INNOCENT.
          *
          * Brett: "the hex tenons I have (and also just printed more) don't fit
-         * in them. The pillars just can't be put together." Then, correcting a
-         * first diagnosis that blamed the mass of longer risers: "It isn't a
+         * in them. The pillars just can't be put together." Then: "It isn't a
          * 'longer riser' issue, no hex tenon fits in any circular hole
-         * printed." A blanket failure is not a mass effect, and the arithmetic
-         * says why:
+         * printed." Then, decisively: "we for sure did a test print where I
+         * confirmed a nice snug fit for the existing tenons and the bores,
+         * somehow that got lost and never transferred to the real parts."
          *
-         *     tenon AF 8.6  ->  ACROSS CORNERS 9.930   (as DRAWN)
-         *     bore 9.60     ->  0.165 mm/side INTERFERENCE against that
+         * IT DID NOT GET LOST. The 15 mm riser in the plate that ASSEMBLES
+         * (plate_supports_2_4_0) and the one in the plate that DOES NOT
+         * (plate_01_15parts_323g) have the same geometry hash, 487867f6 —
+         * byte-identical vertices, the same round 9.60 bore, both watertight.
+         * `roundSocketSolid` is unchanged since the sweep plate too, bar a
+         * cx/cz argument that defaults to 0. One drawing, two prints, two
+         * outcomes.
          *
-         * 9.60 was never a clearance fit. It cleared only because the tenon's
-         * six convex corners print 0.20-0.28 mm UNDER nominal — measured at
-         * 9.65 and 9.73 across corners against 9.93 drawn — and this file
-         * records that rounding itself, a few paragraphs up, as the reason the
-         * hex went outside in the first place. The fit was resting on a print
-         * defect. The moment the corners came out sharper, nothing fitted, and
-         * nothing about the drawing had changed.
+         * So this is PROCESS variation, not a modelling error, and the fix is
+         * MARGIN rather than a different number. What the failure shows is that
+         * 9.60 had none: it sits 0.027-0.067 mm/side inside the tenons as they
+         * actually print (9.65 and 9.73 across corners, measured), so the whole
+         * fit is the corner rounding, and a plate that cools differently — 15
+         * parts including three big track pieces, against 5 small support parts
+         * — moves it straight from snug to impossible.
          *
-         * So the bore is sized against the tenon AS DRAWN, which is the only
-         * dimension that does not move: 9.93 plus 0.07 of clearance. Every
-         * tenon assembles now, including one that prints perfectly, because a
-         * convex feature cannot print much OVER nominal.
+         * WHY NOT SIZE AGAINST THE DRAWN 9.930 ACROSS CORNERS. That was tried
+         * here for one commit and it is wrong: a hex's convex corners always
+         * round, the process never delivers 9.93, and designing to a dimension
+         * that never occurs opens the hole to 10.00 — past the 9.85 Brett read
+         * as "kinda loose" and towards the 10.10 he read as "really loose".
+         * The ladder he printed beats the arithmetic, because it measured the
+         * two things that actually mate.
          *
-         * THE COST IS HONEST AND IT IS LOOSENESS. Against a tenon whose corners
-         * round off to 9.65 this is 0.175 mm/side of slop, and 10.10 read
-         * "really loose" on the sweep plate for exactly that reason. That is
-         * the trade: a joint that is sometimes loose beats a joint that
-         * sometimes cannot be assembled, because looseness is recoverable and a
-         * press fit into a printed part is not.
+         * 9.85 clears his measured tenons by 0.06-0.10 mm/side. That is enough
+         * to absorb the plate-to-plate shift that broke 9.60, and it is a rung
+         * he has already held in his hand and called usable.
          *
-         * THE REAL FIX IS TO STOP MATING ON A PRINTED POINT. The tenon's
-         * across-corners varies 9.65-9.93 depending on how sharply the nozzle
-         * turns — 0.28 mm of range, wider than any sensible fit window, and not
-         * a thing a bore diameter can chase. TRUNCATE THE TENON'S CORNERS so
-         * the mating dimension is a drawn FLAT, which prints accurately, and
-         * the bore can then be sized to it with a real clearance. That costs
-         * nothing elsewhere: hex-in-hex bears on the FLATS, so every hex socket
-         * already printed keeps its fit. Do that before touching this number
-         * again.
+         * IF IT IS STILL TIGHT, the answer is not another 0.1 on this number.
+         * The tenon's across-corners varies 9.65-9.93 depending on how sharply
+         * the nozzle turns, which is wider than any fit window. TRUNCATE THE
+         * TENON'S CORNERS so the mating dimension is a drawn FLAT, which prints
+         * accurately. Hex-in-hex bears on the flats, so every socket already
+         * printed keeps its fit and nothing in the field is invalidated.
          */
-        boreDia: 10.0,
+        boreDia: 9.85,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
