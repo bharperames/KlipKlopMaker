@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.5.0';
+export const GEOMETRY_VERSION = '2.6.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -1074,7 +1074,20 @@ export function layoutTrack(sequence, params = {}) {
             plan = segmentPlan('straightish', cursor, { len: p.tileLen });
             drop = 0; slopeDeg = 0; isLift = true;
         } else { // curveL / curveR / switchBranch
-            const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? 1 : -1;
+            // L AND R ARE THE WALKER'S, and this sign is where that is decided.
+            //
+            // It was inverted, and had been compensated for at the UI instead of
+            // fixed here: the button labelled "Curve left" carried
+            // data-add="curveR", so the builder looked right while the token,
+            // the parts list and the ENGRAVING all said the opposite. Brett,
+            // holding one: "When I look at the curve I printed, it is called
+            // right curve, but it curves left as the model walks down it."
+            //
+            // Three.js is right-handed with Y up, so a traveller facing f with
+            // up u has starboard f x u = (-sin h, 0, cos h). turnSign -1 bends
+            // that way. Verified after the change: curveL turns LEFT and
+            // curveR turns RIGHT, measured against f x u rather than assumed.
+            const sign = (kind === 'curveL' || meta.switchType === 'switchL') ? -1 : 1;
             plan = segmentPlan('curve', cursor, { radius: p.curveRadius, turnSign: sign });
             drop = plan.planLen * tanSlope; slopeDeg = p.slopeDeg;
             innerWidth = p.innerWidth + p.curveWidenMm;
@@ -1193,7 +1206,7 @@ export function layoutTrack(sequence, params = {}) {
                     drop = plan.planLen * tanSlope;
                 }
             } else {
-                plan = segmentPlan('curve', cur, { radius: p.curveRadius, turnSign: kind === 'curveL' ? 1 : -1 });
+                plan = segmentPlan('curve', cur, { radius: p.curveRadius, turnSign: kind === 'curveL' ? -1 : 1 });
                 drop = plan.planLen * tanSlope;
             }
             deck = (deck - p.waterfall) - drop;

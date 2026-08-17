@@ -5,7 +5,7 @@
   "description": "Canonical geometry against a too-tight ±10° swing limiter: the canonical 11.22° slope outreaches the stride, the next hoof lands beyond the stops, and the figure pitches over its front axle at the first ramp. The TUMBLE regime.",
   "sequence": [
     "straight",
-    "curveR",
+    "curveL",
     "straight"
   ],
   "surface": "washboard",
@@ -20,5 +20,5 @@
     "maxTimeS": 5,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

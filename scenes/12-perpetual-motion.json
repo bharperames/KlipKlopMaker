@@ -7,13 +7,13 @@
     "lift",
     "lift",
     "lift",
-    "curveL",
-    "curveL",
+    "curveR",
+    "curveR",
     "lift",
     "lift",
     "lift",
-    "curveL",
-    "curveL"
+    "curveR",
+    "curveR"
   ],
   "loop": true,
   "scenery": [],
@@ -31,5 +31,5 @@
     "minClacks": 80,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

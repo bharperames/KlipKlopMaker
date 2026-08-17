@@ -5,18 +5,18 @@
   "description": "Three full spiral tiers on the standard geometry, with straight approach and run-out. The tallest stock scene (~600 mm of drop) — its supports are stacks of standard risers.",
   "sequence": [
     "straight",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
-    "curveR",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
+    "curveL",
     "straight",
     "straight"
   ],
@@ -34,5 +34,5 @@
     "minWalkedFraction": 0.95,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

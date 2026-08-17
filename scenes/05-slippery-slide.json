@@ -5,7 +5,7 @@
   "description": "Canonical geometry, but the floor has worn smooth and dusty (μs≈0.22): tan(11.22°) exceeds the grip budget, the hooves never catch, and the figure skis the track like a toboggan before braking in the corral. The SLIDE regime — and why the washboard floor matters.",
   "sequence": [
     "straight",
-    "curveL",
+    "curveR",
     "straight"
   ],
   "surface": "dusty",
@@ -22,5 +22,5 @@
     "minMaxV": 250,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

@@ -6,14 +6,14 @@
   "sequence": [
     "straight",
     {
-      "type": "switchL",
+      "type": "switchR",
       "gate": "branch",
       "main": [
         "straight",
         "straight"
       ],
       "branch": [
-        "curveL",
+        "curveR",
         "straight"
       ]
     }
@@ -33,5 +33,5 @@
     "minWalkedFraction": 0.9,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

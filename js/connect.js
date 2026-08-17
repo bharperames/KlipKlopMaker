@@ -42,7 +42,12 @@ function applyMove(st, type, M) {
     if (type === 'straight' || type === 'lift' || type === 'powered') {
         return { x: x + Math.cos(h) * M.tile, z: z + Math.sin(h) * M.tile, h, deck: deck + M.net[type] };
     }
-    const turn = type === 'curveL' ? Math.PI / 2 : -Math.PI / 2;
+    // MUST MATCH track.js's turnSign. This is a SECOND copy of the turn
+    // convention and it is how the original inversion survived so long: the
+    // sign was fixed in one place and not the other, and the closure solver
+    // simply stopped finding circuits. L is the WALKER'S left, which in a
+    // right-handed Y-up frame is a negative rotation.
+    const turn = type === 'curveL' ? -Math.PI / 2 : Math.PI / 2;
     const side = Math.sign(turn);
     const cx = x + Math.cos(h + side * Math.PI / 2) * M.R;
     const cz = z + Math.sin(h + side * Math.PI / 2) * M.R;

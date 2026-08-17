@@ -62,6 +62,48 @@ function cloneNodes(nodes) {
     });
 }
 
+/**
+ * L AND R SWAPPED MEANING IN 2.6.0, so a file written before it has to have its
+ * tokens exchanged to keep the shape its author drew.
+ *
+ * Until 2.6.0 the turn sign was inverted: a `curveR` bent to the WALKER'S LEFT.
+ * The UI hid it by wiring the "Curve left" button to `curveR`, so the builder
+ * looked correct while the token, the parts list and the ENGRAVING all said the
+ * opposite — Brett, holding a printed one: "it is called right curve, but it
+ * curves left as the model walks down it."
+ *
+ * 2.6.0 fixes the sign, which means the same token now builds the mirror of
+ * what it used to. Swapping the tokens on load is what makes that invisible: an
+ * old design keeps its shape, and only its vocabulary is brought up to date.
+ * This is why scenes carry a `geometry` stamp — Brett: "you should have a semver
+ * in the scene to make these kind of updates during loading."
+ */
+function migrateHandedness(sequence, stamp) {
+    if (!stamp || cmpVer(stamp, '2.6.0') >= 0) return sequence;
+    const flip = { curveL: 'curveR', curveR: 'curveL', switchL: 'switchR', switchR: 'switchL' };
+    const walk = (nodes) => nodes.map((n) => {
+        if (typeof n === 'string') return flip[n] ?? n;
+        if (n && typeof n === 'object') {
+            return { ...n,
+                ...(flip[n.type] ? { type: flip[n.type] } : {}),
+                ...(Array.isArray(n.main) ? { main: walk(n.main) } : {}),
+                ...(Array.isArray(n.branch) ? { branch: walk(n.branch) } : {}) };
+        }
+        return n;
+    });
+    return walk(sequence);
+}
+
+/** -1, 0 or 1 comparing dotted versions numerically rather than as strings. */
+function cmpVer(a, b) {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i] || 0) - (pb[i] || 0);
+        if (d) return Math.sign(d);
+    }
+    return 0;
+}
+
 function validateNodes(nodes, problems, path) {
     if (!Array.isArray(nodes)) { problems.push(`${path}: not an array`); return; }
     nodes.forEach((n, i) => {
@@ -105,7 +147,7 @@ export function deserializeScene(obj) {
     return {
         name: obj.name ?? 'Untitled track',
         description: obj.description ?? '',
-        sequence: cloneNodes(obj.sequence),
+        sequence: migrateHandedness(cloneNodes(obj.sequence), obj.geometry),
         scenery: (obj.scenery ?? []).map(s => ({ rot: 0, ...s })),
         figureStyle: FIGURE_STYLES.includes(obj.figureStyle) ? obj.figureStyle : 'knight',
         knightVariant: obj.knightVariant === 'comb' ? 'comb' : 'trumpet',

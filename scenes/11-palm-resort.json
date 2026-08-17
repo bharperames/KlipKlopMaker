@@ -5,25 +5,25 @@
   "description": "S-curves through a decorated island resort: palm islands, patio parking pads, and stacked towers. A right-hand switch offers a shortcut branch to the beach patio.",
   "sequence": [
     "straight",
-    "curveL",
     "curveR",
+    "curveL",
     "straight",
     {
-      "type": "switchR",
+      "type": "switchL",
       "gate": "main",
       "main": [
-        "curveL",
-        "straight",
-        "curveR",
         "curveR",
         "straight",
         "curveL",
+        "curveL",
+        "straight",
+        "curveR",
         "straight"
       ],
       "branch": [
         "straight",
-        "curveR",
         "curveL",
+        "curveR",
         "straight"
       ]
     }
@@ -98,5 +98,5 @@
     "minWalkedFraction": 0.95,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

@@ -5,14 +5,14 @@
   "description": "The app's default double-spiral tower with a straight run-out — the inspiration-image silhouette. Two full 360° tiers on stacked standard risers.",
   "sequence": [
     "straight",
-    "curveL",
-    "curveL",
-    "curveL",
-    "curveL",
-    "curveL",
-    "curveL",
-    "curveL",
-    "curveL",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
+    "curveR",
     "straight",
     "straight"
   ],
@@ -30,5 +30,5 @@
     "minWalkedFraction": 0.95,
     "layoutErrors": []
   },
-  "geometry": "2.5.0"
+  "geometry": "2.6.0"
 }

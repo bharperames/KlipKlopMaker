@@ -324,7 +324,11 @@ const TYPE_CODE = {
     // costs you, and a curve tile is long enough to carry the words
     curveL: 'LEFT CURVE', curveR: 'RIGHT CURVE',
     lift: 'LIFT', elevator: 'ELEV', powered: 'PWR',
-    switchMain: 'SWITCH', switchBranch: 'SWITCH'
+    // A switch is chiral too, and the mark said only "SWITCH" — Brett, on a
+    // printed one: "the label of the switch is off (missing the left/right
+    // info)". Which way the branch leaves is exactly what you need to know
+    // when picking one out of a bin.
+    switchL: 'LEFT SWITCH', switchR: 'RIGHT SWITCH'
 };
 
 /**
@@ -345,7 +349,7 @@ function flareSuffix(piece) {
 
 /** Engraved code for a laid-out track piece, e.g. `STR IN 1.1`. */
 export function pieceCode(piece, geometryVersion) {
-    const base = TYPE_CODE[piece.switchType ? 'switchMain' : piece.type] ?? String(piece.type).toUpperCase();
+    const base = TYPE_CODE[piece.switchType ?? piece.type] ?? String(piece.type).toUpperCase();
     return `${base}${flareSuffix(piece)} ${codeVersion(geometryVersion)}`;
 }
 
