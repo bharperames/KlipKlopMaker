@@ -4,14 +4,14 @@
  *
  *   node scripts/fit_test_plate.mjs
  *
- * WHY IT CARRIES A FULL-SIZE STRAIGHT. The bore failure that started all of
- * this was not a modelling error: the 15 mm riser in the plate that assembles
- * and the one in the plate that does not have the SAME GEOMETRY HASH. What
- * differed was the plate — 5 small support parts in one case, 15 parts
- * including three big track pieces in the other. A plate of small parts alone
- * would therefore reproduce the condition that already WORKED and prove
- * nothing. The straight is here as a thermal load, and it doubles as the test
- * for the filled underside and the key pocket.
+ * WHAT IS DELIBERATELY NOT HERE: a thermal load. A full straight was on this
+ * plate first, on the argument that the bores which assemble were printed
+ * among 5 small parts and the ones that do not among 15 including three big
+ * track pieces — same geometry hash, so the plate was the only variable. The
+ * correlation is real but it is n=1 on each side, the two prints also differ
+ * in day, spool and ambient, and the straight cost 79% of the plate. It is out.
+ * THE COST IS EXPLICIT: if plate composition does move hole size, these bore
+ * readings are taken under light conditions. Settle that on its own terms.
  *
  * WHAT IS BEING CHECKED, and how to read each one:
  *
@@ -27,13 +27,13 @@
  *  3. THE FOOT IS NOT SPECIAL — a foot to put into the same bores as the
  *     risers. It used to measure 0.08 wider across corners; if that is really
  *     gone, it should feel like the risers do.
- *  4. KEY DRIVE TAPER — two keys and a straight with real pockets at both
- *     ends. The key is directional now: small end leads. Wrong way round it
+ *  4. KEY DRIVE TAPER — two keys and cal_ramp, which carries a real pocket at
+ *     each end. The key is directional now: small end leads. Wrong way round it
  *     should stop early and obviously. Right way round it should tighten as it
  *     is driven and hold the seam closed.
- *  5. FILLED UNDERSIDE — the straight's own sole. Look for the pie slice that
- *     was there before (an open wedge near the ends), and for stranding under
- *     the deck.
+ *  5. FILLED UNDERSIDE — cal_ramp's own sole. Look for the pie slice that was
+ *     there before (an open wedge near the ends), and for stranding under the
+ *     deck.
  *  6. NO GRID MARKS — the risers are plain shafts now. Nothing to measure,
  *     just confirm they no longer read as parts that pull apart.
  *
@@ -53,6 +53,7 @@ import { extrudePolygonY } from '../js/geometry.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { audit } from './overhang_audit.mjs';
+import { CALIBRATION } from '../js/pieces.js';
 
 const OUT = 'test-parts/fit_test';
 
@@ -174,13 +175,35 @@ add('riser15_tenon_TRUNC_6notch',
 add('bowtie_key_a', buildKeyGeometry(SPEC, { code: 'KEY 1' }), 'drive taper, code face = lead end');
 add('bowtie_key_b', buildKeyGeometry(SPEC, { code: 'KEY 2' }), 'spare');
 
-// 5 — the thermal load, and the underside/pocket test ---------------------
-const t = layoutTrack(['start', 'straight', 'curveR', 'end'],
-    { skirtStyle: 'minimal', slopeDeg: 11.2167 });
-const straight = t.pieces.find((p) => p.type === 'straight');
-const sup = planPillarPositions(t.pieces).find((s) => s.pieceIndex === straight.index);
-const sg = buildPieceExportGeometry(straight, { support: sup, forPrint: true });
-add('straight_ramp', sg, 'thermal load + filled sole + key pockets');
+// 5 — the pocket and sole test -------------------------------------------
+//
+// `cal_ramp`, the 65 mm calibration tile, NOT a full straight. The tile exists
+// for exactly this: rib to rib, a real key pocket at each end and the socket
+// between, no cut faces, every mating surface the shipped one — only its
+// length is off-Standard.
+//
+// A full straight was here first, justified as a thermal load: the bores that
+// assemble were printed on a plate of 5 small parts and the ones that do not on
+// a plate of 15 including three big track pieces, same geometry hash. That is a
+// real correlation but it is n=1 on each side, and the two prints also differ
+// in day, spool and ambient — while the straight cost 79% of the plate's mass
+// and most of its time. Brett: "why are you printing a ramp on this plate?"
+//
+// So the load comes out and the pocket test stays. THE COST IS EXPLICIT: if
+// plate composition really does move hole size, the bore readings off this
+// plate are taken under light conditions and may not transfer to a full build.
+// Settle that deliberately later rather than smuggling it in here.
+const t = layoutTrack(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
+    { skirtStyle: 'minimal', slopeDeg: 11.2167, tileLen: CALIBRATION.rampTileLenMm });
+const sups = planPillarPositions(t.pieces);
+let tile = null, tileSup = null;
+for (const p of t.pieces.filter((q) => q.type === 'straight')) {
+    const su = sups.find((x) => x.pieceIndex === p.index);
+    if (su && su.mode !== 'none') { tile = p; tileSup = su; break; }
+}
+if (!tile) tile = t.pieces.find((q) => q.type === 'straight');
+const sg = buildPieceExportGeometry(tile, { support: tileSup, forPrint: true });
+add('cal_ramp', sg, `${tile.planLen.toFixed(0)} mm tile: key pocket at each end + socket`);
 
 const rows = audit({ name: 's',
     V: (() => { const V = []; for (let i = 0; i < sg.positions.length; i += 3)
@@ -204,7 +227,7 @@ for (const p of parts) {
     const b = bbox(p.positions);
     const w = b.x1 - b.x0, d = b.z1 - b.z0;
     let at;
-    if (p.name === 'straight_ramp') {                 // along the back
+    if (p.name === 'cal_ramp') {                      // along the back
         at = [128 - (b.x0 + b.x1) / 2, 190 + (b.z0 + b.z1) / 2, -b.y0];
     } else {
         if (cx + w > 236) { cx = 20; row += rowDepth + 10; rowDepth = 0; }
@@ -229,7 +252,7 @@ const AF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm;
 console.log(`\n${file}`);
 console.log(`${parts.length} objects, ${parts.reduce((s, p) => s + p.cm3, 0).toFixed(1)} cm3, all watertight\n`);
 for (const p of parts) console.log(`   ${p.name.padEnd(26)} ${p.cm3.toFixed(2).padStart(7)} cm3   ${p.note}`);
-console.log(`\nstraight: worst unsupported span ${(rows[0]?.span ?? 0).toFixed(1)} mm, `
+console.log(`\ncal_ramp: worst unsupported span ${(rows[0]?.span ?? 0).toFixed(1)} mm, `
     + `${rows.filter((r) => r.span > 20).length} over 20 mm`);
 console.log('\nWHAT SHIPS, so you know what "right" feels like:');
 console.log(`   bore          ${SPEC.socket.boreDia.toFixed(2)}`);
