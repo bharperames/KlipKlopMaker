@@ -1638,8 +1638,17 @@ function roundTenon(dia, y0, y1, leadIn = 1.0) {
 }
 
 const TENON_AF = SPEC.socket.hexAF - 2 * SPEC.jointClearanceMm; // 8.6
-/** Across-flats at the TIP of a tenon — see SPEC.socket.tenonTaperAF. */
-const TENON_TIP_AF = TENON_AF - (SPEC.socket.tenonTaperAF ?? 0);
+/**
+ * Across-flats at the TIP of a tenon — see SPEC.socket.tenonTaperAF.
+ *
+ * A FUNCTION OF THE SPEC, not a constant folded from the default one. As a
+ * constant it was computed at module load, so a caller passing a modified spec
+ * got the default taper regardless — a fit-test plate built a "no taper"
+ * riser that was byte-identical to the tapered one, and the comparison would
+ * have been printed and read as meaningful. TENON_AF has the same hazard and
+ * is left alone only because nothing overrides it.
+ */
+const tenonTipAF = (spec = SPEC) => TENON_AF - (spec.socket.tenonTaperAF ?? 0);
 
 /** Hex support pillar with base flare and top tenon. Zero CSG. */
 export function buildPillarGeometry(heightMm, spec = SPEC) {
@@ -1650,8 +1659,8 @@ export function buildPillarGeometry(heightMm, spec = SPEC) {
         { y: 4, af: 15 },
         { y: heightMm, af: 15 },
         { y: heightMm, af: TENON_AF },
-        { y: heightMm + spec.socket.depth - 2, af: TENON_TIP_AF },
-        { y: heightMm + spec.socket.depth - 1, af: TENON_TIP_AF - 1.4 }  // insertion lead-in
+        { y: heightMm + spec.socket.depth - 2, af: tenonTipAF(spec) },
+        { y: heightMm + spec.socket.depth - 1, af: tenonTipAF(spec) - 1.4 }  // insertion lead-in
     ]));
 }
 
@@ -1688,8 +1697,8 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
     // riser it replaces goes on underneath
     const tenon = toBufferGeometry(sweepSolid(
         [hexPlan(TENON_AF).map(([x, z]) => [x, -z]),
-         hexPlan(TENON_TIP_AF).map(([x, z]) => [x, -z]),
-         hexPlan(TENON_TIP_AF - 1.4).map(([x, z]) => [x, -z])],
+         hexPlan(tenonTipAF(spec)).map(([x, z]) => [x, -z]),
+         hexPlan(tenonTipAF(spec) - 1.4).map(([x, z]) => [x, -z])],
         [at(H), at(H + spec.socket.depth - 2), at(H + spec.socket.depth - 1)]));
     return csgChain(ends[0], [
         { op: ADDITION, geometry: bar },
@@ -1722,6 +1731,16 @@ export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
     // tight one. The JOG is the only part that keeps a hex tenon, because its
     // angle is what aims the 45 mm offset.
     const round = opts.roundTenonDia;
+    // `tenonTrimAF` takes a little off THIS tenon only. Brett, on the sweep
+    // plate: "the support tenon when pushed all the way into the original
+    // smallest bore on the 6-part sweep test becomes completely stuck ... We
+    // might just need to make the support foot tenon slightly smaller." A
+    // riser stuck on a riser can be worked apart; a riser stuck on the foot is
+    // the bottom of the stack and there is nothing to brace against. So this
+    // joint is allowed to be the loose one. Default 0 — it is only a special
+    // case if a print says it has to be, which is what the fit plate asks.
+    const trim = opts.tenonTrimAF ?? 0;
+    const shoulderAF = TENON_AF - trim, tipAF = tenonTipAF(spec) - trim;
     const shaft = [
         { y: 0, af: 34.8 },                                  // elephant-foot chamfer
         { y: 0.6, af: 36 },
@@ -1731,9 +1750,9 @@ export function buildSupportFootGeometry(spec = SPEC, opts = {}) {
     ];
     const body = toBufferGeometry(round ? stackedHex(shaft) : stackedHex([
         ...shaft,
-        { y: STANDARD.footHeight, af: TENON_AF },
-        { y: STANDARD.footHeight + spec.socket.depth - 2, af: TENON_TIP_AF },
-        { y: STANDARD.footHeight + spec.socket.depth - 1, af: TENON_TIP_AF - 1.4 }
+        { y: STANDARD.footHeight, af: shoulderAF },
+        { y: STANDARD.footHeight + spec.socket.depth - 2, af: tipAF },
+        { y: STANDARD.footHeight + spec.socket.depth - 1, af: tipAF - 1.4 }
     ]));
     // The foot's shaft is 11 mm of usable flat and FOOT needs 12, so its code
     // goes on the BASE — the one part in the library with a big flat disc
@@ -1792,8 +1811,8 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
         // hexRingPlan, not hexPlan: sweepSolid lofts profiles point-to-point,
         // so the hex tenon has to be sampled at the circle's own point count
         [circlePlan(R, n), circlePlan(R, n),
-         hexRingPlan(TENON_AF, n), hexRingPlan(TENON_TIP_AF, n),
-         hexRingPlan(TENON_TIP_AF - 1.4, n)
+         hexRingPlan(TENON_AF, n), hexRingPlan(tenonTipAF(spec), n),
+         hexRingPlan(tenonTipAF(spec) - 1.4, n)
         ].map(pl => pl.map(([x, z]) => [x, -z])),
         [0, heightMm, heightMm,
          heightMm + spec.socket.depth - 2,
@@ -1871,8 +1890,8 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
             { y: 0, af: 15 },
             { y: sizeMm, af: 15 },
             { y: sizeMm, af: TENON_AF },
-            { y: sizeMm + spec.socket.depth - 2, af: TENON_TIP_AF },
-            { y: sizeMm + spec.socket.depth - 1, af: TENON_TIP_AF - 1.4 }
+            { y: sizeMm + spec.socket.depth - 2, af: tenonTipAF(spec) },
+            { y: sizeMm + spec.socket.depth - 1, af: tenonTipAF(spec) - 1.4 }
         ]));
     return csgChain(body, [
         ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(
@@ -1963,8 +1982,8 @@ export function buildTowerGeometry(heightMm = 100, spec = SPEC) {
         { y: heightMm, af: 44 },
         { y: heightMm + 6, af: 44 },
         { y: heightMm + 6, af: TENON_AF },
-        { y: heightMm + 6 + spec.socket.depth - 2, af: TENON_TIP_AF },
-        { y: heightMm + 6 + spec.socket.depth - 1, af: TENON_TIP_AF - 1.4 }
+        { y: heightMm + 6 + spec.socket.depth - 2, af: tenonTipAF(spec) },
+        { y: heightMm + 6 + spec.socket.depth - 1, af: tenonTipAF(spec) - 1.4 }
     ]));
     const socket = hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec);
     return csgChain(body, [{ op: SUBTRACTION, geometry: socket }]);
@@ -1987,8 +2006,8 @@ export function buildPalmIslandGeometries(spec = SPEC) {
     // palm: hex tenon (was a circumscribed circle that could not fit the
     // socket flats!) → tapered trunk → crown of fronds (8-point star)
     const tenon = toBufferGeometry(stackedHex([
-        { y: -8, af: TENON_TIP_AF - 1.4 },   // insertion lead-in
-        { y: -7, af: TENON_TIP_AF },         // tip: tapered, see tenonTaperAF
+        { y: -8, af: tenonTipAF(spec) - 1.4 },   // insertion lead-in
+        { y: -7, af: tenonTipAF(spec) },         // tip: tapered, see tenonTaperAF
         { y: 0.5, af: TENON_AF }             // shoulder: full size
     ]));
     const trunkLevels = [

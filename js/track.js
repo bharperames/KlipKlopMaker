@@ -238,65 +238,55 @@ export const SPEC = {
          * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
          * round bore would let a 45 mm offset arm swing anywhere.
          *
-         * 9.75 — A HALF RUNG, BECAUSE BOTH OF THE LADDER'S BIGGER BORES WERE
-         * TOO LOOSE AND ITS SMALLEST HAS NO MARGIN.
+         * 9.70 — SIZED FOR THE PILLAR-TO-PILLAR JOINT, WHICH IS THE COMMON ONE.
          *
          * The ladder Brett printed and held: 9.60 snug, 9.85 and 10.10 both
-         * "very loose". The rungs are 0.25 apart, so the answer is between the
-         * two smallest, and this note briefly said 9.85 — wrong, because that
-         * is a rung he had already rejected.
+         * "very loose". So the answer lies between the two smallest rungs, and
+         * this note has been wrong twice on the way here.
          *
-         * THE GEOMETRY IS INNOCENT, and that is settled rather than argued.
-         * The 15 mm riser in the plate that ASSEMBLES (plate_supports_2_4_0)
-         * and the one in the plate that does NOT (plate_01_15parts_323g) carry
-         * the same geometry hash, 487867f6 — identical vertices, the same round
-         * 9.60 bore, both watertight. `roundSocketSolid` is unchanged since the
-         * sweep plate too, bar a cx/cz argument defaulting to 0. One drawing,
-         * two prints, two outcomes. Brett: "we for sure did a test print where
-         * I confirmed a nice snug fit ... somehow that got lost and never
-         * transferred to the real parts." It did not get lost; the file is the
-         * same file.
+         * FIRST MISTAKE: sizing against the tenon's DRAWN across-corners of
+         * 9.930, which pushes the bore to 10.00. A hex's convex corners always
+         * round; the process never delivers 9.93, and a dimension that never
+         * occurs is not a design target.
          *
-         * So the fault is MARGIN, and 9.60 has none. Against the tenon as it
-         * actually prints — 9.65 across corners, measured with calipers — 9.60
-         * is INTERFERENCE of 0.025 per side. It assembles only because sharp
-         * hex corners yield,
-         * and a plate that cools differently (15 parts including three big
-         * track pieces, against 5 small support parts) takes it from snug to
-         * impossible with nothing in between.
+         * SECOND MISTAKE, and Brett named it: "you made the bore for everything
+         * be the minimum the support foot wanted, and that made all the pillar
+         * to pillar connections loose." 9.75 was picked as the smallest bore
+         * that cleared BOTH a riser's 9.65 tenon and a foot's 9.73 — one hole
+         * sized for the fattest thing that goes in it, so the joint that
+         * actually repeats up a tower paid for the joint at its base. The foot
+         * is no longer a special case anyway ("it is behaving similar to a 15mm
+         * pillar as far as tenon size"), so there is one tenon and one bore.
          *
-         *     bore     vs tenon 9.65
-         *     9.600    -0.025 interf     fails on a busy plate
-         *     9.725    +0.037 clear      exact half-step of the ladder
-         *     9.750    +0.050 clear      <- here
-         *     9.850    +0.100 clear      "very loose"
+         * Against that one tenon at 9.65 across corners:
          *
-         * THE FOOT IS NOT A SPECIAL CASE. This was briefly sized against a
-         * separate 9.73 measured on a foot's tenon, on the theory that a broad
-         * part prints wider across corners than a slender one. Brett, on a
-         * later set: "Remove special cases for the foot tenon, it is behaving
-         * similar to a 15mm pillar as far as tenon size." One tenon size, one
-         * bore.
+         *     9.600   -0.025 interf    snug, but fails on a busy plate
+         *     9.700   +0.025 clear     <- here
+         *     9.750   +0.050 clear     sized for a foot that no longer needs it
+         *     9.850   +0.100 clear     "very loose"
          *
-         * 9.75 sits just above the ladder's half-step and is a step you can
-         * feel from either neighbour: +0.15 over 9.60, -0.10 under 9.85. It
-         * turns the joint from interference into a light clearance with margin
-         * to spare, without going near the rung that rattled.
+         * AND THE TAPER PAYS FOR THE REST. The tenon's tip is now drawn 0.23
+         * under its shoulder across corners (see tenonTaperAF), so it enters at
+         * 9.70 and the joint STARTS on the rake rather than on the clearance.
+         * That is what makes a tight bore affordable: clearance no longer has
+         * to cover insertion, only the seated fit. 9.60 had to do both jobs
+         * with -0.025, and did neither once the plate changed.
          *
-         * DO NOT SIZE AGAINST THE DRAWN ACROSS-CORNERS of 9.930. That was tried
-         * here for one commit and it pushes the bore to 10.00, past everything
-         * Brett rejected. A hex's convex corners always round, the process
-         * never delivers 9.93, and a dimension that never occurs is not a
-         * design target. The ladder measured the two things that actually mate.
+         * THE GEOMETRY WAS NEVER AT FAULT. The 15 mm riser in the plate that
+         * assembles and the one in the plate that does not carry the same
+         * geometry hash, 487867f6 — identical vertices, the same 9.60 bore,
+         * both watertight. One drawing, two prints, two outcomes. What 9.60
+         * lacked was margin, not accuracy, and +0.025 with a tapered lead-in is
+         * margin without slop.
          *
-         * IF 9.75 IS STILL TIGHT, the answer is not another 0.1 here. The
-         * tenon's across-corners spans 9.65-9.93 depending on how sharply the
-         * nozzle turns, which is wider than any fit window a diameter can
-         * chase. TRUNCATE THE TENON'S CORNERS so the mating dimension is a
-         * drawn FLAT, which prints accurately. Hex-in-hex bears on the flats,
-         * so every socket already printed keeps its fit.
+         * IF IT IS STILL TIGHT, do not add another 0.05 here. The tenon's
+         * across-corners spans 9.65-9.93 depending on how sharply the nozzle
+         * turns, wider than any fit window a diameter can chase. TRUNCATE THE
+         * TENON'S CORNERS so the mating dimension is a drawn FLAT, which prints
+         * accurately. Hex-in-hex bears on the flats, so every socket already
+         * printed keeps its fit.
          */
-        boreDia: 9.75,
+        boreDia: 9.70,
         /**
          * A LEAD-IN TAPER ON THE TENON, so it finds the bore before it has to
          * fit it. Brett: "I would like to consider a smaller taper on the
@@ -311,17 +301,24 @@ export const SPEC = {
          * bore that the shoulder will only just pass, and the fit tightens as
          * it seats. Same idea as the bowtie key's drive taper.
          *
-         * 0.20 AF, which is 0.23 across corners: the tip goes in at 9.70 a/c
-         * where the shoulder is 9.93, against a 9.75 bore. Small on purpose —
-         * this is a lead-in, not a wedge, and the tenon must still SEAT on its
-         * shoulder rather than jam part way. Anything much larger starts
-         * eating the bearing length that stops two pillars rocking.
+         * 0.30 AF, which is 0.35 across corners: the tip enters at 9.58 a/c
+         * against a 9.70 bore, so it starts with 0.058 mm/side and the joint
+         * closes onto its shoulder as it seats.
+         *
+         * IT MUST EXCEED THE CLEARANCE IT REPLACES. At 0.20 the tip came out
+         * at 9.699 against a 9.70 bore — line to line, a press from the very
+         * first millimetre, which is not a lead-in at all. A taper only buys
+         * entry if the tip is meaningfully smaller than the hole.
+         *
+         * Not larger than 0.30 either: contact is at the BOTTOM of the
+         * engagement, so every extra 0.1 of rake trades bearing length for
+         * entry, and bearing length is what stops two pillars rocking.
          *
          * It costs nothing on the hex-socket side. Hex-in-hex bears on the
          * FLATS along the whole engagement, so a tenon that is 0.2 narrower at
          * its tip still beds on its shoulder in every socket already printed.
          */
-        tenonTaperAF: 0.2,
+        tenonTaperAF: 0.3,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
