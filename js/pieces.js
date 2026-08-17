@@ -756,12 +756,37 @@ function bossOps(piece, spec, support) {
                 geometry: slantedCylinder(bx, bz, bossHeading, collarR, planeAt,
                     (ds) => bossUnderside(ds) + 0.5)
             });
-            // bored out below the seat so the spacer's body tucks up inside it
+            // Bored out below the seat so the spacer's body tucks up inside it —
+            // but NOT square to the mouth. A flat annulus there is the last
+            // unsupported face on a track piece and the strands Brett keeps
+            // photographing; see SPEC.socket.mouthLandMm. The bore stops
+            // `coneRun` short and a 45 degree cone carries it the rest of the
+            // way in, leaving a flat LAND for the support column to bear on.
+            const rHex = (spec.socket.hexAF - (spec.socket.socketShrinkAF ?? 0))
+                / 2 / Math.cos(Math.PI / 6);
+            const land = spec.socket.mouthLandMm ?? 0;
+            const rLand = Math.min(collarBoreR, rHex + land);
+            const coneRun = Math.max(0, collarBoreR - rLand);      // 45 degrees
             ops.push({
                 op: SUBTRACTION,
                 geometry: slantedCylinder(bx, bz, bossHeading, collarBoreR,
-                    (ds, lat) => planeAt(ds, lat) - 0.5, mouthY)
+                    (ds, lat) => planeAt(ds, lat) - 0.5,
+                    coneRun > 0 ? mouthY - coneRun : mouthY)
             });
+            if (coneRun > 0) {
+                // vertical truncated cone, wide at the bottom: material grows
+                // inward one layer at a time instead of appearing all at once
+                const segs = 64;
+                ops.push({
+                    op: SUBTRACTION,
+                    geometry: toBufferGeometry(sweepSolid(
+                        [circlePlan(collarBoreR, segs), circlePlan(rLand, segs)]
+                            .map((pl) => pl.map(([x, z]) => [bx + x, -(bz + z)])),
+                        [mouthY - coneRun, mouthY].map((y) => ({
+                            origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
+                    ))
+                });
+            }
         } else {
             ops.push({
                 op: ADDITION,
@@ -1019,19 +1044,31 @@ function undersideSupportOps(piece, spec) {
     // is what once put the boss in mid-air.
     const floorAt = (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z)));
 
-    // CLEAR OF THE WALLS, NOT INTO THEM. This reached `innerWidth/2 + wall/2`,
-    // which lands the fill's side face INSIDE the 2.4 mm wall — between the
-    // channel at 24 and the sole edge at 26.4 — where it runs nearly parallel
-    // to two faces the boolean then has to reconcile against it. Measured on
-    // the curve, that threw 100 degenerate triangles at the bed, and Brett
-    // found them in the app's mesh: "it happens as a small kind of pie slice on
-    // the side that widens". Swept: 25.2 gives 100, the sole edge 26.4 gives
-    // 601, exactly ON the wall at 24.00 the mesh goes NON-MANIFOLD, and 0.5 mm
-    // clear of it gives 5. The fill wants open cavity on both sides of it.
+    // WIDE AT THE DECK, CLEAR OF THE WALL AT THE SOLE — and the taper is the
+    // whole point, because the two ends of the fill want opposite things.
     //
-    // The 0.5 mm slot left against each wall costs nothing: the deck spans it
-    // for 0.5 mm, and the audit still measures the same worst span.
-    const uHalf = piece.innerWidth / 2 - 0.5;
+    // At the SOLE the fill's face must not run parallel to the wall. Reaching
+    // `innerWidth/2 + wall/2` buries it INSIDE the 2.4 mm wall, between the
+    // channel at 24 and the sole edge at 26.4, where the boolean has two
+    // near-parallel faces to reconcile against it: 100 degenerate triangles at
+    // the bed, which Brett found in the app's mesh — "it happens as a small
+    // kind of pie slice on the side that widens". Swept: 25.2 gives 100, the
+    // sole edge 26.4 gives 601, exactly ON the wall at 24.00 the mesh goes
+    // NON-MANIFOLD, and 0.5 clear of it gives 5.
+    //
+    // But a fill that clears the wall for its WHOLE height is a separate body,
+    // so the slicer lays a full set of perimeters down each side of the gap
+    // instead of merging into the wall. That costs 15.6 g and 29 minutes on a
+    // curve, and it costs the same whether the gap is 0.1 or 0.5 — measured,
+    // all four gaps came out at ~116 g against 100.7 for the merged one. The
+    // price is having a gap at all, not its width.
+    //
+    // So the fill merges into the wall at the deck, where merging is free, and
+    // pulls clear of it at the sole, which is the only place the slivers formed:
+    // 102.8 g and 18 slivers, against 116.3/5 for a straight-sided fill and
+    // 100.7/100 for the buried one. Most of the saving, most of the fix.
+    const uTop = piece.innerWidth / 2 + spec.wall;    // merged into the wall
+    const uBot = piece.innerWidth / 2 - 0.5;          // clear of it
     // FULL LENGTH, not rib to rib. Inside an end rib this is a union with solid
     // material and adds nothing; at a face that has NO rib — the start
     // platform's bumper end — stopping at `ribThk` left a 24 mm span hanging
@@ -1048,7 +1085,7 @@ function undersideSupportOps(piece, spec) {
         const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
         stations.push({ s, origin: [p.x, y, p.z], right });
         const bot = (u) => floorAt(p.x + right[0] * u, p.z + right[2] * u) - y;
-        profiles.push([[-uHalf, bot(-uHalf)], [uHalf, bot(uHalf)], [uHalf, top], [-uHalf, top]]);
+        profiles.push([[-uBot, bot(-uBot)], [uBot, bot(uBot)], [uTop, top], [-uTop, top]]);
     }
     return [{ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) }];
 }

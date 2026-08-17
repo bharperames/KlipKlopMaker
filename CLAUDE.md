@@ -384,27 +384,39 @@ viaduct curve 71 mm.
   excluded from the fill and from the test gate; the minimal style is what
   ships. Reopen this only with a design decision, not a tweak.
 
-- **The strands around a track socket's mouth are KNOWN, MINOR AND ACCEPTED —
-  do not "fix" them.** The collar is bored out to `collarBoreR` 9.2 so the
-  spacer's Ø18 body can tuck up inside, and the top of that recess is an
-  annulus from r 5.05 to 9.2 sitting 2.38 mm above the bed, cantilevered from
-  its outer edge only. It prints over air and droops a few strands. Every
-  correction is worse than the defect: coning the recess blocks the spacer, and
-  a true 45° chamfer needs 3.45 mm of radial run against 2.38 mm of available
-  depth, so it does not geometrically fit. Deepening the recess moves
-  `socketMouthY` off the 15 mm grid. Brett: "the strands are not an issue, very
-  minor, and can easily be cleaned or left." It is unique to track pieces
-  because a riser's socket opens onto the build plate and this one cannot —
-  the socket must stand vertical in the tower, so it tilts with the part.
-  **THIS IS ALSO WHAT BAMBU'S FLOATING-CANTILEVER WARNING MEANS.** The same
-  solid switch built with no support station at all slices SILENT (409.1 cm3,
-  138.74 g) where the identical part carrying its socket warns, so the warning
-  names the collar recess and nothing else. It is therefore pointing at a defect
-  already inspected in plastic and accepted, which is why no geometry change
-  ever silenced it. It is marginal at the checker's threshold too: 0.044 mm of
-  socket station flips it, and the shipped straight is silent only by luck
-  (nudge its socket -0.05 mm and it warns). Judge parts on bridge MOVE length
-  and open-ended run length; `scripts/floating_regions.mjs` locates patches.
+- **THE SOCKET MOUTH IS A LAND PLUS A CONE NOW, and that is what silenced the
+  cantilever warning on every part.** The counterbore's roof used to be a flat
+  annulus 4.15 mm wide, printed over the open recess — 266 mm2 of downward face
+  sweeping layers 11-28 on cal_ramp (2.20-5.60 mm above the bed; it SWEEPS
+  because the socket stands plumb in the tower and so tilts with the part), and
+  it is the strands in every photograph of a ramp socket. Ablation named it:
+  suppress `bossOps` and cal_ramp goes from WARNS to silent, nothing else does.
+  It cannot simply be coned away because that annulus IS `socketMouthY`, the
+  face the support column bears on — so `SPEC.socket.mouthLandMm` keeps 1 mm of
+  flat for bearing and the remaining 3.15 mm becomes a 45 deg cone opening down
+  into the recess. Near-horizontal area 266 -> 108 mm2, and **curve, switch,
+  straight, start, end and cal_ramp all slice silent.** The cone is FREE: 116.30
+  vs 116.34 g with and without. It does not cost the spacer its nest either —
+  the recess keeps full `collarBoreR` below the cone.
+  The old note here said every correction was worse than the defect and that a
+  45 deg chamfer "does not geometrically fit". That was arithmetic against
+  2.38 mm of recess when the run available is 2.20 on the low side and 5.60 on
+  the high — the tilt means one side of the annulus can be made self-supporting
+  and the other only improved. Partial by nature, and worth doing anyway.
+- **THE UNDER-DECK FILL IS TAPERED, and both ends of the taper are paid for.**
+  At the SOLE the fill must not run parallel to the wall: buried inside the
+  2.4 mm wall at `innerWidth/2 + wall/2` it threw 100 degenerate triangles at
+  the bed, which Brett saw as "a small kind of pie slice on the side that
+  widens". Swept: 25.2 gives 100, the sole edge 26.4 gives 601, exactly ON the
+  wall at 24.00 the mesh goes NON-MANIFOLD, 0.5 clear of it gives 5.
+  But a fill that clears the wall for its whole height is a SEPARATE BODY, so
+  the slicer runs perimeters down both sides of the gap instead of merging —
+  +15.6 g and +29 min on a curve, and the same whether the gap is 0.1 or 0.5
+  (all four measured ~116 g against 100.7 merged). The price is having a gap,
+  not its width. So the fill is wide at the deck (`innerWidth/2 + wall`, merged)
+  and clear at the sole (`innerWidth/2 - 0.5`): 102.8 g and 18 slivers, against
+  116.3/5 straight-sided and 100.7/100 buried.
+
 - **NO CURVE ORIENTATION HAS YET PRINTED ACCEPTABLY, and do not cite one as a
   fallback.** Both have been printed and both failed, differently: the VIADUCT
   curve failed on its arched skirts (its deck was clean); the MINIMAL curve's

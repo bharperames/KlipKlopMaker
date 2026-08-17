@@ -401,7 +401,38 @@ export const SPEC = {
          * ledge at the top of that bore — `socketMouthY`, unmoved.
          */
         collarR: 11,
-        collarBoreR: 9.2
+        collarBoreR: 9.2,
+        /**
+         * A LAND PLUS A CONE at the socket mouth, instead of a flat annulus.
+         *
+         * The counterbore's roof is the last unsupported thing on a track
+         * piece: an annulus from the hex socket out to `collarBoreR`, printed
+         * over the open recess. Measured on cal_ramp it is 266 mm2 of downward
+         * face sweeping layers 11-28 (2.20-5.60 mm above the bed — it sweeps
+         * because the socket stands vertical in the tower and so tilts with the
+         * part), and it is the strands Brett has photographed on every ramp
+         * socket. Suppressing the boss silences the slicer's cantilever
+         * warning; nothing else on the part does.
+         *
+         * It cannot simply be coned away, because that annulus IS
+         * `socketMouthY` — the level face the support column bears on. So it
+         * keeps a flat LAND of `mouthLandMm` for bearing, and the rest of the
+         * width becomes a 45 degree cone opening downward into the recess,
+         * where each layer steps in by one layer height instead of the whole
+         * 4.15 mm at once.
+         *
+         * The cone is 45 degrees about the socket's own axis, which is vertical
+         * in the piece frame. Printed, the part is tilted by the ramp slope, so
+         * the cone's overhang varies around its circumference — roughly 34 to
+         * 56 degrees from horizontal instead of a flat 90. Better everywhere,
+         * fully self-supporting on the high side, and on the low side an
+         * improvement rather than a cure. That asymmetry is inherent to a
+         * socket that has to stand plumb in a tilted part.
+         *
+         * It does not cost the spacer its nest: the cone eats 3.15 mm of the
+         * recess along the axis and leaves the rest at full `collarBoreR`.
+         */
+        mouthLandMm: 1.0
     },
     /**
      * The JOG: an offset riser that moves a support column sideways when the
