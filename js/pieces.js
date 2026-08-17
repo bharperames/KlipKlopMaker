@@ -1019,7 +1019,19 @@ function undersideSupportOps(piece, spec) {
     // is what once put the boss in mid-air.
     const floorAt = (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z)));
 
-    const uHalf = piece.innerWidth / 2 + spec.wall / 2;   // reach into the rails
+    // CLEAR OF THE WALLS, NOT INTO THEM. This reached `innerWidth/2 + wall/2`,
+    // which lands the fill's side face INSIDE the 2.4 mm wall — between the
+    // channel at 24 and the sole edge at 26.4 — where it runs nearly parallel
+    // to two faces the boolean then has to reconcile against it. Measured on
+    // the curve, that threw 100 degenerate triangles at the bed, and Brett
+    // found them in the app's mesh: "it happens as a small kind of pie slice on
+    // the side that widens". Swept: 25.2 gives 100, the sole edge 26.4 gives
+    // 601, exactly ON the wall at 24.00 the mesh goes NON-MANIFOLD, and 0.5 mm
+    // clear of it gives 5. The fill wants open cavity on both sides of it.
+    //
+    // The 0.5 mm slot left against each wall costs nothing: the deck spans it
+    // for 0.5 mm, and the audit still measures the same worst span.
+    const uHalf = piece.innerWidth / 2 - 0.5;
     // FULL LENGTH, not rib to rib. Inside an end rib this is a union with solid
     // material and adds nothing; at a face that has NO rib — the start
     // platform's bumper end — stopping at `ribThk` left a 24 mm span hanging
@@ -1240,6 +1252,14 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     // halves differently. The hook used to be missing here entirely, silently —
     // a solid-cavity switch was built, sliced and compared against the ribbed
     // one and the two came out byte-identical at 142.6 cm3.
+    // ONE FILL PER ROLE. Merging the two into a single solid before the union
+    // was tried, on the theory that their overlap across the frog was what left
+    // 178 degenerate triangles at the bed. It is not, and it made it worse
+    // (227): each route's fill runs close to the OTHER route's walls at shallow
+    // angles all through the frog, which no amount of pre-resolving fixes.
+    // The remaining slivers are a switch-only artefact of two channels crossing
+    // — the single pieces are down to 0-5 — and the part is watertight with a
+    // 12 mm worst span either way.
     for (const pc of [mainPiece, branchPiece]) {
         ops.push(...(opts.extraOps?.(pc, spec) ?? undersideSupportOps(pc, spec)));
     }
