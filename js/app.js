@@ -5203,7 +5203,13 @@ async function openPrintShop(opts = {}) {
                 { name: 'bowtie_key', kind: 'key', build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) },
                 { name: 'gate_paddle', kind: 'gate', build: () => buildGateGeometry(SPEC, { forPrint: true }) },
                 { name: 'support_foot', kind: 'support', build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) },
-                ...[120, 60, 30, 15].map(r => ({
+                // 15/30/60 ONLY — the ladder decomposeSupport actually builds
+                // from. A 120 was catalogued, thumbnailed, packed and exported,
+                // and nothing could ever ask for it: run decomposeSupport over
+                // every stack height from 15 to 900 mm and the riser sizes it
+                // emits are 15, 30 and 60. The ladder was capped at 60 in
+                // 28e1dac and this entry was left behind.
+                ...[60, 30, 15].map(r => ({
                     name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
                 { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
                 ...SPACER_VARIANTS.map(v => ({

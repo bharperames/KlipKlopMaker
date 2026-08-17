@@ -319,7 +319,16 @@ export function codeVersion(geometryVersion) {
 }
 
 const TYPE_CODE = {
-    start: 'PLAT', end: 'PLAT', straight: 'STR',
+    // START AND END ARE DIFFERENT PARTS AND MUST NOT SHARE A MARK. Both read
+    // 'PLAT' until 2.6.0 — 115.9 cm3 against 103.1, different geometry, one
+    // stamp, indistinguishable in a bin. That is the failure this file already
+    // warns about for curves ("a bin of chiral parts is exactly where an
+    // abbreviation costs you"), and platforms had it too.
+    //
+    // Not 'START PLATFORM': at the platform's 14 mm rail height that block is
+    // 14.9 mm tall and engraveOps drops what does not fit, SILENTLY, so the
+    // part would have come out unmarked. 'START' is 9.5 and fits.
+    start: 'START', end: 'END', straight: 'STR',
     // spelled out: a bin of chiral parts is exactly where an abbreviation
     // costs you, and a curve tile is long enough to carry the words
     curveL: 'LEFT CURVE', curveR: 'RIGHT CURVE',

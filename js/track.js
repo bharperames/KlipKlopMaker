@@ -1155,17 +1155,25 @@ export function layoutTrack(sequence, params = {}) {
                     branch.frogEndS = frog.sSep;
                     branch.ridgeFadeMm = RIDGE_FADE_MM;
                     branch.frogStartS = FROG_RIDGE_KEEP_MM;
-                    // BOTH, and this is not symmetry for its own sake. Fading
-                    // only the branch leaves its flat deck exactly tangent to
-                    // the main's ridge VALLEYS all through the frog, and the
-                    // boolean fails on that repeated kiss — measured, the
-                    // switch came out non-manifold. Smooth on both, the two
-                    // surfaces are one surface and there is nothing to resolve.
-                    // A smooth frog is also what a real switch has: the walker
-                    // crosses a short unribbed patch instead of a chevron.
-                    main.frogEndS = frog.mainSep;
-                    main.ridgeFadeMm = RIDGE_FADE_MM;
-                    main.frogStartS = FROG_RIDGE_KEEP_MM;
+                    // THE MAIN KEEPS ITS WASHBOARD, ALL OF IT. Fading both routes
+                    // was tried and it takes far too much: the main's frog runs
+                    // s 20 to 100 of 150, so more than half the through route
+                    // came out smooth. The washboard is not decoration, it is
+                    // the gait surface (PHYSICS.md), and Brett caught the cost
+                    // on sight — "what im talking about is the apparent loss of
+                    // the grooves".
+                    //
+                    // Only the BRANCH goes smooth inside the frog, so exactly
+                    // one ridge field exists there and it is the main's. A
+                    // walker on the branch crosses it obliquely rather than
+                    // meeting nothing, which is strictly better than a smooth
+                    // patch and far better than two fields chevroning.
+                    //
+                    // This was believed impossible — fading the branch alone
+                    // once left its flat deck tangent to the main's ridge
+                    // valleys and the boolean died. That was with the decks
+                    // MISMATCHED and the fade running from s=0. With both of
+                    // those fixed it is watertight, retested at sinks 0 to 0.10.
                 }
                 walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck, piece: main }, [...address, 'main'], active && gate === 'main');
                 walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck, piece: branch }, [...address, 'branch'], active && gate === 'branch');
