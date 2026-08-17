@@ -238,31 +238,49 @@ export const SPEC = {
          * The TRACK BOSS keeps its hex socket: the jog is indexed there, and a
          * round bore would let a 45 mm offset arm swing anywhere.
          *
-         * 9.80, RAISED FROM 9.60, BECAUSE 9.60 DOES NOT ASSEMBLE. Brett, on a
-         * fresh print of pillars and tenons: "the hex tenons I have (and also
-         * just printed more) don't fit in them. The pillars just can't be put
-         * together on this last print."
+         * 10.00, AND THE REASON IS NOT THE ONE THIS NOTE FIRST GAVE.
          *
-         * 9.60 was always an interference fit and the arithmetic above says so
-         * — a hex is snug when the bore equals its ACROSS-CORNERS, and these
-         * tenons measure 9.65 on a riser and 9.73 on a foot. 9.60 is under
-         * BOTH, by 0.05 and 0.13 of diameter. It read "a pleasing snug fit" on
-         * the coupon plate and that reading did not carry, which is the
-         * mass-dependence this project has already been bitten by twice: a hole
-         * prints to a size that depends on the plastic around it, and a bore in
-         * a slender riser is not a bore in a test coupon.
+         * Brett: "the hex tenons I have (and also just printed more) don't fit
+         * in them. The pillars just can't be put together." Then, correcting a
+         * first diagnosis that blamed the mass of longer risers: "It isn't a
+         * 'longer riser' issue, no hex tenon fits in any circular hole
+         * printed." A blanket failure is not a mass effect, and the arithmetic
+         * says why:
          *
-         * 9.80 clears the widest tenon on record by 0.035/side and the
-         * narrowest by 0.075, so every tenon in the drawer enters. It stays
-         * under the 9.85 that read "kinda loose" on the plate, and a hex still
-         * lands on six corners rather than a face, so it locates even at the
-         * loose end. +0.20 because +0.05 is not a step anyone can feel —
-         * Brett's rule, and it is the reason this is not being nudged.
+         *     tenon AF 8.6  ->  ACROSS CORNERS 9.930   (as DRAWN)
+         *     bore 9.60     ->  0.165 mm/side INTERFERENCE against that
          *
-         * Erring OPEN is deliberate. A joint slightly loose is a tower that
-         * goes together; a joint slightly tight is a part that is scrap.
+         * 9.60 was never a clearance fit. It cleared only because the tenon's
+         * six convex corners print 0.20-0.28 mm UNDER nominal — measured at
+         * 9.65 and 9.73 across corners against 9.93 drawn — and this file
+         * records that rounding itself, a few paragraphs up, as the reason the
+         * hex went outside in the first place. The fit was resting on a print
+         * defect. The moment the corners came out sharper, nothing fitted, and
+         * nothing about the drawing had changed.
+         *
+         * So the bore is sized against the tenon AS DRAWN, which is the only
+         * dimension that does not move: 9.93 plus 0.07 of clearance. Every
+         * tenon assembles now, including one that prints perfectly, because a
+         * convex feature cannot print much OVER nominal.
+         *
+         * THE COST IS HONEST AND IT IS LOOSENESS. Against a tenon whose corners
+         * round off to 9.65 this is 0.175 mm/side of slop, and 10.10 read
+         * "really loose" on the sweep plate for exactly that reason. That is
+         * the trade: a joint that is sometimes loose beats a joint that
+         * sometimes cannot be assembled, because looseness is recoverable and a
+         * press fit into a printed part is not.
+         *
+         * THE REAL FIX IS TO STOP MATING ON A PRINTED POINT. The tenon's
+         * across-corners varies 9.65-9.93 depending on how sharply the nozzle
+         * turns — 0.28 mm of range, wider than any sensible fit window, and not
+         * a thing a bore diameter can chase. TRUNCATE THE TENON'S CORNERS so
+         * the mating dimension is a drawn FLAT, which prints accurately, and
+         * the bore can then be sized to it with a real clearance. That costs
+         * nothing elsewhere: hex-in-hex bears on the FLATS, so every hex socket
+         * already printed keeps its fit. Do that before touching this number
+         * again.
          */
-        boreDia: 9.8,
+        boreDia: 10.0,
         /**
          * The track socket is drawn 0.25 AF SMALL, and the number is the gap
          * between two printed copies of the same drawing.
