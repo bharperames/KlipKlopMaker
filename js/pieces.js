@@ -985,10 +985,26 @@ export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {})
  * bowtie pockets — the key rises through that space.
  */
 function undersideSupportOps(piece, spec) {
-    if (!laysOnUnderside(piece, spec)) return [];      // no cavity to hold up
+    // A CAVITY IS NOT A TILT. This asked `laysOnUnderside`, which answers "is
+    // this printed tilted onto its underside plane" — and that is FALSE for the
+    // flat start and end platforms, because it requires a non-zero drop. They
+    // were therefore given nothing at all, while having the very thing the
+    // spine exists for: a deck bridging the full channel over an open tray.
+    // Brett, looking at their undersides: "we need to add the center rib down
+    // the length of the start and end pieces too, since they would have the
+    // same unsupported underside." The two questions are separate and this is
+    // the one that matters here.
     const U = spec.underside;
     if (!U) return [];
-    const pl = undersidePlane(piece, spec);
+    if (piece.skirtStyle !== 'minimal') return [];     // the arcade holds a viaduct up
+    if (piece.isElevator || piece.type === 'elevator') return [];   // solid block, no cavity
+    if (!(piece.planLen > 0)) return [];
+    const lying = laysOnUnderside(piece, spec);
+    const pl0 = undersidePlane(piece, spec);
+    // THE SAME EXPRESSION `skirtBottom` USES, for the same reason it gives: a
+    // rim-down piece's cavity floor is its RIM, not the underside plane, and
+    // three places expressing one surface is what once put the boss in mid-air.
+    const pl = { at: (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z))) };
     const uHalf = piece.innerWidth / 2 + spec.wall / 2;   // reach into the rails
     // THE END RIBS ARE THE TERMINAL ANCHORS. They are full-width walls already,
     // `key.ribThk` deep at each face, so the run between their INNER faces is
@@ -1019,6 +1035,12 @@ function undersideSupportOps(piece, spec) {
     const rise = Math.max(0, (capW - U.spineMm) / 2);      // 45 deg flare
 
     const ribOps = [];
+    // CROSS RIBS ON A FLAT PLATFORM WERE TRIED AND DO NOTHING. Sliced: they
+    // take the start from 208 bridge moves over 40 mm to 200 and the end from
+    // 210 to 210, for +2.6 g and +9 minutes. The survivors run lengthwise and
+    // cross every rib, so they are one long MOVE that is in fact anchored every
+    // 18 mm — the move-length metric overstates them. Do not re-add ribs here
+    // on the reasoning that they must divide the long axis; measure instead.
     if (piece.radius) {
         // RIBS across the channel — INTERIOR ONLY. The end ribs close the first
         // and last bay, so the run between them is divided into n bays by n-1
@@ -1043,11 +1065,27 @@ function undersideSupportOps(piece, spec) {
                 // edge pokes through by grad * ribMm/2
                 const bot = (ds) => pl.at(p.x + rt[0] * u + dir[0] * ds,
                     p.z + rt[2] * u + dir[2] * ds) - y;
+                // AND SO DOES THE TOP — the reason this is here at all. A LEVEL
+                // capital 3 mm wide is wrong at both edges, because the deck
+                // falls 0.595 mm across those 3 mm while the top pokes only
+                // 0.300 into the floor: the downhill edge buries 0.60 deep and
+                // the UPHILL edge clears the ceiling by 0.0025 mm. So the strip
+                // the slicer could anchor to tapers to nothing, the sliver
+                // cleanup drops what is left, and the bridges arc straight over
+                // a rib that is physically touching. Following the deck gives
+                // the whole 3 mm footprint the same 0.3 mm bite. This is the
+                // same rule as the socket boss and the end rib — nothing under
+                // the deck may have a level top — and the rib is where it was
+                // still being broken, in the one direction (along the arc) that
+                // a cross-channel wall makes easy to miss.
+                const fall = (ds) => deckYAt(piece, Math.min(Math.max(sc + ds, 0), piece.planLen)) - y;
+                const topAt = (ds) => fall(ds) + top;
+                const ceilAt = (ds) => fall(ds) + ceil;
                 profiles.push([
                     [-U.ribMm / 2, bot(-U.ribMm / 2)], [U.ribMm / 2, bot(U.ribMm / 2)],
-                    [U.ribMm / 2, ceil - rise], [capW / 2, ceil],
-                    [capW / 2, top], [-capW / 2, top],
-                    [-capW / 2, ceil], [-U.ribMm / 2, ceil - rise]
+                    [U.ribMm / 2, ceilAt(U.ribMm / 2) - rise], [capW / 2, ceilAt(capW / 2)],
+                    [capW / 2, topAt(capW / 2)], [-capW / 2, topAt(-capW / 2)],
+                    [-capW / 2, ceilAt(-capW / 2)], [-U.ribMm / 2, ceilAt(-U.ribMm / 2) - rise]
                 ]);
             }
             ribOps.push({ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) });

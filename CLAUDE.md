@@ -346,6 +346,27 @@ viaduct curve 71 mm.
     the arc, so a spine lies parallel to the spans. The honeycomb takes the max
     to 12.2 for +27 g. This is the one part of the old "spines refuted" verdict
     that survives, and only for curves.
+  · **FLAT PLATFORMS (`start`, `end`) TAKE THE SPINE TOO.** They were getting
+    nothing, because the guard asked `laysOnUnderside` — which answers "is this
+    printed tilted" and is false for them, their drop being 0 — when the
+    question is whether there is a cavity to hold up. Brett, on their
+    undersides: "we need to add the center rib down the length of the start and
+    end pieces too, since they would have the same unsupported underside."
+    Sliced: bridge moves over 40 mm go 497 -> 208 on the start and 499 -> 210 on
+    the end, for +2.0 g and +2.5 min. CROSS ribs on top of that were tried and
+    do nothing (208 -> 200, 210 -> 210, +2.6 g, +9 min): the survivors run
+    lengthwise across every rib, so they are one long MOVE that is anchored
+    every 18 mm and the metric overstates them.
+  · **A RIB'S CAPITAL MUST FOLLOW THE DECK, and it is worth almost nothing.**
+    The capital is 3 mm wide along the arc while the deck falls 0.595 mm across
+    those 3 mm, so a LEVEL top that pokes 0.300 into the floor buried its
+    downhill edge 0.60 deep and cleared the ceiling by 0.0025 mm at the uphill
+    edge — a contact strip tapering to nothing. Following the deck gives the
+    whole footprint the same 0.3 mm bite. It is the right shape and it is now
+    drawn that way, but MEASURE BEFORE CLAIMING IT HELPS: sliced before and
+    after, bridge moves over 40 mm are 32 either way and the longest goes 61.3
+    -> 59.3 mm. The ribs were already anchoring; against no under-deck structure
+    at all the same curve is 110 moves and 66.1 mm.
   Cell size below 20 mm buys nothing on the max span, and 8 mm cells or 1.6 mm
   walls cost 13–27 g for numbers that do not move. `scripts/curve_variants.mjs`
   builds and gates all of it. **CONFIRMED IN PLASTIC** for the straight
