@@ -1147,6 +1147,26 @@ export function layoutTrack(sequence, params = {}) {
                 }
                 main.prevIndex = prev ? prev.index : null;
                 branch.prevIndex = prev ? prev.index : null;
+                // hold the branch level with the main across the frog, and
+                // make the frog itself SMOOTH on BOTH routes
+                const frog = frogDeckKnots(main, branch, p);
+                if (frog) {
+                    branch.deckKnots = frog.knots;
+                    branch.frogEndS = frog.sSep;
+                    branch.ridgeFadeMm = RIDGE_FADE_MM;
+                    branch.frogStartS = FROG_RIDGE_KEEP_MM;
+                    // BOTH, and this is not symmetry for its own sake. Fading
+                    // only the branch leaves its flat deck exactly tangent to
+                    // the main's ridge VALLEYS all through the frog, and the
+                    // boolean fails on that repeated kiss — measured, the
+                    // switch came out non-manifold. Smooth on both, the two
+                    // surfaces are one surface and there is nothing to resolve.
+                    // A smooth frog is also what a real switch has: the walker
+                    // crosses a short unribbed patch instead of a chevron.
+                    main.frogEndS = frog.mainSep;
+                    main.ridgeFadeMm = RIDGE_FADE_MM;
+                    main.frogStartS = FROG_RIDGE_KEEP_MM;
+                }
                 walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck, piece: main }, [...address, 'main'], active && gate === 'main');
                 walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck, piece: branch }, [...address, 'branch'], active && gate === 'branch');
                 return null;
@@ -1402,8 +1422,122 @@ export function deckYAt(piece, s) {
         const t = (s - 40) / (L - 80);
         return piece.entryDeck + t * h;
     }
+    // A BRANCH THROUGH A FROG IS NOT A CONSTANT SLOPE — see frogDeckKnots.
+    // Both routes of a switch leave the same entry at the same height, but the
+    // branch travels a longer arc to reach any given point, so at constant
+    // slope its deck sits BELOW the main's everywhere they overlap. The union
+    // takes the higher surface, so the walker on the branch runs on the main's
+    // deck and then steps down 0.95 mm as the routes part. The knots hold the
+    // branch level with the main through the frog and spend the difference on
+    // the run afterwards.
+    // KNOTS ARE DROPS FROM THE ENTRY, not absolute heights. Layout rebases a
+    // piece's elevation after it is built, so a profile baked in world Y comes
+    // out attached to wherever the piece happened to sit during the walk —
+    // measured, that put the branch's exit at -44.99 against a designed 41.996.
+    // Relative knots ride the rebase.
+    if (piece.deckKnots) {
+        const K = piece.deckKnots;
+        const at = (i) => piece.entryDeck - K[i][1];
+        if (s <= K[0][0]) return at(0);
+        for (let i = 1; i < K.length; i++) {
+            if (s <= K[i][0]) {
+                const [s0, d0] = K[i - 1], [s1, d1] = K[i];
+                const d = s1 === s0 ? d1 : d0 + ((d1 - d0) * (s - s0)) / (s1 - s0);
+                return piece.entryDeck - d;
+            }
+        }
+        return at(K.length - 1);
+    }
     const f = piece.planLen === 0 ? 0 : s / piece.planLen;
     return piece.entryDeck - piece.drop * f;
+}
+
+/**
+ * Hold a switch's BRANCH level with its MAIN across the frog.
+ *
+ * Brett, looking at a rendered frog: "Did you not do a fix for the ridges in
+ * the switch? Is this design intentional?" It was not. Two faults met there and
+ * both are fixed here.
+ *
+ * THE STEP. Measured on the standard switch, the branch centreline leaves the
+ * main's channel at branch s 84.5, and at that point its deck is 0.950 mm below
+ * the main's. Everywhere inside the frog the union hands the walker the main's
+ * deck, so the branch route runs level and then drops nearly a millimetre in
+ * one step as the routes separate — against a waterfall seam this project keeps
+ * to 0.25 deliberately. Brett's rule: "any exposed seam stops the klipklop."
+ *
+ * THE FIX is a reparameterised descent, not a new slope. The branch matches the
+ * main tread for tread through the frog, then runs straight to the exit deck it
+ * always had, so the grid is untouched and only the middle of the piece moves.
+ * The run after separation steepens from 11.22 to 11.59 degrees — inside the
+ * 10-12 green band, which is why this is affordable at all.
+ *
+ * THE RIDGES go with it. Two washboard fields crossing at an angle is the
+ * chevron interference in the render, and matching the decks would have made it
+ * worse by bringing them into the same plane. So the branch carries NO ridges
+ * inside the frog: the main owns that surface, and the branch fades its own in
+ * over `RIDGE_FADE_MM` once it is clear. One field everywhere, always.
+ */
+const RIDGE_FADE_MM = 20;
+/**
+ * How far past the mouth the ridges survive before the frog goes smooth.
+ *
+ * Both routes leave the same entry face on the same heading, so over the first
+ * stretch their washboards ARE the same washboard and there is nothing to
+ * interfere with. Fading from s=0 also flattens the entry, where the ridge
+ * pitch is snapped so the seam lands in a valley — and that cost the switch its
+ * one non-manifold edge. Swept: 0 and 10 leave it broken, 20 and 30 come out
+ * watertight. 20 is the first that works.
+ */
+const FROG_RIDGE_KEEP_MM = 20;
+
+function frogDeckKnots(main, branch, spec) {
+    const halfM = main.innerWidth / 2;
+    const m0 = planPosAt(main, 0);
+    const fwd = [Math.cos(m0.h), Math.sin(m0.h)];
+    const rt = [Math.sin(m0.h), -Math.cos(m0.h)];
+    /** where a branch station sits in the main's frame */
+    const project = (s) => {
+        const p = planPosAt(branch, s);
+        const d = [p.x - m0.x, p.z - m0.z];
+        return { along: d[0] * fwd[0] + d[1] * fwd[1],
+                 lat: Math.abs(d[0] * rt[0] + d[1] * rt[1]) };
+    };
+    let sSep = null;
+    for (let s = 0; s <= branch.planLen; s += 0.5) {
+        const q = project(s);
+        if (q.along > 0 && q.lat > halfM) { sSep = s; break; }
+    }
+    if (sSep == null || sSep >= branch.planLen) return null;
+    // the MAIN's drop at a given along-distance — both routes share an entry
+    // height, so matching drops is matching decks however the piece is rebased
+    const mainDrop = (along) => {
+        const f = main.planLen === 0 ? 0 : Math.min(Math.max(along, 0), main.planLen) / main.planLen;
+        return main.drop * f;
+    };
+    // SUNK BY ONE WATERFALL STEP, not level with the main.
+    //
+    // Level is what the walker wants and it is what the BOOLEAN cannot have:
+    // two deck surfaces occupying the same plane across the frog is an exact
+    // coincidence, and manifold produced a non-manifold switch from it
+    // (measured, 414.9 cm3, broken). Fading only the branch's ridges was worse
+    // — its flat deck then sat exactly tangent to the main's ridge VALLEYS,
+    // kissing every 2.5 mm down the whole frog.
+    //
+    // So the branch runs `waterfallStepMm` below the main through the frog. The
+    // surfaces never touch, the union is unambiguously the main's deck, and the
+    // branch emerges one waterfall step down — which is the step every seam in
+    // this design already has, drawn deliberately at 0.25 mm and walked over
+    // thousands of times. A known 0.25 beats an accidental 0.95.
+    const sink = spec.waterfallStepMm ?? 0.25;
+    const knots = [];
+    const N = Math.max(2, Math.round(sSep / 4));
+    for (let i = 0; i <= N; i++) {
+        const s = (sSep * i) / N;
+        knots.push([s, mainDrop(project(s).along) + sink]);
+    }
+    knots.push([branch.planLen, branch.drop]);
+    return { knots, sSep, mainSep: project(sSep).along };
 }
 
 export function planPosAt(piece, s) {

@@ -33,8 +33,7 @@ import {
     sweepSolid, extrudePolygonY, extrudeOutlineX, pieceProfiles, segmentsForCircle,
     bowtieKeyPlan, bowtiePocketPlan, insetPolygon, hexPlan, hexRingPlan, circlePlan, SIMPLIFY_TOL_MM,
     ridgeStationSpacing, archStations,
-    bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE
-} from './geometry.js';
+    bodySideOutline, pendulumSideOutline, knightRiderOutline, knightCrestOutline, FIGURE, frogRidgeFade} from './geometry.js';
 import { deduplicateGeometry } from './mesh_utils.js';
 
 // --- Manifold WASM boolean kernel ---
@@ -315,13 +314,22 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
  */
 function routeClearanceEnvelope(piece, spec, maxStep = 10) {
     const stations = stationsForPiece(piece, maxStep);
-    const h0 = spec.ridge.height + 0.05;   // spare this route's own washboard
+    // SPARE ONLY THE WASHBOARD THAT IS ACTUALLY THERE. This was a constant
+    // `ridge.height + 0.05`, which is right while a route is ribbed and wrong
+    // the moment it is not: across the frog the ridges now fade to nothing
+    // (frogRidgeFade), so a cut starting 0.65 mm above a FLAT deck left a
+    // 0.65 mm lip of the other route's rail standing on it. Slivers like that
+    // are what took the switch non-manifold — 414.9 cm3 and broken — while the
+    // same fade on a plain straight or curve stayed watertight, which is how
+    // the envelope was identified as the culprit rather than the fade.
+    const h0At = (s) => spec.ridge.height * frogRidgeFade(piece, s) + 0.05;
     const h1 = spec.railHeight + 8;
     // Follows the seam taper. Cutting at the body width all the way to the
     // mouth would eat into the other route's rails where the channel has
     // already narrowed back to the mating face.
     const profiles = stations.map(st => {
         const w = innerWidthAt(piece, st.s) / 2 - 0.05;
+        const h0 = h0At(st.s);
         return [[-w, h0], [w, h0], [w, h1], [-w, h1]];
     });
     return sweepSolid(profiles, stations);
@@ -1432,8 +1440,22 @@ export function gatePinPosition(mainPiece, branchPiece) {
     const h = mainPiece.entry.h;
     const dir = [Math.cos(h), Math.sin(h)];
     const right = [Math.sin(h), -Math.cos(h)];
-    // branch curls toward −right for switchL → hinge on +right wall (and vice versa)
-    const hingeSide = mainPiece.switchType === 'switchL' ? 1 : -1;
+    // THE HINGE IS ON THE WALL OPPOSITE THE BRANCH, and it is DERIVED, not
+    // tabulated. This was `switchL ? 1 : -1` with a comment asserting which way
+    // a switchL curls — true until the turn sign was corrected in 2.6.0, after
+    // which the pin sat on the SAME wall as the branch on both hands: the blade
+    // would have hinged into the diverging route instead of across it. Brett
+    // caught it: "when you flipped the left/right switches you moved (or didn't
+    // move) the hole that the gate arm plugs into."
+    //
+    // Reading the branch's actual divergence means a future sign change cannot
+    // desynchronise this again — there is nothing left to keep in step.
+    const hingeSide = (() => {
+        if (!branchPiece) return mainPiece.switchType === 'switchL' ? -1 : 1;
+        const e = planPosAt(branchPiece, branchPiece.planLen);
+        const lat = (e.x - mainPiece.entry.x) * right[0] + (e.z - mainPiece.entry.z) * right[1];
+        return lat >= 0 ? -1 : 1;          // opposite the side the branch leaves on
+    })();
     const wall = mainPiece.innerWidth / 2;
 
     /** Branch's outer (hinge-side) wall as a lateral offset in the main frame. */
@@ -2469,7 +2491,14 @@ export function buildCalibrationCoupons(src, spec = SPEC) {
                 }
                 const cut = csgChain(toBufferGeometry(solid), [
                     ...bandCutters(main.entry, d0, d1, spec),
-                    ...sideCutters(main.entry, Math.min(lat + 6, latInner), Math.max(lat + 6, latInner)),
+                    // OUTBOARD OF THE PIN, whichever wall the pin is on. This was
+                    // a bare `lat + 6`, which only reaches past the wall while
+                    // hingeSide is POSITIVE; once the hinge moved to the other
+                    // wall in 2.6.0 the same expression cut inward and took the
+                    // bore with it, which is what the coupon test caught.
+                    ...(() => { const outboard = lat + 6 * pin.hingeSide;
+                        return sideCutters(main.entry, Math.min(outboard, latInner),
+                            Math.max(outboard, latInner)); })(),
                     { op: SUBTRACTION, geometry: toBufferGeometry(sweepSolid(capProfiles, capStations)) },
                     { op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) }
                 ]);

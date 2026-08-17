@@ -4914,7 +4914,8 @@ function shopKitsFor(kind) {
     // own name depends on the design, so this pair is found rather than named.
     if (kind === 'track' && has('gate_paddle')) {
         for (const sw of shop.items.filter(i => /switch/.test(i.name))) {
-            out.push({ label: `${sw.name} + gate`, parts: { [sw.name]: 1, gate_paddle: 1 } });
+            out.push({ label: `${shopDisplayName(sw.name)} + Gate Paddle`,
+                parts: { [sw.name]: 1, gate_paddle: 1 } });
         }
     }
     return out.filter(k => Object.keys(k.parts).every(has));
@@ -4940,6 +4941,64 @@ function shopSetCount(name, n) {
     shopRepack();
 }
 
+/**
+ * WHAT A PART IS CALLED IN THE SHOP, as against what it is keyed by.
+ *
+ * Rows showed the internal id: `standard_curveR`, `support_riser_60mm`. The
+ * prefix is a provenance detail — "this is the canonical form, not one your
+ * design happens to contain" — and it told the reader nothing while pushing
+ * the actual name off the front of the line. Brett: "Remove the prefix
+ * standard_ in the part names, curveR should be Curve Right."
+ *
+ * DISPLAY ONLY. `it.name` stays the key everywhere it matters — counts, the
+ * packer, the export manifest, `data-part` — because renaming an identity to
+ * make it read better is how a count ends up attached to nothing.
+ */
+function shopDisplayName(name) {
+    const pretty = {
+        curveL: 'Curve Left', curveR: 'Curve Right',
+        // A SWITCH ROW IS THE BODY ONLY, and saying so is the whole point.
+        // Brett: "it looks like the switch with gate is the real one, I don't
+        // know what that other switch is." A switch cannot route anything
+        // without its paddle, so the bare row is for replacing a lost body —
+        // the bundle below it is the thing you normally want.
+        switchL: 'Switch Left (body only)', switchR: 'Switch Right (body only)',
+        straight: 'Straight', start: 'Start Platform', end: 'End Platform',
+        lift: 'Powered Lift', powered: 'Powered Track', elevator: 'Elevator',
+        bowtie_key: 'Bowtie Key', gate_paddle: 'Gate Paddle',
+        support_foot: 'Support Foot', support_jog: 'Support Jog'
+    };
+    let n = String(name).replace(/^standard_/, '');
+    if (pretty[n]) return pretty[n];
+    const m = /^support_riser_(\d+)mm$/.exec(n);
+    if (m) return `Riser ${m[1]} mm`;
+    const sp = /^support_spacer_(.+)$/.exec(n);
+    if (sp) return `Spacer ${sp[1]}`;
+    const sc = /^scenery_(.+)$/.exec(n);
+    if (sc) return sc[1].replace(/^./, (c) => c.toUpperCase());
+    // design pieces arrive as `curveR_3`, `straight_11`
+    const idx = /^([a-zA-Z]+)_(\d+)$/.exec(n);
+    if (idx && pretty[idx[1]]) return `${pretty[idx[1]]} ${idx[2]}`;
+    return n.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+}
+
+/**
+ * Most-used first. A build is mostly straights and curves, then the platforms
+ * that cap it, and only then the one-per-design pieces. Ordering the list the
+ * way a build consumes it puts the rows people actually touch at the top —
+ * Brett: "sort the parts from most common to least common".
+ *
+ * Ties break on the design's OWN count, so a design that leans on a piece
+ * floats it up regardless of the nominal order.
+ */
+const SHOP_RANK = ['straight', 'curveL', 'curveR', 'start', 'end',
+    'switchL', 'switchR', 'lift', 'powered', 'elevator'];
+function shopSortKey(it) {
+    const bare = String(it.name).replace(/^standard_/, '').replace(/_\d+$/, '');
+    const i = SHOP_RANK.indexOf(bare);
+    return i < 0 ? SHOP_RANK.length : i;
+}
+
 /** One part row: thumbnail, identity, variant, stepper. */
 function makeShopRow(it) {
     const row = document.createElement('div');
@@ -4947,9 +5006,15 @@ function makeShopRow(it) {
     row.dataset.part = it.name;
     row.innerHTML =
         `<img src="${it.thumb}" alt="">` +
-        `<div class="meta"><b title="${it.name}">${it.name}</b>` +
+        `<div class="meta"><b title="${it.name}">${shopDisplayName(it.name)}</b>` +
         `<span>${it.w.toFixed(0)}×${it.d.toFixed(0)}×${it.h.toFixed(0)} mm · ` +
         `${printedWeightG(it.vol, 'track').toFixed(0)} g each` +
+        // THE `standard_` PREFIX WAS DOING WORK, so removing it from the name
+        // has to put the distinction back somewhere. Without it a design that
+        // contains a straight showed two rows both reading "Straight" — its own
+        // piece and the canonical form — which is worse than an ugly prefix.
+        // It belongs on the detail line, not in front of the name.
+        (/^standard_/.test(it.name) ? `<br>standard form` : '') +
         (it.variant ? `<br>${it.variant}` : '') + `</span></div>` +
         `<div class="shop-step"><button type="button" data-d="-1">−</button>` +
         `<input type="number" min="0" max="999" value="${shop.counts.get(it.name) ?? 0}">` +
@@ -4984,7 +5049,10 @@ function shopBuildList() {
         const all = kind === 'track'
             ? [...shop.items.filter(it => it.kind === 'track'), ...shop.items.filter(it => it.kind === 'gate')]
             : shop.items.filter(it => it.kind === kind);
-        const group = kind === 'track' ? all.filter(it => !isSpecialty(it.name)) : all;
+        const group = (kind === 'track' ? all.filter(it => !isSpecialty(it.name)) : all)
+            .slice().sort((a, b) => (shopSortKey(a) - shopSortKey(b))
+                || ((shop.counts.get(b.name) ?? 0) - (shop.counts.get(a.name) ?? 0))
+                || shopDisplayName(a.name).localeCompare(shopDisplayName(b.name)));
         const advanced = kind === 'track' ? all.filter(it => isSpecialty(it.name)) : [];
         if (!group.length) continue;
         const head = document.createElement('div');

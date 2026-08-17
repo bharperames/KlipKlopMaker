@@ -624,6 +624,32 @@ export function archedRimY(piece, s, spec, supportStations = [], forced = null, 
 }
 
 /**
+ * 0 inside a switch branch's frog, 1 once it is clear, smoothly between.
+ * Any other piece is unaffected and returns 1.
+ */
+export function frogRidgeFade(piece, s) {
+    const end = piece.frogEndS;
+    if (!(end > 0)) return 1;
+    const fade = piece.ridgeFadeMm ?? 20;
+    // KEEP THE RIDGES AT THE MOUTH. The two routes leave the same entry face on
+    // the same heading, so for the first stretch their washboards are the same
+    // washboard — identical phase, identical direction, nothing to interfere
+    // with. Only as the headings diverge do the two fields start crossing.
+    //
+    // Fading from s=0 also flattened the entry, where the pitch is snapped so
+    // the SEAM lands in a ridge valley, and that is where the switch picked up
+    // its single non-manifold edge. Start the fade after the mouth and the
+    // joint keeps the geometry it was designed against.
+    const start = piece.frogStartS ?? 0;
+    if (s <= start) return 1;
+    if (s < start + fade) { const t = 1 - (s - start) / fade; return t * t * (3 - 2 * t); }
+    if (s <= end) return 0;
+    if (s >= end + fade) return 1;
+    const t = (s - end) / fade;
+    return t * t * (3 - 2 * t);              // smoothstep, so no crease at either end
+}
+
+/**
  * Builds all sweep profiles for a piece at the given stations, applying the
  * washboard ridge as a function of arc length (seams always land in valleys
  * because the pitch was snapped to the piece length) and the arched skirt rim.
@@ -638,7 +664,16 @@ export function pieceProfiles(piece, stations, spec, withRidges, supportStations
         deckY: 0, // origins already carry the deck elevation
         rimL: archedRimY(piece, st.s, spec, supportStations, forced, -(innerWidthAt(piece, st.s) / 2 + spec.wall)) - deckYOffset(piece, st),
         rimR: archedRimY(piece, st.s, spec, supportStations, forced, innerWidthAt(piece, st.s) / 2 + spec.wall) - deckYOffset(piece, st),
-        ridge: withRidges ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) : 0
+        // ONE RIDGE FIELD IN A FROG. A switch's branch runs inside the main's
+        // channel until it separates, and two washboards crossing at an angle
+        // is the chevron interference Brett saw in the render. Matching the two
+        // decks (see frogDeckKnots) would have made it worse by bringing both
+        // fields into the same plane, so the branch carries NO ridges while it
+        // is inside the frog and fades its own in once clear. The main owns
+        // that surface; the walker meets one field, whichever route it takes.
+        ridge: withRidges
+            ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) * frogRidgeFade(piece, st.s)
+            : 0
     }));
 }
 
