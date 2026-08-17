@@ -1055,7 +1055,12 @@ function undersideSupportOps(piece, spec) {
     // start and end platforms, their drop being zero. They were therefore given
     // nothing while having the plainest cavity in the project.
     if (piece.skirtStyle !== 'minimal') return [];     // the arcade holds a viaduct up
-    if (piece.isElevator || piece.type === 'elevator') return [];   // solid block, no cavity
+    // ELEVATORS TOO. This skipped them as a "solid block from the rim up to
+    // the deck", which is true only where the HOUSING is: it spans s 40-110,
+    // and the landings either side of it carry deck over open channel — 9.8 mm
+    // of cavity at the entry and 100 mm at the exit. Audited, that left the
+    // elevator the one piece in the library failing the span gate, 24 mm across
+    // 7 clusters and 891 mm2, while everything else sat at 12 or under.
     if (!(piece.planLen > 0)) return [];
     const lying = laysOnUnderside(piece, spec);
     const pl0 = undersidePlane(piece, spec);
@@ -1124,6 +1129,27 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     const stations = supportStations(opts.support, piece);
     const shell = fineShell(piece, spec, stations);
     const ops = [];
+    // UNDER-DECK FILL AND EXPERIMENTS ENTER HERE, AND ONLY HERE.
+    //
+    // Four curve variants were built in scratchpad scripts that CONCATENATED
+    // ribs and lattice onto the shell instead of unioning them, and every score
+    // taken off the resulting non-manifold meshes was void (see HANDOFF §3.2).
+    // The fix is not discipline, it is a seam: `extraOps` is handed the piece
+    // already in its own frame and its ops go through `csgChain` with the rest,
+    // so an experiment is manifold by construction or it is not built at all.
+    //
+    // BEFORE THE JOINTS AND THE BOSS, because everything after this CARVES: the
+    // bowtie pocket, the socket bore, the engraved code. Filling last put the
+    // plastic straight back into the pocket that had just been cut — the key
+    // throat tests caught that — and sealed what was left of it into an
+    // internal void, so the part exported as two shells. Fill the cavity first,
+    // then cut the features out of it; the order is the intent.    //
+    // BEFORE THE ELEVATOR'S OPS TOO, because its slot is a SUBTRACTION: filled
+    // afterwards the fill puts the car's shaft back. The elevator is the only
+    // piece that carves before the general fill would otherwise run.
+    if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
+    else ops.push(...undersideSupportOps(piece, spec));
+
     if (piece.type === 'elevator' || piece.isElevator) {
         const Wo = piece.innerWidth / 2 + spec.wall;
         const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
@@ -1163,24 +1189,6 @@ export function buildPieceExportGeometry(piece, opts = {}) {
             geometry: toBufferGeometry(extrudePolygonY(bump, piece.entryDeck - 4, piece.entryDeck + spec.railHeight + 14))
         });
     }
-
-    // UNDER-DECK FILL AND EXPERIMENTS ENTER HERE, AND ONLY HERE.
-    //
-    // Four curve variants were built in scratchpad scripts that CONCATENATED
-    // ribs and lattice onto the shell instead of unioning them, and every score
-    // taken off the resulting non-manifold meshes was void (see HANDOFF §3.2).
-    // The fix is not discipline, it is a seam: `extraOps` is handed the piece
-    // already in its own frame and its ops go through `csgChain` with the rest,
-    // so an experiment is manifold by construction or it is not built at all.
-    //
-    // BEFORE THE JOINTS AND THE BOSS, because everything after this CARVES: the
-    // bowtie pocket, the socket bore, the engraved code. Filling last put the
-    // plastic straight back into the pocket that had just been cut — the key
-    // throat tests caught that — and sealed what was left of it into an
-    // internal void, so the part exported as two shells. Fill the cavity first,
-    // then cut the features out of it; the order is the intent.
-    if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
-    else ops.push(...undersideSupportOps(piece, spec));
 
     if (hasEntryJoint) {
         // seam's uphill deck = this entry + the waterfall step
