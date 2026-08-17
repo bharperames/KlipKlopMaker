@@ -1515,21 +1515,22 @@ function frogDeckKnots(main, branch, spec) {
         const f = main.planLen === 0 ? 0 : Math.min(Math.max(along, 0), main.planLen) / main.planLen;
         return main.drop * f;
     };
-    // SUNK BY ONE WATERFALL STEP, not level with the main.
+    // FLUSH. The branch's deck matches the main's exactly across the frog, so
+    // the two are one surface and there is no seam to cross.
     //
-    // Level is what the walker wants and it is what the BOOLEAN cannot have:
-    // two deck surfaces occupying the same plane across the frog is an exact
-    // coincidence, and manifold produced a non-manifold switch from it
-    // (measured, 414.9 cm3, broken). Fading only the branch's ridges was worse
-    // — its flat deck then sat exactly tangent to the main's ridge VALLEYS,
-    // kissing every 2.5 mm down the whole frog.
+    // This was briefly sunk by a waterfall step, because a flush deck HAD
+    // produced a non-manifold switch and sinking it cured that. The diagnosis
+    // was wrong: the breakage was the ridge fade starting at s=0, which
+    // flattened the entry where the pitch is snapped so the seam lands in a
+    // valley. Once the fade was moved clear of the mouth, flush came out
+    // watertight — retested at 0, 0.02, 0.05, 0.10 and 0.25, all clean.
     //
-    // So the branch runs `waterfallStepMm` below the main through the frog. The
-    // surfaces never touch, the union is unambiguously the main's deck, and the
-    // branch emerges one waterfall step down — which is the step every seam in
-    // this design already has, drawn deliberately at 0.25 mm and walked over
-    // thousands of times. A known 0.25 beats an accidental 0.95.
-    const sink = spec.waterfallStepMm ?? 0.25;
+    // Leaving the sink in would have cost more than it looked. A 0.25 mm step
+    // between the two decks runs LENGTHWISE down the frog, along the direction
+    // of travel, where it can tip a walker sideways — worse than the transverse
+    // step it replaced. Brett saw it in the render: "the frog still looks wrong
+    // to me." Zero is both the right surface and, as it turns out, a legal one.
+    const sink = 0;
     const knots = [];
     const N = Math.max(2, Math.round(sSep / 4));
     for (let i = 0; i <= N; i++) {
