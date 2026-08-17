@@ -1103,21 +1103,11 @@ function bindSlider(id, outId, key, fmt, isWalker = false) {
 }
 // Parameters are CONSTANT (canonical geometry, semver-stamped) — no sliders.
 function refreshSkirtMode() {
-    const sel = $('in-skirt');
-    if (!sel) return;
-    sel.value = state.skirtStyle;
-    $('skirt-hint').innerHTML = state.skirtStyle === 'minimal'
-        ? '<b>18-20% less plastic</b> per track piece and no arcade. The underside '
-          + `follows the deck ${SPEC.skirt.minimalDepthMm} mm below it, so it is a `
-          + 'ramp rather than a flat rim \u2014 and <b>straights and lifts are '
-          + 'exported lying on it</b>, flat on the plate and half as tall. A '
-          + 'curve\u2019s underside is a helicoid, so no orientation lays it down and '
-          + 'it <b>still needs print supports</b>. Each piece takes a spacer under its '
-          + 'socket; joints, grid and the rest of the stack are unchanged, so minimal '
-          + 'and viaduct pieces mate.'
-        : 'The skirt carries the deck down to a flat rim on the 15 mm grid, and the arcade '
-          + 'is cut out of it. Every downward surface is a vertical pier or a self-supporting '
-          + 'arch, so <b>every piece prints rim-down with no supports</b>.';
+    // THE UNDERSIDE PICKER IS GONE. `viaduct` was never a look anyone chose —
+    // it was an attempt at the under-deck problem that the cavity fill has
+    // since solved, and it audits far worse than what it competed with (56 and
+    // 66 mm worst unsupported span against 10 and 10). Every piece is minimal
+    // now, so there is nothing to pick and nothing to explain.
 }
 
 function refreshParamsMode() {
@@ -4547,7 +4537,9 @@ function plateGroup(name) {
  * stays set — `soloTouched` is what remembers that.
  */
 function defaultSoloBigParts() {
-    return state.skirtStyle !== 'minimal';
+    // Was `skirtStyle !== 'minimal'` — on for rim-down viaduct pieces, off once
+    // they lie flat. Every piece lies flat now, so this is always off.
+    return false;
 }
 
 /**
@@ -5471,12 +5463,6 @@ window.__shop = shop; window.__THREE = THREE;   // dev hook for layout verificat
 // once with a clean console (see initJointGuide).
 window.__dbg = { get scene() { return scene; }, get joint() { return jointGuideState; },
                  get gallery() { return gallery; } };
-$('in-skirt').addEventListener('change', () => {
-    recordEdit('skirt');
-    state.skirtStyle = normaliseSkirtStyle($('in-skirt').value);
-    rebuild();                    // clears shop.built for us
-});
-
 $('btn-print-shop').addEventListener('click', () => openPrintShop({ preset: 'all' }));
 // Same door, but this one is "show me the job the buttons above will produce",
 // so it forces the preset back to the whole design.

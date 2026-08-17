@@ -1026,8 +1026,11 @@ export function layoutTrack(sequence, params = {}) {
         skirtDepth: SPEC.skirtDepth,
         ridgeHeight: SPEC.ridge.height,
         ridgePitch: SPEC.ridge.pitch,
-        skirtStyle: SPEC.skirt.style,
-        ...params
+        // NOT settable any more — see normaliseSkirtStyle. `viaduct` is gone,
+        // so an option that names it is accepted and ignored rather than
+        // quietly producing a part that no longer exists.
+        ...params,
+        skirtStyle: 'minimal'
     };
 
     const issues = [];
@@ -1093,7 +1096,7 @@ export function layoutTrack(sequence, params = {}) {
             innerWidth, isLift,
             isElevator: kind === 'elevator',
             ridgePitch: ridge.pitch, ridgeCount: ridge.count,
-            skirtStyle: p.skirtStyle ?? SPEC.skirt.style,
+            skirtStyle: 'minimal',
             ...meta
         };
         pieces.push(piece);
@@ -1750,17 +1753,26 @@ export function undersidePlane(piece, spec = SPEC) {
  * straight. Platforms and powered tiles stay out: they are level already.
  */
 /**
- * The one place that says what an unrecognised underside means.
+ * THERE IS ONE UNDERSIDE NOW, and this function exists only to say so to old
+ * data.
  *
- * Nine sites used to spell this `x === 'minimal' ? 'minimal' : 'viaduct'`,
- * which silently hard-codes the default into every load path: the day the
- * default moved, a saved state with no `skirtStyle` would still have come back
- * viaduct. A style that IS named is always honoured — a scene saved as
- * `viaduct` is a different printed part and must reload as one — and only an
- * absent or unknown one falls through to the default.
+ * `viaduct` is gone. It was never a style anyone chose for how it looked —
+ * Brett: "The viaduct is not an intentional style, those were purely an attempt
+ * to make the full height skirt walls less expensive to print, but they never
+ * solved the fundamental problem, so we can get rid of them as a 'user
+ * preferred design choice'." The arcade was an attempt at the under-deck
+ * problem that the cavity fill has since solved properly, and it audits far
+ * worse than the thing it was competing with: 56 mm worst unsupported span on a
+ * straight and 66 on a curve, against 10 and 10 for a filled minimal piece, with
+ * 1067 mm2 ceilings open to the bed. Its one print on record failed on those
+ * arched skirts.
+ *
+ * A scene saved as `viaduct` therefore reloads as `minimal` rather than
+ * refusing to open. That is a deliberate change of a printed part, which is why
+ * it is stated here and not silently coerced somewhere downstream.
  */
-export function normaliseSkirtStyle(v, spec = SPEC) {
-    return v === 'viaduct' || v === 'minimal' ? v : spec.skirt.style;
+export function normaliseSkirtStyle() {
+    return 'minimal';
 }
 
 export function laysOnUnderside(piece, spec) {

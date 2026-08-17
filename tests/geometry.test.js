@@ -198,180 +198,24 @@ describe('washboard station rate', () => {
     });
 });
 
-describe('skirt arch windows print without support', () => {
-    test('no unsupported run of crown exceeds the bridge limit', async () => {
-        // The arch is a circle springing vertically off a pier, so it carries
-        // itself until sqrt(2)/2 of the way up. Past that — and across any flat
-        // the deck clips into it — the crown is a bridge, and what matters is
-        // that no single bridged run gets too long. (The old rule here said no
-        // tangent may be shallower than 45 deg at all, which outlaws every real
-        // arch: a crown is horizontal by definition.)
-        const { archedRimY, ARCH } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack, planPillarPositions } = await import('../js/track.js');
-        for (const seq of [
-            ['straight', 'curveL', 'straight'],
-            ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
-            ['lift', 'straight', 'curveR']
-        ]) {
-            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
-            // riding the default. `minimal` is the default underside now and has
-            // no arches at all, which made these three assert against a flat rim.
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
-            const supports = planPillarPositions(pieces);
-            for (const pc of pieces) {
-                const sup = supports.find(s => s.pieceIndex === pc.index);
-                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
-                const forced = sup && sup.mode === 'outrigger' ? sup.s : null;
-                const N = 3000, d = pc.planLen / N;
-                let prev = archedRimY(pc, 0, SPEC, pads, forced), run = 0, worst = 0;
-                for (let k = 1; k <= N; k++) {
-                    const y = archedRimY(pc, k * d, SPEC, pads, forced);
-                    const shallow = Math.abs(y - prev) / d < 1 && y > pc.rimY + 0.05;
-                    run = shallow ? run + d : 0;
-                    worst = Math.max(worst, run);
-                    prev = y;
-                }
-                expect(`${pc.name} longest bridged run ${worst.toFixed(0)} mm`)
-                    .toBe(`${pc.name} longest bridged run ${Math.min(worst, ARCH.maxBridge).toFixed(0)} mm`);
-            }
-        }
-    });
+/*
+ * THE ARCH WINDOW TESTS ARE GONE WITH THE ARCADE THEY GUARDED.
+ *
+ * They checked a viaduct skirt's three-centred arches: crown bridge length,
+ * soffit overhang angle, and that every interior boundary was a full-width
+ * pier standing on the bed. All three were sound tests of a thing that no
+ * longer exists. `viaduct` was never a style anyone chose for how it looked —
+ * it was an attempt at the under-deck problem that the cavity fill has since
+ * solved properly, and it audited far worse than what it competed with: 56 mm
+ * worst unsupported span on a straight and 66 on a curve, against 10 and 10
+ * filled.
+ *
+ * What replaced them is not a like-for-like test but a better one:
+ * `tests/pieces.test.js` gates EVERY minimal piece at no unsupported span over
+ * 20 mm, measured from the mesh by scripts/overhang_audit.mjs, and that gate is
+ * known to reject.
+ */
 
-    test('the arch soffit stays inside the printable envelope', async () => {
-        // Two independent limits, and satisfying only one is what made the
-        // slicer's "floating cantilever" so hard to pin down:
-        //
-        //   overhang   how far a layer may overstep the one below. The
-        //              three-centred arch reached 75.6 deg from vertical and
-        //              was rejected; the shape before it held 58.6 and passed.
-        //   flat span  what has NOT closed by the crown is bridged in one
-        //              layer. 47.6 mm passed, 51.9 mm was rejected — so the
-        //              bound here is a measured edge, not a safe margin.
-        //
-        // Bisected on solo plates against Bambu Studio (a packed plate mis-
-        // attributes the warning and caches the verdict across deletes, so
-        // every packed-plate reading proved worthless). Confirmed by a hybrid
-        // build that swapped ONLY this function and went clean.
-        const { archedRimY } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack, planPillarPositions } = await import('../js/track.js');
-        for (const seq of [
-            ['straight', 'straight', 'straight'],
-            ['straight', 'curveL', 'straight'],
-            ['straight', 'curveL', 'curveL', 'curveL', 'straight'],
-            ['lift', 'straight', 'curveR']
-        ]) {
-            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
-            // riding the default. `minimal` is the default underside now and has
-            // no arches at all, which made these three assert against a flat rim.
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
-            const supports = planPillarPositions(pieces);
-            for (const pc of pieces) {
-                const sup = supports.find(s => s.pieceIndex === pc.index);
-                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
-                const forced = sup && sup.mode === 'outrigger' ? sup.s : null;
-                const N = 4000, d = pc.planLen / N;
-                const ys = [];
-                for (let k = 0; k <= N; k++) ys.push(archedRimY(pc, k * d, SPEC, pads, forced));
-                // each raised run is one window
-                const runs = [];
-                let cur = null;
-                for (let k = 0; k <= N; k++) {
-                    if (ys[k] > pc.rimY + 0.05) cur = cur ? (cur.b = k, cur) : { a: k, b: k };
-                    else if (cur) { runs.push(cur); cur = null; }
-                }
-                if (cur) runs.push(cur);
-                for (const r of runs) {
-                    let top = -Infinity, ti = r.a;
-                    for (let k = r.a; k <= r.b; k++) if (ys[k] > top) { top = ys[k]; ti = k; }
-                    // walk the left limb by height and measure the lean
-                    const pts = [];
-                    for (let h = 0.4; h <= top - pc.rimY; h += 0.4) {
-                        for (let k = r.a; k <= ti; k++) {
-                            if (ys[k] - pc.rimY >= h) { pts.push([h, k * d]); break; }
-                        }
-                    }
-                    let lean = 0;
-                    for (let i = 1; i < pts.length - 3; i++) {
-                        const dh = pts[i][0] - pts[i - 1][0];
-                        const dx = Math.abs(pts[i][1] - pts[i - 1][1]);
-                        lean = Math.max(lean, Math.atan2(dx, dh) * 180 / Math.PI);
-                    }
-                    let lo = null, hi = null;
-                    for (let k = r.a; k <= r.b; k++) if (ys[k] > top - 0.2) { if (lo === null) lo = k; hi = k; }
-                    const span = (hi - lo) * d;
-                    expect(`${pc.name} lean ${lean.toFixed(0)} span ${span.toFixed(0)}`).toBe(
-                        `${pc.name} lean ${Math.min(lean, 58).toFixed(0)} span ${Math.min(span, 48).toFixed(0)}`);
-                }
-            }
-        }
-    });
-
-    test('a window never cuts into the floor it is under', async () => {
-        // The cap is one number for a whole window, so it has to clear the
-        // LOWEST deck over that window. Taken at the window centre instead,
-        // the downhill end of a long window put its ceiling above the local
-        // floor underside: the skirt wall there is gone, and channelProfile
-        // handed a rim above its own ceiling folds inside out.
-        const { archedRimY, ARCH } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack, deckYAt, planPillarPositions } = await import('../js/track.js');
-        for (const seq of [
-            ['straight', 'curveL', 'straight'],
-            ['straight', 'straight', 'curveL', 'curveL', 'straight'],
-            ['lift', 'straight', 'curveR']
-        ]) {
-            // THE ARCADE IS A VIADUCT FEATURE, so this pins the style rather than
-            // riding the default. `minimal` is the default underside now and has
-            // no arches at all, which made these three assert against a flat rim.
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
-            const supports = planPillarPositions(pieces);
-            for (const pc of pieces) {
-                const sup = supports.find(s => s.pieceIndex === pc.index);
-                const pads = sup && sup.mode !== 'none' ? [sup.s] : [];
-                for (let s = 0; s <= pc.planLen; s += 0.5) {
-                    const headroom = deckYAt(pc, s) - archedRimY(pc, s, SPEC, pads);
-                    // rim must stay at least `band` below the deck line, which
-                    // keeps the full floor plus a lintel above every opening
-                    expect(`${pc.name}@${s.toFixed(0)} headroom ${headroom.toFixed(2)}`)
-                        .toBe(`${pc.name}@${s.toFixed(0)} headroom ${Math.max(headroom, ARCH.band - 0.01).toFixed(2)}`);
-                }
-            }
-        }
-    });
-
-    test('every interior boundary is a pier of the full width, on the bed', async () => {
-        // The skirt is piers and arches and nothing else — no mullions, no
-        // bulkheads, no internal webs. Each interior boundary must put the rim
-        // on the bed for the full pier width.
-        const { archedRimY, windowBounds, ARCH } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack } = await import('../js/track.js');
-        // pins the style for the same reason as the two tests above — piers and
-        // arches only exist on a viaduct underside
-        const { pieces } = layoutTrack(['straight', 'curveL', 'curveL', 'straight'],
-            { slopeDeg: 11.2167, skirtStyle: 'viaduct' });
-        for (const pc of pieces) {
-            const pads = [pc.planLen / 2];
-            const bounds = windowBounds(pc, SPEC, pads);
-            for (let i = 1; i + 1 < bounds.length; i++) {
-                for (const off of [-ARCH.pier / 2 + 0.2, 0, ARCH.pier / 2 - 0.2]) {
-                    expect(`pier@${bounds[i].toFixed(0)}${off.toFixed(1)}: ${(archedRimY(pc, bounds[i] + off, SPEC, pads) - pc.rimY).toFixed(2)}`)
-                        .toBe(`pier@${bounds[i].toFixed(0)}${off.toFixed(1)}: 0.00`);
-                }
-            }
-        }
-    });
-
-    test('an arch actually opens', async () => {
-        const { archedRimY } = await import('../js/geometry.js');
-        const { SPEC, layoutTrack } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight'], { slopeDeg: 11.2167 });
-        const pc = pieces[1];
-        let peak = 0;
-        for (let s = 0; s <= pc.planLen; s += 0.25) {
-            peak = Math.max(peak, archedRimY(pc, s, SPEC, [pc.planLen / 2]) - pc.rimY);
-        }
-        expect(peak).toBeGreaterThan(5);
-    });
-});
 
 describe('bowtie pocket fits the key', () => {
     test('clearance is uniform along the whole engagement', async () => {

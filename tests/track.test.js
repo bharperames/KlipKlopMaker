@@ -288,22 +288,18 @@ describe('planPillarPositions', () => {
 
     test('a jog costs the stack exactly one grid unit, so it still decomposes', () => {
         const seq = ['straight', ...Array(8).fill('curveL'), 'straight'];
-        // BOTH UNDERSIDES, because they reach the grid by different routes and
-        // only one of them used to be the default. A viaduct boss runs down to
-        // the rim, so the stack starts at the rim and a jog is the only thing
-        // between the two. A minimal piece recesses its seat into a sloping
-        // underside, and the SPACER carries whatever that recess adds — so the
-        // rim says nothing about the stack there. What has to hold either way
-        // is the part that matters: the height still decomposes onto the grid.
-        for (const skirtStyle of ['viaduct', 'minimal']) {
+        // This used to run BOTH undersides, because a viaduct boss ran down to
+        // the rim and a minimal one recesses its seat into a sloping underside.
+        // The viaduct is gone, so only the second route exists: the SPACER
+        // carries whatever the recess adds and the rim says nothing about the
+        // stack. What has to hold is unchanged — the height still decomposes
+        // onto the grid.
+        for (const skirtStyle of ['minimal']) {
             const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle });
             for (const sup of planPillarPositions(pieces)) {
                 const pc = pieces.find(p => p.index === sup.pieceIndex);
                 if (!needsPier(pc)) continue;
                 const h = stackHeightMm(pc, sup);
-                if (skirtStyle === 'viaduct') {
-                    expect(pc.rimY - h).toBe(sup.mode === 'jog' ? SPEC.jog.heightMm : 0);
-                }
                 expect(`${pc.name} ${skirtStyle} decomposes`).toBe(
                     `${pc.name} ${skirtStyle} ${decomposeSupport(h) ? 'decomposes' : 'OFF-GRID'}`);
             }
@@ -548,14 +544,6 @@ describe('the spacer', () => {
             .map(s => ({ sup: s, pc: pieces[s.pieceIndex] }));
     };
 
-    test('a viaduct build is untouched: the mouth is the rim and no spacer exists', () => {
-        for (const { sup, pc } of chain(SPIRAL, 'viaduct')) {
-            expect(socketMouthY(pc, sup.s)).toBe(pc.rimY);
-            expect(spacerHeightMm(pc)).toBe(0);
-            expect(stackHeightMm(pc, sup))
-                .toBeCloseTo(pc.rimY - (sup.mode === 'jog' ? SPEC.jog.heightMm : 0), 9);
-        }
-    });
 
     /**
      * THE WHOLE POINT. A minimal piece's socket mouth lands wherever the deck
@@ -608,9 +596,10 @@ describe('the spacer', () => {
     });
 
     /**
-     * A grounded minimal piece has no rim under its boss — its underside
-     * follows the deck and only touches rimY at the exit boundary — so unlike
-     * a grounded viaduct piece it cannot rest on its own skirt.
+     * A grounded piece has no rim under its boss — its underside follows the
+     * deck and only touches rimY at the exit boundary — so it cannot rest on
+     * its own skirt. (The comparison here used to be against a grounded
+     * VIADUCT piece, which could; that underside no longer exists.)
      */
     test('a grounded minimal piece still needs something under it', () => {
         const ground = chain(SPIRAL, 'minimal').find(({ pc }) => pc.rimY < 1);
@@ -620,10 +609,6 @@ describe('the spacer', () => {
         // else — the spacer that used to stand on the bed here is gone
         expect(stackHeightMm(ground.pc, ground.sup)).toBeCloseTo(15, 2);
         expect(decomposeSupport(stackHeightMm(ground.pc, ground.sup))).not.toBeNull();
-
-        const viaduct = layoutTrack(SPIRAL, { skirtStyle: 'viaduct' }).pieces.find(p => p.rimY < 1
-            && p.type !== 'end' && p.type !== 'start');
-        expect(needsPier(viaduct)).toBe(false);
     });
 
     /**
