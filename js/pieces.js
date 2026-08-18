@@ -72,7 +72,9 @@ function toArrays(g) {
     return { positions: new Float32Array(pos), indices: new Uint32Array(idx) };
 }
 
-function toManifold(g) {
+// exported so an ASSEMBLY check can intersect two finished parts — see
+// scripts/gate_swing.mjs. Nothing in the build path should need it.
+export function toManifold(g) {
     if (!wasm) throw new Error('initCSG() must be awaited before building CSG geometry');
     const { positions, indices } = toArrays(g);
     const { uniqueVertices, remappedIndices } = deduplicateGeometry(positions, indices);
