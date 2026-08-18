@@ -28,6 +28,16 @@ import { layoutTrack, planPillarPositions, pieceFrame, pieceInFrame, SPEC } from
 import { initCSG, buildSwitchExportGeometry, buildGateGeometry, gatePinPosition,
     toBufferGeometry, toManifold, GATE } from '../js/pieces.js';
 
+/**
+ * THE BLADE IS DRAWN ALONG +Z, NOT +X. buildGateGeometry puts the pin at the
+ * origin and runs the vane out to z=50, so placing it at `yawParked` (the
+ * track's heading) aims it ACROSS the channel instead of down it — through open
+ * air, where it reports almost no interference and every number is fiction.
+ * `place` maps the gate's +z onto (-sin yaw, cos yaw), so the yaw that points it
+ * along a heading h is h - 90 deg.
+ */
+const BLADE_YAW = -Math.PI / 2;
+
 /** Rigid transform of a flat position array: rotate about Y, then translate. */
 function place(P, yaw, about, dy) {
     const out = new Float64Array(P.length);
@@ -95,6 +105,38 @@ export async function swing(hand = 'switchL') {
     return { g, pin, gate, main: pieceInFrame(main0, frame) };
 }
 
+/**
+ * Worst above-deck overlap over the whole descent and the whole swing.
+ * Exported so `tests/pieces.test.js` gates on the same measurement this script
+ * prints, rather than reimplementing it and drifting.
+ */
+export function overlapAboveDeck(g, pin, gate) {
+    const track = toManifold(g);
+    const P0 = gate.positions ?? gate.attributes.position.array;
+    const I0 = gate.indices ?? (gate.index ? gate.index.array
+        : Uint32Array.from({ length: P0.length / 3 }, (_, i) => i));
+    const base = new Float64Array(P0.length);
+    for (let i = 0; i < P0.length; i += 3) {
+        base[i] = P0[i] + pin.x; base[i + 1] = P0[i + 1]; base[i + 2] = P0[i + 2] + pin.z;
+    }
+    let worst = { vol: 0, at: 'nowhere' };
+    const take = (P, at) => {
+        const o = overlap(track, P, I0, pin.deckY);
+        if ((o.above ?? 0) > worst.vol) worst = { vol: o.above, at };
+    };
+    for (const d of [12, 9, 6, 4, 3, 2, 1, 0.5, 0]) {
+        take(place(base, pin.yawParked + BLADE_YAW, [pin.x, 0, pin.z], pin.deckY + d), `${d} mm to go`);
+    }
+    const span = pin.yawDiverting - pin.yawParked;
+    for (let k = 0; k <= 8; k++) {
+        const yaw = pin.yawParked + BLADE_YAW + (span * k) / 8;
+        take(place(base, yaw, [pin.x, 0, pin.z], pin.deckY),
+            `${((yaw - pin.yawParked - BLADE_YAW) * 180 / Math.PI).toFixed(1)} deg`);
+    }
+    track.delete();
+    return worst;
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
     const hand = process.argv[2] ?? 'switchL';
     const { g, pin, gate } = await swing(hand);
@@ -118,7 +160,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('INSERTION — lowering the gate down the bore, parked yaw');
     console.log('  drop   remaining   interference   where');
     for (const d of [12, 9, 6, 4, 3, 2, 1, 0.5, 0]) {
-        const P = place(base, pin.yawParked, [pin.x, 0, pin.z], seatY + d);
+        const P = place(base, pin.yawParked + BLADE_YAW, [pin.x, 0, pin.z], seatY + d);
         const o = overlap(track, P, I0, pin.deckY);
         console.log(`  ${String(d).padStart(4)} mm  ${d === 0 ? '  SEATED  ' : '          '}  `
             + `${o.vol > 0.001 ? o.vol.toFixed(1).padStart(8) + ' mm3' : '     none   '}`
@@ -130,10 +172,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log('  yaw off parked   interference   where');
     const span = pin.yawDiverting - pin.yawParked;
     for (let k = 0; k <= 8; k++) {
-        const yaw = pin.yawParked + (span * k) / 8;
+        const yaw = pin.yawParked + BLADE_YAW + (span * k) / 8;
         const P = place(base, yaw, [pin.x, 0, pin.z], seatY);
         const o = overlap(track, P, I0, pin.deckY);
-        const deg = ((yaw - pin.yawParked) * 180 / Math.PI);
+        const deg = ((yaw - pin.yawParked - BLADE_YAW) * 180 / Math.PI);
         console.log(`  ${deg.toFixed(1).padStart(8)} deg     `
             + `${o.vol > 0.001 ? o.vol.toFixed(1).padStart(8) + ' mm3' : '     none   '}`
             + `   above deck ${(o.above ?? 0).toFixed(1).padStart(6)} mm3`

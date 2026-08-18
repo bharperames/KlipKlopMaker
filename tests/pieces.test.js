@@ -1746,6 +1746,31 @@ describe('the deck ceiling is held up', () => {
             expect(`${hand}: worst lateral step ${worst.step.toFixed(2)} mm at ${worst.at}`)
                 .toBe(`${hand}: worst lateral step ${Math.min(worst.step, 1.00).toFixed(2)} mm at ${worst.at}`);
         }, 240000);
+
+    /*
+     * THE GATE HAS TO GO IN AND SWING, and until now nothing checked that the
+     * two parts FIT — only that each was watertight and printed. Brett found it
+     * in plastic: the gate "cannot be pushed all the way down" and the arm
+     * would not tuck into its slot.
+     *
+     * Assembled, the whole fault was one 5 mm band at the pivot: the parking
+     * slot began exactly at `pin.s` while the hub is a disc AROUND the pin, so
+     * 2.9 mm of gate sat against rail that was never cut. 28.4 mm3 of overlap
+     * above the deck, seated, and fouling 12 mm before it got there.
+     *
+     * Overlap is measured ABOVE THE DECK only, because below it the pin sits in
+     * its bore at 0.00 clearance on purpose — "a great fit, perfect". The limit
+     * is 3 mm3, which is the hub bearing on the boss (0.06 mm across the
+     * shoulder) and nothing else. It rejects: the old slot reads 28.4.
+     */
+    test.each(['switchL', 'switchR'])(
+        'a %s gate seats and swings clear', async (hand) => {
+            const { swing, overlapAboveDeck } = await import('../scripts/gate_swing.mjs');
+            const { g, pin, gate } = await swing(hand);
+            const worst = overlapAboveDeck(g, pin, gate);
+            expect(`${hand}: gate fouls ${worst.vol.toFixed(1)} mm3 at ${worst.at}`)
+                .toBe(`${hand}: gate fouls ${Math.min(worst.vol, 3).toFixed(1)} mm3 at ${worst.at}`);
+        }, 240000);
 });
 
 describe('fill before carve', () => {

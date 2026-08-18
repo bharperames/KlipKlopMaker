@@ -1451,11 +1451,49 @@ function gateSeatOps(mainPiece, branchPiece, spec) {
         [ring(0.4), ring(GATE.bossR), ring(GATE.bossR)],
         [deck - bossDrop - GATE.bossR, deck - bossDrop, deck + 0.2].map(at)));
 
-    // slot: the rail, removed over the blade's length
-    const slot = toBufferGeometry(extrudePolygonY(planToWorld([
-        [(Wi - 0.3) * side, pin.s], [(Wo + 1.5) * side, pin.s],
-        [(Wo + 1.5) * side, pin.s + GATE.len], [(Wi - 0.3) * side, pin.s + GATE.len]
-    ], face), deck + 0.05, deck + spec.railHeight + 2));
+    // SLOT: the rail, removed over the blade's length — and it FOLLOWS THE
+    // DECK, which it did not.
+    //
+    // This was one `extrudePolygonY`, a level prism whose floor sat at the deck
+    // height AT THE PIN. The deck falls 0.198 mm/mm and the blade is 52 mm
+    // long, so 10.3 mm downhill the slot floor was 10.3 mm ABOVE the local deck
+    // and that much rail was never cut. Brett found it in plastic: the gate
+    // "cannot be pushed all the way down" and the arm would not "tuck into" the
+    // wall. Assembled and measured (scripts/gate_swing.mjs) it was 28.3 mm3
+    // inside the rail seated, and already fouling 12 mm before it got there.
+    //
+    // This is the "nothing under the deck may have a LEVEL top" rule seen from
+    // the other side: nothing CUT against the deck may have a level floor.
+    //
+    // `clearBelow` is the extra air under the blade Brett asked for — the slot
+    // floor drops below the deck line rather than sitting on it, so the blade
+    // never rubs the walking surface or its ridges.
+    const clearBelow = spec.ridge.height + 0.4;
+    const uA = (Wi - 0.3) * side, uB = (Wo + 1.5) * side;
+    const u0 = Math.min(uA, uB), u1 = Math.max(uA, uB);
+    // AND IT STARTS BEHIND THE PIVOT, which it did not. The slot began exactly
+    // at `pin.s`, but the gate's hub is a disc of `GATE.hubR` AROUND the pin, so
+    // 2.9 mm of it sits UPHILL of that line — against rail that was never cut.
+    // Assembled, the whole interference was one 5 mm band at s 11.1-16.4 with
+    // the blade itself clear: the back of the gate, jammed into the wall.
+    // Brett, off the print: "the angle of the hole drives the back of the gate
+    // into the wall segment of the track, this would need to be beveled back to
+    // allow the gate arm to enter the bore hole at the correct angle."
+    // The hub sweeps a circle, so a straight relief one hub-radius deep clears
+    // it at every yaw.
+    const sBack = pin.s - (GATE.hubR + 0.6);
+    const sRun = GATE.len + (GATE.hubR + 0.6);
+    const nS = 16;
+    const slotProfiles = [], slotStations = [];
+    for (let i = 0; i <= nS; i++) {
+        const sAt = Math.min(Math.max(sBack + (sRun * i) / nS, 0), mainPiece.planLen);
+        const q = planPosAt(mainPiece, sAt);
+        slotStations.push({ origin: [q.x, deckYAt(mainPiece, sAt), q.z],
+            right: [Math.sin(q.h), 0, -Math.cos(q.h)] });
+        slotProfiles.push([[u0, -clearBelow], [u1, -clearBelow],
+                           [u1, spec.railHeight + 2], [u0, spec.railHeight + 2]]);
+    }
+    const slot = toBufferGeometry(sweepSolid(slotProfiles, slotStations));
 
     const bore = new THREE.CylinderGeometry(GATE.boreR, GATE.boreR,
         spec.railHeight + spec.floorThk + 20, segmentsForCircle(GATE.boreR));

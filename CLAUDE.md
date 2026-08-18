@@ -583,6 +583,28 @@ viaduct curve 71 mm.
   lengthening the unwind from 20 to 35 to 50 mm leaves it unchanged. It is the
   merged straight-and-curved wall where the channels part; rebuild that as one
   curve and tighten the test gate from 1.00 to 0.80.
+- **THE GATE'S PARKING SLOT FOLLOWS THE DECK AND STARTS BEHIND THE PIVOT.**
+  Brett, off a printed switch: it "cannot be pushed all the way down, because
+  the angle of the hole drives the back of the gate into the wall segment", and
+  the arm would not tuck away. Two faults, both invisible until the parts were
+  ASSEMBLED — `tests/pieces.test.js` had only ever checked that each was
+  watertight and printed, never that they FIT. `scripts/gate_swing.mjs` drops
+  the paddle down the bore and swings it, taking the manifold intersection at
+  each step, split at the deck (below it the pin sits in its bore at 0.00 on
+  purpose). · The slot was ONE `extrudePolygonY`, a level prism floored at the
+  deck height AT THE PIN — the deck falls 0.198 mm/mm over a 52 mm blade, so
+  10.3 mm of rail was never cut. That is the "nothing under the deck may have a
+  LEVEL top" rule from the other side: nothing CUT against the deck may have a
+  level floor. · And it began exactly at `pin.s` while the hub is a disc AROUND
+  the pin, leaving 2.9 mm of gate against uncut rail — which turned out to be
+  the whole of it. Seated overlap above the deck **28.4 -> 1.6 mm³** (the hub
+  bearing on the boss, 0.06 mm across the shoulder), and the descent is clear
+  until the last millimetre. `clearBelow` drops the slot floor a ridge height
+  under the deck so the blade never rubs the walking surface.
+  **AIM THE BLADE ALONG +Z.** `buildGateGeometry` puts the pin at the origin and
+  runs the vane out to z=50, so placing it at the track's heading points it
+  ACROSS the channel, through open air, where it reports almost nothing and
+  every number is fiction. The yaw that points it along heading h is h - 90 deg.
 - **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
   and supports stack from five reusable riser designs. Never change STANDARD
