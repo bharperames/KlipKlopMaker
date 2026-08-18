@@ -1670,6 +1670,37 @@ describe('the deck ceiling is held up', () => {
             expect(`${type}: worst span ${worst <= SPAN_LIMIT}`)
                 .toBe(`${type}: worst span true`);
         }, 120000);
+
+    /*
+     * THE SWITCH WAS NOT IN THIS GATE, and it is the part with the most
+     * under-deck to get wrong: two routes, a frog where they part, and the
+     * widest ceiling in the library. It passes — 10 mm, the same as a straight
+     * that prints well — but passing untested is not the same as protected,
+     * and the fill has already been dropped once by a mis-targeted edit that
+     * took every piece from 10 mm to 48-66 with nothing failing.
+     *
+     * BOTH HANDS, because the switch is chiral and the two are built from
+     * mirrored layouts rather than one mirrored mesh. A regression that only
+     * lands on one hand is exactly the kind this project has shipped before.
+     */
+    test.each(['switchL', 'switchR'])(
+        'a %s bridges nothing wider than the limit', async (hand) => {
+            await initCSG();
+            const { pieces } = layoutTrack(
+                [{ type: hand, gate: 'main', main: ['straight'], branch: ['straight'] }],
+                { skirtStyle: 'minimal' });
+            const main = pieces.find((p) => p.role === 'main');
+            const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === main.index);
+            const g = buildSwitchExportGeometry(main, pieces.find((p) => p.role === 'branch'),
+                { support: sup, forPrint: true });
+            const rows = audit(asPrinted(g), 5);
+            const worst = rows[0]?.span ?? 0;
+            const over = rows.filter((r) => r.span > SPAN_LIMIT);
+            expect(`${hand}: ${over.length} span(s) over ${SPAN_LIMIT} mm`)
+                .toBe(`${hand}: 0 span(s) over ${SPAN_LIMIT} mm`);
+            expect(`${hand}: worst span ${worst <= SPAN_LIMIT}`)
+                .toBe(`${hand}: worst span true`);
+        }, 180000);
 });
 
 describe('fill before carve', () => {
