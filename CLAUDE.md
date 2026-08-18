@@ -242,6 +242,25 @@ building, gait physics simulation, and watertight STL/3MF export.
   Also measured: one foot's tenon ran ~0.01 mm wider across corners than the
   other and that alone was enough to make it STICK in a bore. The joint is
   knife-edge at the hundredth — and the fix goes in the HOLE, never the tenon.
+- **THE ROUND BORE IS A COLLET. Measured against four real tenons, 2026-08-18.**
+  Three bores were printed and pushed onto foot tenons spanning the real printed
+  range. Sizes each handled, out of four:
+  · **COLLET (three slots through the wall) — 3 of 4.** Good on the largest,
+    acceptable on the next two, loose only on the smallest. Brett: "the spring
+    sides (which flex nicely, so the design is good)" and "I'm pretty pleased
+    with the functional behavior of the slit springs".
+  · plain 9.70 bore — **1 of 4**. Jams the largest, tight on the second, loose
+    below. This is the fit that had been moving all week; it cannot do better,
+    because no fixed diameter spans a 0.28 mm tenon range.
+  · ribs standing proud in an oversize bore — **1 of 4**, and only the largest,
+    despite gripping NOMINALLY tighter at 9.60. Three small pads do not survive
+    contact: they print short or crush flat on first insertion. DROPPED, not
+    retuned.
+  The collet works for the reason the gate pin already demonstrated — it absorbs
+  its own variation instead of being sized around it. Its one gap is the
+  smallest tenon, which is sizing rather than design: at a 9.70 resting bore the
+  fingers never load. `scripts/collet_plate.mjs` ladders 9.45/9.55/9.65 plus a
+  longer-finger variant to close it.
 - **THE TENON DIMENSION IS INVARIANT. FIX THE ROUND BORE INSTEAD.**
   Brett: "We have kept the tenon dimension invariant because of these ramp
   sockets and I want to keep it that way", and "I think we are looking for a

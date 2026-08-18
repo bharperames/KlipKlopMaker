@@ -2003,7 +2003,11 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
         // code came out bisected. With the grooves gone there is nothing to
         // avoid, and a 60 mm riser gives the block 60 mm to sit in rather than
         // the 14 it was squeezed into.
-        ...hexFlatEngraveOps(opts.code ?? null, 15, 1, sizeMm, spec)
+        // capHeight forwarded, because a caller that asks for bigger text and
+        // silently gets 2.4 has no way to tell. Test articles want a code you
+        // can read across a bench; shipped risers keep the default.
+        ...hexFlatEngraveOps(opts.code ?? null, 15, 1, sizeMm, spec,
+            opts.capHeight ? { capHeight: opts.capHeight } : {})
     ]);
 }
 
