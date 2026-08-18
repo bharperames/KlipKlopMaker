@@ -24,14 +24,14 @@
  * and the far route's underside are invisible to it.
  */
 
-import { layoutTrack, planPillarPositions, planPosAt, pieceInFrame, pieceFrame, SPEC }
+import { layoutTrack, planPillarPositions, planPosAt, pieceInFrame, pieceFrame, bankAt, SPEC }
     from '../js/track.js';
 import { initCSG, buildSwitchExportGeometry } from '../js/pieces.js';
 
 const CELL = 6;                        // triangle bucket size, mm
 
 /** Highest downward hit at (x,z). Mesh is Y-up, in the piece frame. */
-function topSurface(P, I) {
+export function topSurface(P, I) {
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     for (let i = 0; i < P.length; i += 3) {
         x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]);
@@ -68,6 +68,40 @@ function topSurface(P, I) {
         }
         return best;
     };
+}
+
+/**
+ * WORST DIP BELOW THE RAMP LINE, along the direction of travel.
+ *
+ * The lateral-step gate walks ACROSS the channel, so a trough that runs ALONG
+ * it slips straight through — which is how Brett came to find one with his
+ * fingers instead: "a 'trough' effect that requires a bit of a climb to get
+ * back onto the curve route ... this low point is in the 'knee' where the two
+ * routes intersect."
+ *
+ * Valley floors, not crests: the minimum over one ridge pitch, so the washboard
+ * itself reads as zero and only real depressions count. Measured against the
+ * straight line from the route's own entry deck to its own exit deck, plus its
+ * bank, which is the surface a walker is entitled to expect.
+ */
+export function worstDip(top, piece, us = [-18, -9, 0, 9, 18], dS = 2) {
+    let worst = 0, at = 'nowhere';
+    for (let s = 0; s <= piece.planLen; s += dS) {
+        const ideal = piece.entryDeck - piece.drop * (s / piece.planLen);
+        const tb = Math.tan(bankAt(piece, s));
+        for (const u of us) {
+            let lo = Infinity;
+            for (let t = -1.25; t <= 1.25; t += 0.25) {
+                const q = planPosAt(piece, Math.max(0, Math.min(s + t, piece.planLen)));
+                const y = top(q.x + Math.sin(q.h) * u, q.z - Math.cos(q.h) * u);
+                if (y != null) lo = Math.min(lo, y);
+            }
+            if (lo === Infinity) continue;
+            const d = lo - (ideal + u * tb);
+            if (d < worst) { worst = d; at = `s=${s} u=${u}`; }
+        }
+    }
+    return { dip: -worst, at };
 }
 
 /** Sample one route: [s][u] grid of deck height, null off the deck. */

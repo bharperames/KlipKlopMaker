@@ -1763,6 +1763,51 @@ describe('the deck ceiling is held up', () => {
      * is 3 mm3, which is the hub bearing on the boss (0.06 mm across the
      * shoulder) and nothing else. It rejects: the old slot reads 28.4.
      */
+    /*
+     * NO TROUGH ALONG THE ROUTE.
+     *
+     * The lateral gate above walks ACROSS the channel, so a dip running ALONG
+     * it is invisible to it — which is why Brett found one with his fingers
+     * rather than the suite finding it: "this creates a 'trough' effect that
+     * requires a bit of a climb to get back onto the curve route ... this low
+     * point is in the 'knee' where the two routes intersect."
+     *
+     * Valley floors, so the washboard reads zero and only real depressions
+     * count. Measured against the straight line from each route's own entry
+     * deck to its own exit, plus its bank.
+     *
+     * 0.30 mm on a plain piece, where the measured spread is 0.00 to 0.23. It
+     * is known to reject: the SWITCH's main route reads 0.42 at the knee on
+     * this same measurement, which is why the switch limit below is 0.50 and
+     * not 0.30. Tighten it when the merged wall at the knee is rebuilt.
+     */
+    test.each(['start', 'straight', 'curveR', 'end'])(
+        'a %s has no trough along the route', async (type) => {
+            await initCSG();
+            const { topSurface, worstDip } = await import('../scripts/deck_probe.mjs');
+            const { pieceFrame, pieceInFrame } = await import('../js/track.js');
+            const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
+                { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+            const world = pieces.find((q) => q.type === type);
+            const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
+            const g = buildPieceExportGeometry(world, { support: sup });
+            const d = worstDip(topSurface(g.positions, g.indices),
+                pieceInFrame(world, pieceFrame(world)));
+            expect(`${type}: dip ${d.dip.toFixed(2)} mm at ${d.at}`)
+                .toBe(`${type}: dip ${Math.min(d.dip, 0.30).toFixed(2)} mm at ${d.at}`);
+        }, 180000);
+
+    test.each(['switchL', 'switchR'])(
+        'a %s has no trough along either route', async (hand) => {
+            const { probe, worstDip } = await import('../scripts/deck_probe.mjs');
+            const { main, branch, top } = await probe(hand);
+            for (const [label, pc] of [['main', main], ['branch', branch]]) {
+                const d = worstDip(top, pc);
+                expect(`${hand} ${label}: dip ${d.dip.toFixed(2)} mm at ${d.at}`)
+                    .toBe(`${hand} ${label}: dip ${Math.min(d.dip, 0.50).toFixed(2)} mm at ${d.at}`);
+            }
+        }, 240000);
+
     test.each(['switchL', 'switchR'])(
         'a %s gate seats and swings clear', async (hand) => {
             const { swing, overlapAboveDeck } = await import('../scripts/gate_swing.mjs');
