@@ -90,8 +90,13 @@ function ribbedBore(g, gripAC, socketDepth) {
         // a 1.2 mm wide pad spanning from the grip radius outward into the wall
         const rect = [[rGrip, -0.6], [rGrip + 1.2, -0.6], [rGrip + 1.2, 0.6], [rGrip, 0.6]]
             .map(([u, v]) => [u * ca - v * sa, u * sa + v * ca]);
+        // FROM 1.0, NOT BELOW ZERO. Started at -0.4 these stood 0.4 mm PROUD
+        // of the base and the whole post balanced on three rib tips: 4 mm2 of
+        // bed contact against 114 for a plain one, and Bambu called it a
+        // floating cantilever, correctly. Starting above the socket's mouth
+        // flare also gives the tenon a lead-in before it meets them.
         ops.push({ op: ADDITION, geometry: toBufferGeometry(
-            extrudePolygonY(rect, -0.4, socketDepth - 1.5)) });
+            extrudePolygonY(rect, 1.0, socketDepth - 1.5)) });
     }
     return csgChain(g, ops);
 }
@@ -129,7 +134,24 @@ const add = (name, g, note) => {
     if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
         console.error(`*** ${name} IS NOT WATERTIGHT — nothing written`); process.exit(1);
     }
-    parts.push({ name, positions: P, indices: I, cm3: r.volumeMm3 / 1000, note });
+    // IT MUST ALSO BE ABLE TO STAND UP. analyzeMesh says a mesh is closed, not
+    // that it will print: the first ribbed bore was watertight AND balanced on
+    // three 0.4 mm rib tips, 4 mm2 of bed contact against 114. A gate that only
+    // checks topology passes that happily.
+    let z0 = Infinity;
+    for (let i = 2; i < P.length; i += 3) z0 = Math.min(z0, P[i]);
+    let bed = 0;
+    for (let k = 0; k < I.length; k += 3) {
+        const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
+        if (Math.max(P[a + 2], P[b + 2], P[c + 2]) > z0 + 0.15) continue;
+        bed += Math.abs((P[b] - P[a]) * (P[c + 1] - P[a + 1])
+                      - (P[b + 1] - P[a + 1]) * (P[c] - P[a])) / 2;
+    }
+    if (bed < 40) {
+        console.error(`*** ${name} has only ${bed.toFixed(0)} mm2 on the bed — it would `
+            + `print balanced on a few points. Nothing written.`); process.exit(1);
+    }
+    parts.push({ name, positions: P, indices: I, cm3: r.volumeMm3 / 1000, bed, note });
 };
 
 const post = (bore, code) => buildRiserGeometry(15,
@@ -199,6 +221,7 @@ const rows = audit({ name: 'r',
 
 console.log(`\n${file}`);
 console.log(`${parts.length} objects, ${parts.reduce((s, p) => s + p.cm3, 0).toFixed(1)} cm3, all watertight\n`);
-for (const p of parts) console.log(`   ${p.name.padEnd(11)} ${p.cm3.toFixed(2).padStart(7)} cm3   ${p.note}`);
+for (const p of parts) console.log(`   ${p.name.padEnd(11)} ${p.cm3.toFixed(2).padStart(7)} cm3  `
+    + `${p.bed.toFixed(0).padStart(6)} mm2 on the bed   ${p.note}`);
 console.log(`\ncal_ramp worst unsupported span ${(rows[0]?.span ?? 0).toFixed(1)} mm, `
     + `${rows.filter((r) => r.span > 20).length} over 20`);
