@@ -240,9 +240,24 @@ building, gait physics simulation, and watertight STL/3MF export.
   enough to provide any friction resistance at all." So the foot keeps the FULL
   tenon; the trim option stays at its 0 default and is a test article only.
   Also measured: one foot's tenon ran ~0.01 mm wider across corners than the
-  other and that alone was enough to make it STICK in a bore. The joint is still
-  knife-edge at the hundredth, which is the argument for truncating the tenon's
-  corners so the mating dimension is a drawn flat rather than a printed point.
+  other and that alone was enough to make it STICK in a bore. The joint is
+  knife-edge at the hundredth — and the fix goes in the HOLE, never the tenon.
+- **THE TENON DIMENSION IS INVARIANT. FIX THE ROUND BORE INSTEAD.**
+  Brett: "We have kept the tenon dimension invariant because of these ramp
+  sockets and I want to keep it that way", and "I think we are looking for a
+  round hole solution, not a tenon fix." The hex tenon mates with the HEX SOCKET
+  in every ramp and curve already printed and that pairing WORKS; changing it to
+  suit the round bore would break the proven half to rescue the unproven one and
+  invalidate a drawer of parts. Truncating its corners to a dodecagon was
+  proposed and REJECTED on exactly that ground — do not raise it again.
+  The bore side is where the arithmetic actually bites, and it is decisive: the
+  same tenon drawing prints 9.65-9.93 across corners, so a bore that always
+  ACCEPTS the largest needs D >= 9.93 and one that GRIPS the smallest needs
+  D <= 9.65. No plain cylinder is both, which is why `boreDia` moved five times
+  in one day. The hole has to be COMPLIANT, and the precedent is already here:
+  the gate pin is a split C mating at 0.00 clearance and reads "a great fit,
+  perfect". `scripts/fit_spread_plate.mjs` tests two ways — ribs standing proud
+  inside an oversize bore, and a slotted collet — with the tenon untouched.
 - **THREE FITS ARE CONFIRMED IN PLASTIC AND MUST NOT BE "IMPROVED".** Measured
   by hand off PETG prints, August 2026:
   · **hex tenon in socket** (0.20 mm/side) — "very nice and tight" pillar into
