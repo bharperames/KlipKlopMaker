@@ -1988,9 +1988,12 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
         ].map(y => ({ origin: [0, y, 0], right: [1, 0, 0], up: [0, 0, -1] }))
     ));
     const ops = [
-        // the socket the riser stack plugs into, opening downward — a ROUND
-        // bore now; see SPEC.socket.boreDia
-        { op: SUBTRACTION, geometry: roundSocketSolid(spec.socket.boreDia, -0.5, spec.socket.depth) },
+        // the socket the riser stack plugs into, opening downward. The SAME
+        // joint as a riser's and a jog's — a hex tenon gripped for friction —
+        // so it takes the same slotted hex collet. It was briefly left as a
+        // round bore on the reasoning that "the collar rings a pillar rather
+        // than gripping it", which this line's own comment disproves.
+        ...colletSocketOps(spec),
         // the flat: a slab taken off one side of the body only
         {
             op: SUBTRACTION,

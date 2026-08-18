@@ -287,8 +287,9 @@ export const SPEC = {
          * printed keeps its fit.
          */
         // THE ROUND BORE IS RETIRED as a friction joint — none of the round
-        // collets took the real spread of tenons. Kept for buildSpacerGeometry,
-        // whose collar rings a pillar rather than gripping it.
+        // collets took the real spread of tenons. Nothing shipped subtracts it
+        // any more; `roundSocketDia` keeps it reachable so a ladder can still
+        // be built against it.
         boreDia: 9.70,
         // The slotted HEX socket that replaced it, read off a printed ladder
         // against nine real base tenons, two copies of each rung agreeing:

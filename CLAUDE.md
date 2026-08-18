@@ -270,8 +270,12 @@ building, gait physics simulation, and watertight STL/3MF export.
   engagement; three slots let it open for an oversize tenon.
   **THE TENON IS UNTOUCHED**, which was the constraint the whole search ran
   under: it still mates with every hex socket in every ramp and curve printed.
-  `boreDia` survives only for `buildSpacerGeometry`, whose collar rings a pillar
-  rather than gripping it. Risers and the jog take `colletSocketOps`.
+  EVERY shipped socket that a hex tenon plugs into takes `colletSocketOps` —
+  riser, jog AND spacer. The spacer was briefly left as a round bore on the
+  reasoning that "the collar rings a pillar rather than gripping it"; that is
+  false, and the line's own comment says so — "the socket the riser stack plugs
+  into". It is the same joint. Nothing shipped subtracts `boreDia` now;
+  `roundSocketDia` keeps it reachable so a ladder can still be built.
   Cost, and it is real: the slots sever the shell, so a riser's first layer is
   three ~38 mm2 islands rather than one of 116. **These parts want a brim** —
   see the islands note above.
