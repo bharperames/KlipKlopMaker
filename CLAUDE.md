@@ -178,6 +178,19 @@ building, gait physics simulation, and watertight STL/3MF export.
   own thinness. Nominals for the measurement sheet are read off `SPEC`, and
   `tests/pieces.test.js` asserts that (and that every coupon sits on the bed —
   one balanced on a corner prints skewed and every reading off it is fiction).
+- **BED CONTACT IS A QUESTION ABOUT ISLANDS, NOT ABOUT AREA.** Summing every
+  downward face and checking the total passes a part whose first layer is in
+  separate pieces, each of which has to hold its own tower down alone. The
+  collet test article scored 122 mm² and was THREE unbraced 35 mm² crescents
+  10.5 mm tall — its slots are cut at the shaft's hex corners and run out past
+  the 8.66 corner radius, so they sever the shell — and Brett got spaghetti off
+  the one that printed first in the grid. `scripts/first_layer.mjs` rasterises
+  the slab by ray-cast parity (a prism has mesh vertices only at its section
+  boundaries, so sampling vertices near a height finds nothing mid-shaft) and
+  floods it; **gate on the SMALLEST island**. For a collet the islands are
+  inherent — the fingers must be free at the mouth and the mouth is at the bed
+  — so that plate prints with a brim; tying the fingers with a ligament instead
+  puts 18% strain in three 1 mm webs and cracks them.
 - **THE CALIBRATION SET TRANSFERS A SETTLED GEOMETRY; IT DOES NOT DISCOVER ONE.**
   That is the whole reason it is 7 items and 83 g rather than the 20 items and
   144 g it was. An article earns its place only if it answers something the real
