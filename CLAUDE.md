@@ -515,6 +515,31 @@ viaduct curve 71 mm.
   skirt, not on the slicer's cantilever warning — that warning fires on curves
   whatever the geometry.
 
+- **THE FROG'S EDGE AND ITS FLAT ARE ONE BUG, AND "SPLIT THE BANK" IS NOT A
+  CHOICE.** Both routes fall at the same rate along their OWN path and their
+  headings differ by up to 45°, so their deck planes meet along a LINE and
+  nowhere else. `frogDeckKnots` matches them along the branch CENTRELINE; away
+  from it they diverge at **0.11 mm/mm** — ±2.6 mm across a 48 mm channel. That
+  one gap wears two costumes: the EDGE across the curve route (the surface
+  follows whichever deck is lower and kinks at the main's channel boundary,
+  1.94 mm down across the branch's inboard half) and the FLAT (75 mm of branch
+  and 100 mm of main with NO washboard — each route's clearance envelope is
+  referenced to its own deck, so it passes under the other's ridge crests and
+  shaves them). Measure both with `scripts/deck_probe.mjs`, never from a render:
+  shading makes a crease and a groove look identical.
+  Sharing the tilt half-and-half was built and it is not available — both
+  along-slopes are already pinned (the main by its grade, the branch by
+  frogDeckKnots), and those two constraints determine the common surface
+  UNIQUELY as the main's plane, branch taking all the tilt and main none. Half
+  leaves ±1.3 mm, still far over the 0.65 the envelope needs, so the shaving
+  continues; measured, it is barely better than shipped.
+  Full tilt on the branch DOES fix the surface — branch worst lateral step
+  1.37 → 0.43 mm, flat samples 69 → 22 and 63 → 21 — but banking the STATION
+  tilts the whole section, rim included, so the underside stops being planar
+  and the part cannot lie down: worst span 10 → 70 mm, 0 → 107 clusters over
+  20 mm, first layer 14 413 mm² in one island → 3 mm² in five. Do not ship a
+  station bank. The next attempt is to tilt the DECK ONLY and leave the rim
+  level — a change in the profile builder, not in `stationsForPiece`.
 - **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
   and supports stack from five reusable riser designs. Never change STANDARD
