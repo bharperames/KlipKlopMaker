@@ -1067,7 +1067,18 @@ function undersideSupportOps(piece, spec) {
     // THE SAME EXPRESSION `skirtBottom` USES: a rim-down piece's cavity floor is
     // its RIM, not the underside plane, and three places expressing one surface
     // is what once put the boss in mid-air.
-    const floorAt = (x, z) => (lying ? pl0.at(x, z) : Math.max(piece.rimY, pl0.at(x, z)));
+    // AN ELEVATOR HAS NO UNDERSIDE PLANE WORTH CONSULTING. `undersidePlane`
+    // fits a plane to the deck, and an elevator's deck is not a ramp — it is a
+    // flat at 11.8, a lift, and a flat at 102. The best-fit plane through that
+    // climbs steadily and reaches 85 mm at the exit end, so `max(rimY, plane)`
+    // started the fill 75 mm up and left the exit LANDING floating: probed at
+    // (138, -8) the part had material only from 75 to 102.3, with nothing
+    // beneath it. The elevator prints rim-down, so its cavity floor is the RIM
+    // and nothing else.
+    const floorAt = (x, z) => (lying ? pl0.at(x, z)
+        : (piece.isElevator || piece.type === 'elevator')
+            ? piece.rimY
+            : Math.max(piece.rimY, pl0.at(x, z)));
 
     // WIDE AT THE DECK, CLEAR OF THE WALL AT THE SOLE — and the taper is the
     // whole point, because the two ends of the fill want opposite things.
