@@ -23,14 +23,25 @@
  *
  * WHAT IS LEFT. The collet's one gap is the SMALLEST tenon, and that is sizing,
  * not design — at a 9.70 resting bore the fingers never load against a small
- * tenon, so there is nothing to spring. Bring the resting diameter down and the
- * bottom of the range comes into contact. This plate is that ladder:
+ * tenon, so there is nothing to spring. Brett: "if it was a little smaller bore,
+ * it would grip the smallest of the tenons and still flex to fit the largest."
  *
- *   C945   resting bore 9.45     · notches 1,2,3 = copy A,B,C
- *   C955   resting bore 9.55
- *   C965   resting bore 9.65
- *   C95L   9.55 with LONGER slots — more compliant fingers, in case range
- *          rather than size is the limit
+ * AND THE FINGERS MATTER MORE THAN THE BORE. Radial spring force goes as 1/L^3:
+ *
+ *   bore 9.70, slots 10.5   opens 0.115   33 N   <- what Brett liked
+ *   bore 9.45, slots 10.5   opens 0.240   78 N   <- 2.4x stiffer, bore alone
+ *   bore 9.45, slots 14.0   opens 0.240   33 N   <- same feel, 0.24 more reach
+ *
+ * So this is a 2x2 in bore and slot length, not a bore ladder:
+ *
+ *   945L  bore 9.45, slots 14.0  — the prediction
+ *   955L  bore 9.55, slots 14.0  — brackets it
+ *   945S  bore 9.45, slots 10.5  — smaller bore with no extra compliance
+ *   970S  bore 9.70, slots 10.5  — the reference you already liked
+ *
+ * 14 mm is the ceiling: the shaft is 15 mm and a longer slot cuts into the
+ * TENON. Strain peaks at 0.9% against a 4-5% yield, so nothing here is near
+ * breaking; the limit is push force, not fracture.
  *
  * READ IT AGAINST YOUR SIX BASES, smallest tenon to largest. The winner is the
  * bore that grips ALL of them, not the one that grips the middle best. A collet
@@ -124,16 +135,35 @@ const post = (bore, code) => buildRiserGeometry(15,
     { ...SPEC, socket: { ...SPEC.socket, boreDia: bore } },
     { code, capHeight: CAP });
 
-for (const [bore, code] of [[9.45, 'C945'], [9.55, 'C955'], [9.65, 'C965']]) {
+// SLOT LENGTH IS THE OTHER VARIABLE, and the arithmetic says it matters more
+// than the bore. Radial spring force goes as 1/L^3, so shrinking the bore
+// alone stiffens the joint sharply against a big tenon:
+//
+//   bore 9.70, slots 10.5   0.115 mm open   33 N   <- what Brett liked
+//   bore 9.45, slots 10.5   0.240 mm open   78 N   <- 2.4x stiffer
+//   bore 9.45, slots 14.0   0.240 mm open   33 N   <- same feel, 0.24 more reach
+//
+// So the plate is a 2x2 in bore and slot length rather than a bore ladder.
+// 14 mm is the ceiling: the shaft is 15 mm and a longer slot would cut into the
+// TENON above it. Strain never exceeds 0.9% against a 4-5% yield, so nothing
+// here is near breaking — the limit is how hard it is to push together.
+const SHORT = DEPTH + 0.5;        // 10.5, as printed and liked at 9.70
+const LONG = 14.0;                // the most a 15 mm shaft allows
+
+for (const [bore, slot, code, note] of [
+    [9.45, LONG,  '945L', 'the prediction: reaches the smallest, baseline force'],
+    [9.55, LONG,  '955L', 'same fingers, less reach — brackets 945L'],
+    [9.45, SHORT, '945S', 'smaller bore ALONE, no longer fingers — 78 N, should feel stiff'],
+]) {
     for (let n = 1; n <= 3; n++) {
-        add(`${code}_${n}`, csgChain(colletBore(post(bore, code), DEPTH), notchOps(n)),
-            `resting bore ${bore.toFixed(2)} · copy ${n}`);
+        add(`${code}_${n}`, csgChain(colletBore(post(bore, code), DEPTH, slot), notchOps(n)),
+            `bore ${bore.toFixed(2)} · slots ${slot.toFixed(1)} · copy ${n} — ${note}`);
     }
 }
-// longer fingers at the middle size, in case RANGE is the limit rather than size
+// the reference, on this plate so it is read under the same conditions
 for (let n = 1; n <= 2; n++) {
-    add(`C95L_${n}`, csgChain(colletBore(post(9.55, 'C95L'), DEPTH, DEPTH + 4), notchOps(n)),
-        'resting bore 9.55, slots 4 mm longer · copy ' + n);
+    add(`970S_${n}`, csgChain(colletBore(post(9.70, '970S'), DEPTH, SHORT), notchOps(n)),
+        `bore 9.70 · slots ${SHORT.toFixed(1)} · copy ${n} — what you already liked`);
 }
 
 // thermal load, so this plate prints under the same conditions as the last one
