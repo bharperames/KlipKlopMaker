@@ -1995,8 +1995,15 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
     return csgChain(body, [
         ...(round ? [{ op: ADDITION, geometry: toBufferGeometry(
             roundTenon(round, sizeMm - 0.4, sizeMm + spec.socket.depth - 1)) }] : []),
-        { op: SUBTRACTION, geometry: roundSocketSolid(
-            opts.roundSocketDia ?? spec.socket.boreDia, -0.5, spec.socket.depth) },
+        // `hexSocketAF` puts the ORIGINAL hex socket back, at a stated size.
+        // Opt-in and test-only: the round bore is what ships. It exists because
+        // hex-on-hex is the one pillar joint that has never been in doubt
+        // ("very nice and tight"), so a slotted hex is a candidate the round
+        // bore has to beat, and a candidate has to be buildable to be tried.
+        { op: SUBTRACTION, geometry: opts.hexSocketAF
+            ? hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec, opts.hexSocketAF)
+            : roundSocketSolid(
+                opts.roundSocketDia ?? spec.socket.boreDia, -0.5, spec.socket.depth) },
         // The code gets the WHOLE shaft to centre itself on now. It used to be
         // pushed into the band above the last grid mark, because centring on
         // sizeMm/2 put it exactly where a groove ran on a 30 and a 60 and the

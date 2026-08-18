@@ -1,58 +1,84 @@
 #!/usr/bin/env node
 /**
- * TUNE THE COLLET. The mechanism is settled; only its resting size is not.
+ * SIZE THE COLLET, AND TRY IT WITH A HEX HOLE.
  *
  *   node scripts/collet_plate.mjs
  *
- * WHAT THE LAST PLATE SETTLED. Against four foot tenons spanning the real
- * printed range, Brett found:
+ * MEASURED, and it overturns the arithmetic every earlier plate was sized by.
+ * Brett put calipers across the real base tenons:
  *
- *   COL  slit spring    3 of 4 — good on the largest, acceptable on the next
- *                       two, loose only on the smallest. "The spring sides
- *                       flex nicely, so the design is good."
- *   HEX  plain 9.70     1 of 4 — jams the largest, tight on the second, loose
- *                       below. This is the fit that has been moving all week.
- *   RIB  ribs at 9.60   1 of 4 — only the largest, despite gripping NOMINALLY
- *                       tighter than the plain bore. Three small pads do not
- *                       survive contact; they print short, or crush flat on
- *                       first insertion. The rib approach is dropped, not
- *                       retuned.
+ *   smallest 9.53 mm across vertices · largest 9.60 · SPREAD 0.07
  *
- * So the round bore becomes a COLLET, for the reason the gate pin already
- * demonstrated: it absorbs its own variation instead of being sized around it.
+ * Every previous ladder here assumed 9.65-9.93, a 0.28 spread, and sized the
+ * fingers to swallow it. They do not have to swallow anything like that. The
+ * collet's job is four times smaller than it was designed for.
  *
- * WHAT IS LEFT. The collet's one gap is the SMALLEST tenon, and that is sizing,
- * not design — at a 9.70 resting bore the fingers never load against a small
- * tenon, so there is nothing to spring. Brett: "if it was a little smaller bore,
- * it would grip the smallest of the tenons and still flex to fit the largest."
+ * DRAWN IS NOT PRINTED, and mixing the two frames is what hid this:
  *
- * AND THE FINGERS MATTER MORE THAN THE BORE. Radial spring force goes as 1/L^3:
+ *   tenon  drawn 9.93 across corners  ->  prints 9.53-9.60
+ *   bore   drawn 9.70                 ->  prints about 9.60
  *
- *   bore 9.70, slots 10.5   opens 0.115   33 N   <- what Brett liked
- *   bore 9.45, slots 10.5   opens 0.240   78 N   <- 2.4x stiffer, bore alone
- *   bore 9.45, slots 14.0   opens 0.240   33 N   <- same feel, 0.24 more reach
+ * The bore figure is read back from behaviour, not calipers: the printed 9.70
+ * collet is "just barely tight enough for the largest with virtually no spring
+ * needed ... wobbly loose on the smallest." A bore that only just touches a
+ * 9.60 tenon IS 9.60. So 9.70 did not fail because the spread beat it — it is
+ * sized 0.10-0.17 too big and the fingers never load at all.
  *
- * So this is a 2x2 in bore and slot length, not a bore ladder:
+ *   drawn   prints   vs 9.53 smallest   vs 9.60 largest
+ *   9.40     9.30    grips 0.23         grips 0.30
+ *   9.55     9.45    grips 0.08         grips 0.15
+ *   9.70     9.60    loose 0.07         grips 0.00      <- THE CONTROL
  *
- *   945L  bore 9.45, slots 14.0  — the prediction
- *   955L  bore 9.55, slots 14.0  — brackets it
- *   945S  bore 9.45, slots 10.5  — smaller bore with no extra compliance
- *   970S  bore 9.70, slots 10.5  — the reference you already liked
+ * SLOT LENGTH IS NOT A VARIABLE HERE. An earlier draft lengthened the fingers
+ * to 14 mm to buy reach over a 0.28 spread; against 0.07 there is nothing to
+ * reach for, and Brett: "I don't think the slit should be longer, it doesn't
+ * need it to flex correctly." 10.5 mm, as printed and approved.
  *
- * 14 mm is the ceiling: the shaft is 15 mm and a longer slot cuts into the
- * TENON. Strain peaks at 0.9% against a 4-5% yield, so nothing here is near
- * breaking; the limit is push force, not fracture.
+ * THE HEX HOLE IS THE OTHER HALF OF THE PLATE, and it is Brett's proposal:
+ * "the alignment of the hex, and the flexibility/adaptability of the collet."
+ * It has the better prior. Hex-on-hex is the one pillar joint that has never
+ * been in doubt — the shipped socket is 8.75 AF against an 8.6 AF tenon and it
+ * is "very nice and tight" — and the reason a round bore has been so hard to
+ * size is that THE TENON IS TAPERED: 8.6 AF at the root falling to 8.3 at the
+ * tip. A cylinder can only touch a tapered hex at ONE height, so its grip is a
+ * ring of six points that slides with insertion depth. A hex hole beds on six
+ * FLATS over the whole engagement, and slotting it adds the give.
  *
- * READ IT AGAINST YOUR SIX BASES, smallest tenon to largest. The winner is the
- * bore that grips ALL of them, not the one that grips the middle best. A collet
- * that only spans four is the same failure as a fixed diameter, just wider.
+ *   H875   8.75 AF — the shipped socket, slotted. Grip from the slots alone.
+ *   H860   8.60 AF — meets the tenon root exactly: zero clearance at the seat.
+ *   H845   8.45 AF — 0.15 interference; the fingers must open to admit it.
  *
- * MARKING, because the last set was unreadable. The code is the resting bore at
- * cap 4.0 mm — 67% larger than the 2.4 used before, and still inside the 12 mm
- * a 15 mm flat allows. NOTCHES ARE THE COPY NUMBER now, not the variant: the
- * variant is written on the part in letters you can actually read. Two lines
- * would force the cap back down, so the code is one line and the copy is
- * counted instead.
+ * ---------------------------------------------------------------------------
+ * PRINT THIS PLATE WITH BRIM ON. Not a preference — the collet's first layer is
+ * THREE SEPARATE ISLANDS, and that is what spaghettified a post on the last
+ * plate. The slots are cut at the hex corners and run out to r 9.0, past the
+ * 8.66 corner radius, so they sever the shell: a plain post lands 116 mm2 in
+ * one piece, the collet lands 3 x 35 mm2 that stay separate for the full 10.5
+ * mm of slot. Three tall thin unbraced crescents, and the one that failed was
+ * first in the grid where the nozzle arrives coldest.
+ *
+ * This is inherent, not a bug to design out. A collet's fingers must be FREE at
+ * the mouth, the mouth is at the bed, and free-at-the-bed means islands. The
+ * alternatives were worked through and all fail: stopping the slot short of the
+ * shell leaves the fingers tied by a ligament in hoop tension (0.55 mm of
+ * stretch shared by three 1 mm webs is 18% strain — it cracks, it does not
+ * spring); rooting the fingers at the bed instead puts the compliance at the
+ * blind end where the tenon never reaches; a shared base pad is the same hoop
+ * problem 0.6 mm tall. A brim costs a checkbox and removes in seconds.
+ *
+ * If a slotted bore wins, production needs its own answer to this. That is a
+ * decision to take once we know which bore wins, not before.
+ * ---------------------------------------------------------------------------
+ *
+ * MARKING. The engraved code is the variant, at cap 4.0 mm so it reads across a
+ * bench. NOTCHES ARE THE RANK WITHIN THE FAMILY, tightest first — R940 and H845
+ * get 1, R955 and H860 get 2, R970 and H875 get 3. Copies of one variant are
+ * interchangeable and carry no extra mark; counting copies is what made the
+ * first set unreadable.
+ *
+ * READ IT AGAINST ALL NINE BASES. The winner grips the 9.53 one AND accepts the
+ * 9.60 one. A bore that only spans the top of the range is a fixed diameter
+ * with extra steps — which is precisely what the control turned out to be.
  */
 
 import fs from 'node:fs';
@@ -60,16 +86,17 @@ import path from 'node:path';
 import * as fflate from 'fflate';
 import { SPEC, layoutTrack, planPillarPositions } from '../js/track.js';
 import { initCSG, buildPieceExportGeometry, buildRiserGeometry, csgChain,
-    toBufferGeometry, SUBTRACTION, CALIBRATION, HEX_FLAT_CAP } from '../js/pieces.js';
+    toBufferGeometry, SUBTRACTION, CALIBRATION } from '../js/pieces.js';
 import { extrudePolygonY } from '../js/geometry.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
 import { generateMultiObject3MFXML } from '../js/export_3mf.js';
-import { audit } from './overhang_audit.mjs';
+import { slabIslands } from './first_layer.mjs';
 
 const OUT = 'test-parts/collet';
-const CAP = 4.0;                 // engraved cap height — the last set was 2.4
+const CAP = 4.0;                  // engraved cap height — the first set was 2.4
+const REACH = SPEC.socket.depth + 0.5;   // 10.5, the finger length that was approved
 
-/** Copy number, countable by feel. */
+/** Rank within the family, countable by feel: 1 = tightest. */
 function notchOps(n) {
     const ops = [];
     for (let k = 0; k < n; k++) {
@@ -83,12 +110,17 @@ function notchOps(n) {
 /**
  * Slot the bore wall so it can open — three fingers that spring apart.
  *
- * `reach` is how far up the slots run. Longer slots make longer, more compliant
- * fingers, which widens the range of tenon the collet can take before the force
- * becomes silly. The gate pin does the same thing with one axial slot on the
- * male side and mates at 0.00 clearance.
+ * The slots sit at 60/180/300 deg, which is where BOTH hexes put a corner: the
+ * shaft's, so the cut leaves the engraved flat alone, and the hex bore's, so
+ * each finger keeps two whole flats to bed on and the cut lands on the stress
+ * concentration instead of beside it.
+ *
+ * The gate pin does the same thing from the male side — a hollow pin with one
+ * axial slot, a C-spring, mating at 0.00 clearance — and it is the only joint
+ * in this library that absorbs its own variation instead of being sized around
+ * it.
  */
-function colletBore(g, socketDepth, reach = socketDepth + 0.5) {
+function colletBore(g) {
     const ops = [];
     for (let i = 0; i < 3; i++) {
         const a = ((i + 0.5) / 3) * 2 * Math.PI;
@@ -96,7 +128,7 @@ function colletBore(g, socketDepth, reach = socketDepth + 0.5) {
         const rect = [[3.0, -0.5], [9.0, -0.5], [9.0, 0.5], [3.0, 0.5]]
             .map(([u, v]) => [u * ca - v * sa, u * sa + v * ca]);
         ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(
-            extrudePolygonY(rect, -1, reach)) });
+            extrudePolygonY(rect, -1, REACH)) });
     }
     return csgChain(g, ops);
 }
@@ -113,58 +145,37 @@ const add = (name, g, note) => {
     if (!(r.isManifold && r.isConsistent && r.windsOutward)) {
         console.error(`*** ${name} IS NOT WATERTIGHT — nothing written`); process.exit(1);
     }
-    // and it must stand up: a watertight part balanced on three rib tips is
-    // what the last plate nearly shipped
-    let z0 = Infinity;
-    for (let i = 2; i < P.length; i += 3) z0 = Math.min(z0, P[i]);
-    let bed = 0;
-    for (let k = 0; k < I.length; k += 3) {
-        const a = I[k] * 3, b = I[k + 1] * 3, c = I[k + 2] * 3;
-        if (Math.max(P[a + 2], P[b + 2], P[c + 2]) > z0 + 0.15) continue;
-        bed += Math.abs((P[b] - P[a]) * (P[c + 1] - P[a + 1])
-                      - (P[b + 1] - P[a + 1]) * (P[c] - P[a])) / 2;
+    // AND IT MUST STAND UP. Total bed area is not the question — a part can
+    // have plenty of it in pieces that each have to hold their own tower down.
+    // The gate is on the SMALLEST island.
+    let y0 = Infinity;
+    for (let i = 1; i < P.length; i += 3) y0 = Math.min(y0, P[i]);
+    const fl = slabIslands(P, I, y0 + 0.10);
+    const smallest = fl.areas[fl.areas.length - 1] ?? 0;
+    if (smallest < 25) {
+        console.error(`*** ${name}: an island of only ${smallest.toFixed(0)} mm2`);
+        process.exit(1);
     }
-    if (bed < 40) {
-        console.error(`*** ${name}: only ${bed.toFixed(0)} mm2 on the bed`); process.exit(1);
-    }
-    parts.push({ name, positions: P, indices: I, cm3: r.volumeMm3 / 1000, bed, note });
+    parts.push({ name, positions: P, indices: I, cm3: r.volumeMm3 / 1000, fl, note });
 };
 
-const DEPTH = SPEC.socket.depth;
-const post = (bore, code) => buildRiserGeometry(15,
-    { ...SPEC, socket: { ...SPEC.socket, boreDia: bore } },
-    { code, capHeight: CAP });
+const post = (opts, code) => buildRiserGeometry(15, SPEC, { ...opts, code, capHeight: CAP });
 
-// SLOT LENGTH IS THE OTHER VARIABLE, and the arithmetic says it matters more
-// than the bore. Radial spring force goes as 1/L^3, so shrinking the bore
-// alone stiffens the joint sharply against a big tenon:
-//
-//   bore 9.70, slots 10.5   0.115 mm open   33 N   <- what Brett liked
-//   bore 9.45, slots 10.5   0.240 mm open   78 N   <- 2.4x stiffer
-//   bore 9.45, slots 14.0   0.240 mm open   33 N   <- same feel, 0.24 more reach
-//
-// So the plate is a 2x2 in bore and slot length rather than a bore ladder.
-// 14 mm is the ceiling: the shaft is 15 mm and a longer slot would cut into the
-// TENON above it. Strain never exceeds 0.9% against a 4-5% yield, so nothing
-// here is near breaking — the limit is how hard it is to push together.
-const SHORT = DEPTH + 0.5;        // 10.5, as printed and liked at 9.70
-const LONG = 14.0;                // the most a 15 mm shaft allows
-
-for (const [bore, slot, code, note] of [
-    [9.45, LONG,  '945L', 'the prediction: reaches the smallest, baseline force'],
-    [9.55, LONG,  '955L', 'same fingers, less reach — brackets 945L'],
-    [9.45, SHORT, '945S', 'smaller bore ALONE, no longer fingers — 78 N, should feel stiff'],
-]) {
-    for (let n = 1; n <= 3; n++) {
-        add(`${code}_${n}`, csgChain(colletBore(post(bore, code), DEPTH, slot), notchOps(n)),
-            `bore ${bore.toFixed(2)} · slots ${slot.toFixed(1)} · copy ${n} — ${note}`);
+// tightest first, so the notch count IS the rank within the family
+const LADDER = [
+    ['R940', { roundSocketDia: 9.40 }, 'round 9.40 · prints ~9.30 · grips 0.23/0.30 — stiff bracket'],
+    ['R955', { roundSocketDia: 9.55 }, 'round 9.55 · prints ~9.45 · grips 0.08/0.15 — THE PREDICTION'],
+    ['R970', { roundSocketDia: 9.70 }, 'round 9.70 · THE CONTROL — the exact geometry you printed'],
+    ['H845', { hexSocketAF: 8.45 },    'hex 8.45 AF · 0.15 interference at the root — fingers must open'],
+    ['H860', { hexSocketAF: 8.60 },    'hex 8.60 AF · meets the tenon root — zero clearance at the seat'],
+    ['H875', { hexSocketAF: 8.75 },    'hex 8.75 AF · THE SHIPPED SOCKET, slotted — grip from slots alone'],
+];
+LADDER.forEach(([code, opts, note], i) => {
+    for (let n = 1; n <= 2; n++) {
+        add(`${code}_${n}`, csgChain(colletBore(post(opts, code)), notchOps((i % 3) + 1)),
+            `${note}   [${(i % 3) + 1} notch]`);
     }
-}
-// the reference, on this plate so it is read under the same conditions
-for (let n = 1; n <= 2; n++) {
-    add(`970S_${n}`, csgChain(colletBore(post(9.70, '970S'), DEPTH, SHORT), notchOps(n)),
-        `bore 9.70 · slots ${SHORT.toFixed(1)} · copy ${n} — what you already liked`);
-}
+});
 
 // thermal load, so this plate prints under the same conditions as the last one
 const t = layoutTrack(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
@@ -175,8 +186,8 @@ for (const p of t.pieces.filter((q) => q.type === 'straight')) {
     const su = sups.find((x) => x.pieceIndex === p.index);
     if (su && su.mode !== 'none') { tile = p; tileSup = su; break; }
 }
-const sg = buildPieceExportGeometry(tile, { support: tileSup, forPrint: true });
-add('cal_ramp', sg, 'thermal load, matching the last plate');
+add('cal_ramp', buildPieceExportGeometry(tile, { support: tileSup, forPrint: true }),
+    'thermal load, matching the last plate');
 
 const bbox = (p) => { let x0=1e9,x1=-1e9,y0=1e9,z0=1e9,z1=-1e9;
     for (let i = 0; i < p.length; i += 3) {
@@ -184,6 +195,7 @@ const bbox = (p) => { let x0=1e9,x1=-1e9,y0=1e9,z0=1e9,z1=-1e9;
         z0=Math.min(z0,p[i+2]); z1=Math.max(z1,p[i+2]); }
     return { x0, x1, y0, z0, z1 }; };
 const objs = [];
+// 10 mm of clear air between posts, because a brim needs somewhere to go
 let cx = 20, row = 60, rowDepth = 0;
 for (const p of parts) {
     const b = bbox(p.positions);
@@ -191,9 +203,9 @@ for (const p of parts) {
     let at;
     if (p.name === 'cal_ramp') at = [128 - (b.x0 + b.x1) / 2, 195 + (b.z0 + b.z1) / 2, -b.y0];
     else {
-        if (cx + w > 236) { cx = 20; row += rowDepth + 8; rowDepth = 0; }
+        if (cx + w > 236) { cx = 20; row += rowDepth + 12; rowDepth = 0; }
         at = [cx - b.x0, row - b.z0, -b.y0];
-        cx += w + 8; rowDepth = Math.max(rowDepth, d);
+        cx += w + 12; rowDepth = Math.max(rowDepth, d);
     }
     objs.push({ name: p.name, positions: p.positions, indices: p.indices, at });
 }
@@ -205,6 +217,8 @@ fs.writeFileSync(file, Buffer.from(fflate.zipSync({
 })));
 
 console.log(`\n${file}`);
-console.log(`${parts.length} objects, ${parts.reduce((s, p) => s + p.cm3, 0).toFixed(1)} cm3, all watertight\n`);
-for (const p of parts) console.log(`   ${p.name.padEnd(10)} ${p.cm3.toFixed(2).padStart(7)} cm3  `
-    + `${p.bed.toFixed(0).padStart(6)} mm2 bed   ${p.note}`);
+console.log(`${parts.length} objects, ${parts.reduce((s, p) => s + p.cm3, 0).toFixed(1)} cm3, all watertight`);
+console.log('PRINT WITH BRIM ON — see the header.\n');
+for (const p of parts) console.log(`   ${p.name.padEnd(10)} ${p.cm3.toFixed(2).padStart(6)} cm3  `
+    + `${String(p.fl.islands).padStart(2)} island(s) `
+    + `${p.fl.areas.map(a => a.toFixed(0)).join('+').padEnd(12)} mm2   ${p.note}`);
