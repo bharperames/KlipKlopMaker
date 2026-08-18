@@ -297,6 +297,9 @@ export const SPEC = {
         // acceptable on the smallest and snug on the largest.
         colletAF: 8.60,
         colletSlotReach: 10.5,
+        // The opt-in print brim on slotted parts. Annular so the socket mouth
+        // stays clear; innerR is just outside the hex bore's corner radius.
+        brim: { thickMm: 0.4, radiusMm: 10.5, innerR: 5.2 },
         /**
          * A LEAD-IN TAPER ON THE TENON, so it finds the bore before it has to
          * fit it. Brett: "I would like to consider a smaller taper on the

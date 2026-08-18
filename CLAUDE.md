@@ -277,8 +277,17 @@ building, gait physics simulation, and watertight STL/3MF export.
   into". It is the same joint. Nothing shipped subtracts `boreDia` now;
   `roundSocketDia` keeps it reachable so a ladder can still be built.
   Cost, and it is real: the slots sever the shell, so a riser's first layer is
-  three ~38 mm2 islands rather than one of 116. **These parts want a brim** —
-  see the islands note above.
+  three ~38 mm2 islands rather than one of 116 (see the islands note above).
+  **The Print shop has a "Brim on slotted posts" checkbox** for it — an INTEGRAL
+  annular brim, added after the slots and deliberately NOT slotted, so while it
+  prints it ties the three fingers together and the part lands as ONE island
+  (riser 258 mm2, spacer 214, jog 792) at a cost of 0.05 cm3. Three snips at the
+  slots and it peels off, and the collet is a collet again. It is geometry
+  rather than a slicer setting because our 3MF carries GEOMETRY ONLY and cannot
+  ask for a brim; a slicer brim does the same job with no snipping, which is why
+  the box is OFF by default. Toggling it rebuilds the catalogue, and the handler
+  holds `shop.counts` across that rebuild — the rebuild reseeds every count from
+  the design, and without holding them a 14-part job came back as 100.
 - **THE ROUND BORE WAS A COLLET FIRST. Measured against four real tenons, 2026-08-18.**
   Three bores were printed and pushed onto foot tenons spanning the real printed
   range. Sizes each handled, out of four:

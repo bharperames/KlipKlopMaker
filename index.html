@@ -932,6 +932,9 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <label id="shop-solo-label" title="Print a curve or a switch on a plate of its own, so if it fails only that part is lost. Worth it while the part stands on a thin skirt; less so once it lies flat on its underside, where the leftover 67 mm margin fits every support part in the library."
                    style="font-size:11px;color:var(--ink-2);display:inline-flex;align-items:center;gap:4px;white-space:nowrap">
                 <input type="checkbox" id="shop-solo"> Big parts get own plate</label>
+            <label id="shop-brim-label" title="Risers, spacers and the jog have a slotted socket, so their first layer is three separate crescents rather than one — each holding its own tower down alone, and that is what lifts a post off the plate. This adds a thin annular brim that ties them together while it prints; three snips at the slots and it peels off. Turn it off if you would rather use your slicer's own brim."
+                   style="font-size:12px;color:var(--ink-2);display:flex;align-items:center;gap:4px;cursor:help">
+            <input type="checkbox" id="shop-brim"> Brim on slotted posts</label>
             <button id="shop-zero" type="button">Clear all</button>
             <button id="shop-export-stl" type="button">⬇ STL</button>
             <button id="shop-export-cal" type="button" title="Swap this job for the calibration parts — coupons, the section card and the fit ladder. Reopen the Print shop to get your design back.">📏 Calibration parts</button>

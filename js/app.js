@@ -524,10 +524,10 @@ function supportGeom(kind) {
 }
 
 /** One spacer, rings and all. `code` is export-only — see buildRiserGeometry. */
-function spacerGeometryFor(heightMm, withCode = false) {
+function spacerGeometryFor(heightMm, withCode = false, brim = false) {
     const v = spacerVariant(heightMm);
     return buildSpacerGeometry(v.heightMm, SPEC,
-        { rings: v.rings, code: withCode ? partCode(v.code, GEOMETRY_VERSION) : null });
+        { rings: v.rings, brim, code: withCode ? partCode(v.code, GEOMETRY_VERSION) : null });
 }
 
 function makeStackedSupportMesh(geometry, material) {
@@ -3392,17 +3392,17 @@ function assembleParts() {
             feet++;
             for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
         }
-        if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) });
+        if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION), brim: shop.brimPosts }) });
         for (const [h, count] of [...spacerCounts.entries()].sort((a, b) => b[0] - a[0])) {
             const v = spacerVariant(h);
             parts.push({
                 name: `support_spacer_${v.code}`, count, sig: `support_spacer_${v.code}`,
-                kind: 'support', note: note.spacer, build: () => spacerGeometryFor(h, true)
+                kind: 'support', note: note.spacer, build: () => spacerGeometryFor(h, true, shop.brimPosts)
             });
         }
         if (feet) parts.push({ name: 'support_foot', count: feet, sig: 'support_foot', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) });
+            parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION), brim: shop.brimPosts }) });
         }
     } else {
         for (const sup of supList) {
@@ -4597,7 +4597,9 @@ const shop = {
     raf: 0, items: [], counts: new Map(), plates: [], group: null, built: false, framedFor: 0,
     // see plateGroup / defaultSoloBigParts. `soloTouched` keeps a deliberate
     // choice from being undone the next time the underside style changes.
-    soloBigParts: true, soloTouched: false
+    soloBigParts: true, soloTouched: false,
+    // Opt-in print brim on the slotted posts — see colletSocketOps.
+    brimPosts: false
 };
 
 /** Bed outline + grid for one plate, centred on the origin of its own group. */
@@ -5132,6 +5134,7 @@ async function openPrintShop(opts = {}) {
     if (!shop.built) {
         if (!shop.soloTouched) shop.soloBigParts = defaultSoloBigParts();
         $('shop-solo').checked = shop.soloBigParts;
+        $('shop-brim').checked = shop.brimPosts;
         $('shop-summary').textContent = 'building part geometry…';
         try {
             await initCSG();
@@ -5210,10 +5213,10 @@ async function openPrintShop(opts = {}) {
                 // emits are 15, 30 and 60. The ladder was capped at 60 in
                 // 28e1dac and this entry was left behind.
                 ...[60, 30, 15].map(r => ({
-                    name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION) }) })),
-                { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }) },
+                    name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION), brim: shop.brimPosts }) })),
+                { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION), brim: shop.brimPosts }) },
                 ...SPACER_VARIANTS.map(v => ({
-                    name: `support_spacer_${v.code}`, kind: 'support', build: () => spacerGeometryFor(v.heightMm, true) })),
+                    name: `support_spacer_${v.code}`, kind: 'support', build: () => spacerGeometryFor(v.heightMm, true, shop.brimPosts) })),
                 { name: 'scenery_tower', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
@@ -5565,6 +5568,23 @@ $('shop-solo').addEventListener('change', () => {
     shop.soloBigParts = $('shop-solo').checked;
     shop.soloTouched = true;
     shopRepack();          // updates #shop-summary itself
+});
+$('shop-brim').addEventListener('change', async () => {
+    shop.brimPosts = $('shop-brim').checked;
+    // The brim is GEOMETRY, so every built mesh and thumbnail is stale and the
+    // catalogue has to be rebuilt — clearing `builtFor` is what makes
+    // openPrintShop rebuild rather than just reopen.
+    //
+    // But a rebuild reseeds every count from the DESIGN (`shop.counts.set(...,
+    // part.count)`), so ticking this box threw away whatever quantities you had
+    // set: measured, a 14-part job came back as 100. Hold them across it. A
+    // name that no longer exists is dropped rather than resurrected.
+    const keep = new Map(shop.counts);
+    shop.builtFor = null;
+    await openPrintShop();
+    for (const [name, n] of keep) if (shop.counts.has(name)) shop.counts.set(name, n);
+    shopBuildList();
+    shopRepack();
 });
 $('shop-zero').addEventListener('click', () => {
     for (const it of shop.items) shop.counts.set(it.name, 0);

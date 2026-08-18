@@ -1724,7 +1724,7 @@ function stackedHex(levels) {
  * and the mouth is at the bed — so these parts want a brim. See the CLAUDE.md
  * note on islands.
  */
-function colletSocketOps(spec, cx = 0) {
+function colletSocketOps(spec, cx = 0, opts = {}) {
     const AF = spec.socket.colletAF;
     const reach = spec.socket.colletSlotReach;
     const ops = [{ op: SUBTRACTION,
@@ -1736,6 +1736,29 @@ function colletSocketOps(spec, cx = 0) {
             .map(([u, v]) => [cx + u * ca - v * sa, u * sa + v * ca]);
         ops.push({ op: SUBTRACTION,
             geometry: toBufferGeometry(extrudePolygonY(rect, -1, reach)) });
+    }
+    // AN INTEGRAL BRIM, OPT-IN, because the slots leave three first-layer
+    // islands and one of them spaghettified on Brett's plate.
+    //
+    // It goes on AFTER the slots and is NOT slotted itself: while it is there
+    // it ties the three fingers together, which is exactly what a first layer
+    // needs and exactly what a collet must not have in service. So it is a
+    // print aid — three snips at the slots and it peels off, and the joint is
+    // the joint again. Slotting it would keep the islands and defeat the point.
+    //
+    // Annular, from just outside the bore's corner radius, so the socket mouth
+    // stays clear and a tenon can still be trial-fitted before it comes off.
+    // A slicer brim does the same job with no snipping; this exists because our
+    // 3MF carries GEOMETRY ONLY and cannot ask for one (see the CLAUDE.md note
+    // on Metadata/project_settings.config).
+    if (opts.brim) {
+        const B = spec.socket.brim;
+        const n = segmentsForCircle(B.radiusMm);
+        const ring = (r) => circlePlan(r, n).map(([x, z]) => [cx + x, -z]);
+        ops.push({ op: ADDITION, geometry: toBufferGeometry(
+            extrudePolygonY(ring(B.radiusMm), 0, B.thickMm)) });
+        ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(
+            extrudePolygonY(ring(B.innerR), -1, B.thickMm + 0.5)) });
     }
     return ops;
 }
@@ -1872,7 +1895,7 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
         { op: ADDITION, geometry: bar },
         { op: ADDITION, geometry: ends[1] },
         { op: ADDITION, geometry: tenon },
-        ...colletSocketOps(spec, arm),
+        ...colletSocketOps(spec, arm, opts),
         ...hexFlatEngraveOps(opts.code ?? null, 15, 0, H, spec, { capHeight: 1.6 })
     ]);
 }
@@ -1993,7 +2016,7 @@ export function buildSpacerGeometry(heightMm, spec = SPEC, opts = {}) {
         // so it takes the same slotted hex collet. It was briefly left as a
         // round bore on the reasoning that "the collar rings a pillar rather
         // than gripping it", which this line's own comment disproves.
-        ...colletSocketOps(spec),
+        ...colletSocketOps(spec, 0, opts),
         // the flat: a slab taken off one side of the body only
         {
             op: SUBTRACTION,
@@ -2079,7 +2102,7 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
             : opts.hexSocketAF
                 ? [{ op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec, opts.hexSocketAF) },
                    ...(opts.slots === false ? [] : colletSocketOps(spec).slice(1))]
-                : colletSocketOps(spec)),
+                : colletSocketOps(spec, 0, opts)),
         // The code gets the WHOLE shaft to centre itself on now. It used to be
         // pushed into the band above the last grid mark, because centring on
         // sizeMm/2 put it exactly where a groove ran on a 30 and a 60 and the
