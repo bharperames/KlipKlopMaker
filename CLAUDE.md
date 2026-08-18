@@ -221,6 +221,28 @@ building, gait physics simulation, and watertight STL/3MF export.
   direction at once.
 - Interlock standard everywhere: hex tenon 8.6 mm AF ↔ socket 9 mm AF × 10 mm
   (pillars, towers, palm trunks, patio corners, track bosses, jogs).
+- **THE BOWTIE KEY AND ITS SLOT ARE CONFIRMED AT 2.6.0 — DO NOT RETUNE THEM.**
+  Brett, on the fit-test print: "this slot and key configuration is working very
+  well at this revision." That is `fitClearanceMm` 0.12 with the DRIVE TAPER,
+  `taperLeadMm` 0.05 under nominal at the lead end and `taperGripMm` 0.08 over
+  at the grip end — the key enters at 0.17/side and wedges at 0.04 as it is
+  driven home, and the engraved face is the lead end. The pocket is untouched
+  from earlier revisions, so keys and track pieces stay cross-compatible.
+  Prismatic keys had exactly ONE fit and no single clearance was both enterable
+  and tight; the taper gives a range and the user drives it to the one that
+  grips. Do not reach for `fitClearanceMm` again — the ladder already proved the
+  drawn clearance was in band, and the taper is what closed it.
+- **THE TENON LEAD-IN TAPER IS CONFIRMED, AND THE TRIMMED FOOT IS REJECTED.**
+  Off the same print, on the posts: "the others provide a very nice friction fit
+  with a little extra grip at the bottom of the push" — the extra grip at the
+  bottom IS `tenonTaperAF` 0.30 doing its job. But the foot printed at
+  `tenonTrimAF` 0.15: "The smaller tenon of the two tower feet is just not wide
+  enough to provide any friction resistance at all." So the foot keeps the FULL
+  tenon; the trim option stays at its 0 default and is a test article only.
+  Also measured: one foot's tenon ran ~0.01 mm wider across corners than the
+  other and that alone was enough to make it STICK in a bore. The joint is still
+  knife-edge at the hundredth, which is the argument for truncating the tenon's
+  corners so the mating dimension is a drawn flat rather than a printed point.
 - **THREE FITS ARE CONFIRMED IN PLASTIC AND MUST NOT BE "IMPROVED".** Measured
   by hand off PETG prints, August 2026:
   · **hex tenon in socket** (0.20 mm/side) — "very nice and tight" pillar into

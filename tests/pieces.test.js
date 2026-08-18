@@ -1671,3 +1671,48 @@ describe('the deck ceiling is held up', () => {
                 .toBe(`${type}: worst span true`);
         }, 120000);
 });
+
+describe('fill before carve', () => {
+    /**
+     * A GATE THAT HAS NEVER REJECTED ANYTHING IS NOT KNOWN TO WORK.
+     *
+     * assertFillBeforeCarve guards an order that was broken three times in one
+     * session — the fill running after jointOps put plastic back into the
+     * bowtie pocket and sealed a void, the same order would have refilled the
+     * elevator's car shaft, and a mis-targeted edit dropped the fill entirely
+     * and took every piece from a 10 mm worst span to 48-66 with nothing
+     * failing. So this test does both halves: the real builders pass, and a
+     * deliberately mis-ordered list is rejected.
+     */
+    test('every builder produces a legal op order', async () => {
+        await initCSG();
+        const { pieces } = layoutTrack(
+            ['start', 'straight', 'curveL', 'curveR', 'lift', 'powered', 'elevator', 'end'],
+            { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+        const sup = planPillarPositions(pieces);
+        for (const pc of pieces) {
+            const support = sup.find((s) => s.pieceIndex === pc.index);
+            expect(() => buildPieceExportGeometry(pc, { support, forPrint: true })).not.toThrow();
+            expect(() => pieceBuilders.buildPieceDisplayGeometry(pc, SPEC, undefined, support)).not.toThrow();
+        }
+    }, 240000);
+
+    test('a fill placed after a cut is rejected', async () => {
+        const { assertFillBeforeCarve, FILL_TAG } = pieceBuilders;
+        const fill = { op: 'add', tag: FILL_TAG, geometry: null };
+        const cut = { op: 'subtract', geometry: null };
+        const plainAdd = { op: 'add', geometry: null };
+
+        // the real order: fill, then anything
+        expect(() => assertFillBeforeCarve([fill, cut, plainAdd], { type: 'straight' }))
+            .not.toThrow();
+        // the elevator's shape — add, cut, add — is legal as long as the FILL
+        // itself came first, so the assertion must not simply demand all adds
+        // before all cuts
+        expect(() => assertFillBeforeCarve([fill, plainAdd, cut, plainAdd], { type: 'elevator' }))
+            .not.toThrow();
+        // and the regression it exists for
+        expect(() => assertFillBeforeCarve([cut, fill], { type: 'straight' }))
+            .toThrow(/after a SUBTRACTION/);
+    });
+});

@@ -218,6 +218,46 @@ export const supportStations = (support, piece) =>
         : support && support.mode !== 'none' ? [support.s]
             : [];
 
+/**
+ * THE ELEVATOR'S HOUSING AND CAR SLOT — one copy, used by both builders.
+ *
+ * This block existed VERBATIM in buildPieceDisplayGeometry and
+ * buildPieceExportGeometry. Twice while working on the fill I edited the
+ * display copy believing I was in the export one, because a text search finds
+ * display first; the second time it removed the export fill outright and every
+ * piece silently regressed from a 10 mm worst span to 48-66. Two copies of a
+ * block is two places to be wrong in and one place to look.
+ */
+function elevatorOps(piece, spec) {
+    if (!(piece.type === 'elevator' || piece.isElevator)) return [];
+    const Wo = piece.innerWidth / 2 + spec.wall;
+    const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
+    const right = [-Math.sin(piece.entry.h), Math.cos(piece.entry.h)];
+    const at = (d, w) => [
+        [piece.entry.x + dir[0] * d - right[0] * w, piece.entry.z + dir[1] * d - right[1] * w],
+        [piece.entry.x + dir[0] * d + right[0] * w, piece.entry.z + dir[1] * d + right[1] * w]
+    ];
+    const box = (d0, d1, w) => { const a = at(d0, w), b = at(d1, w); return [a[0], a[1], b[1], b[0]]; };
+    return [
+        { op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(
+            box(40, 110, Wo), piece.rimY, piece.exitDeck - spec.floorThk + 0.5)) },
+        // the car's shaft — a SUBTRACTION, which is why the under-deck fill has
+        // to run before this and not after it
+        { op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(
+            box(15, 135, 6), piece.rimY - 5, piece.exitDeck + 15)) }
+    ];
+}
+
+/** The start platform's bumper — one copy, used by both builders. */
+function startBumperOps(piece, spec) {
+    if (piece.type !== 'start') return [];
+    const Wi = piece.innerWidth / 2;
+    const bump = planToWorld(
+        [[-Wi - 1, 2], [Wi + 1, 2], [Wi + 1, 10], [-Wi - 1, 10]], { ...piece.entry });
+    return [{ op: ADDITION, geometry: toBufferGeometry(extrudePolygonY(
+        bump, piece.entryDeck - 4, piece.entryDeck + spec.railHeight + 14)) }];
+}
+
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
     const pads = bossStations ?? [piece.planLen / 2];
@@ -226,60 +266,25 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
     const ops = [];
 
-    if (piece.type === 'elevator' || piece.isElevator) {
-        const Wo = piece.innerWidth / 2 + spec.wall;
-        const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
-        const right = [-Math.sin(piece.entry.h), Math.cos(piece.entry.h)];
-        const c40 = [piece.entry.x + dir[0] * 40, piece.entry.z + dir[1] * 40];
-        const c110 = [piece.entry.x + dir[0] * 110, piece.entry.z + dir[1] * 110];
-        const housingPoly = [
-            [c40[0] - right[0] * Wo, c40[1] - right[1] * Wo],
-            [c40[0] + right[0] * Wo, c40[1] + right[1] * Wo],
-            [c110[0] + right[0] * Wo, c110[1] + right[1] * Wo],
-            [c110[0] - right[0] * Wo, c110[1] - right[1] * Wo]
-        ];
-        const housingSolid = toBufferGeometry(extrudePolygonY(housingPoly, piece.rimY, piece.exitDeck - spec.floorThk + 0.5));
-        ops.push({ op: ADDITION, geometry: housingSolid });
-        
-        const W_slot = 12;
-        const c15 = [piece.entry.x + dir[0] * 15, piece.entry.z + dir[1] * 15];
-        const c135 = [piece.entry.x + dir[0] * 135, piece.entry.z + dir[1] * 135];
-        const slotPoly = [
-            [c15[0] - right[0] * (W_slot/2), c15[1] - right[1] * (W_slot/2)],
-            [c15[0] + right[0] * (W_slot/2), c15[1] + right[1] * (W_slot/2)],
-            [c135[0] + right[0] * (W_slot/2), c135[1] + right[1] * (W_slot/2)],
-            [c135[0] - right[0] * (W_slot/2), c135[1] - right[1] * (W_slot/2)]
-        ];
-        const slotSolid = toBufferGeometry(extrudePolygonY(slotPoly, piece.rimY - 5, piece.exitDeck + 15));
-        ops.push({ op: SUBTRACTION, geometry: slotSolid });
-    }
+    // THE SAME FILL THE EXPORT USES, IN THE SAME PLACE. The scene must not tell
+    // a different story from the plate — Brett, on a start piece in the app:
+    // "Can we update the visual representation of the start/end tracks to show
+    // that the back is not open anymore." It was never open in the export; the
+    // display shell is swept from `pieceProfiles`, which still describes a
+    // channel with an open bottom.
+    //
+    // FIRST, before the elevator's slot and before the joints, because all of
+    // those CARVE. This sat after them until assertFillBeforeCarve was added
+    // and threw on the very first elevator it saw — the display and export
+    // orders had already drifted apart, which is the whole reason the assertion
+    // exists rather than a comment saying "fill first".
+    ops.push(...undersideSupportOps(piece, spec));
 
-    const Wi = piece.innerWidth / 2;
-    if (piece.type === 'start') {
-        const bump = planToWorld(
-            [[-Wi - 1, 2], [Wi + 1, 2], [Wi + 1, 10], [-Wi - 1, 10]],
-            { ...piece.entry }
-        );
-        ops.push({
-            op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(bump, piece.entryDeck - 4, piece.entryDeck + spec.railHeight + 14))
-        });
-    }
+    ops.push(...elevatorOps(piece, spec));
+    ops.push(...startBumperOps(piece, spec));
 
     const hasEntryJoint = !piece.isImplicitStart;
     const hasExitJoint = piece.type !== 'end';
-
-    // THE SAME FILL THE EXPORT USES, so the scene cannot tell a different story
-    // from the plate. Brett, looking at a start piece in the app: "Can we update
-    // the visual representation of the start/end tracks to show that the back is
-    // not open anymore". It was not open in the export — the cavity has been
-    // filled since the underside work — but the display shell is drawn straight
-    // from `pieceProfiles`, which still describes a channel with an open bottom,
-    // so the scene showed a trough that no longer exists. Calling the production
-    // builder rather than approximating it is what stops the two drifting again.
-    //
-    // Before the joints, exactly as in the export: everything after this carves.
-    ops.push(...undersideSupportOps(piece, spec));
 
     if (hasEntryJoint) {
         ops.push(...jointOps(
@@ -302,7 +307,7 @@ export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, supp
 
     ops.push(...bossOps(piece, spec, support));
 
-    return toBufferGeometry(csgChain(shell, ops));
+    return toBufferGeometry(csgChain(shell, assertFillBeforeCarve(ops, piece)));
 }
 
 /**
@@ -1030,6 +1035,46 @@ export function engraveFlatOps(lines, origin, right, up, spec = SPEC, opts = {})
  * bowtie pockets — the key rises through that space.
  */
 /**
+ * FILL BEFORE CARVE, checked rather than remembered.
+ *
+ * Every op that ADDS material under the deck has to precede every op that cuts
+ * a feature out of it. Broken three times in one session, each time silently
+ * and each time differently:
+ *
+ *   · the fill ran after `jointOps` and put plastic back into the bowtie pocket
+ *     that had just been cut, then sealed the remains into a void — the part
+ *     exported as TWO SHELLS
+ *   · the same order would have refilled the elevator's car shaft, whose slot
+ *     is a subtraction issued by the piece itself
+ *   · a mis-targeted edit removed the export fill entirely and every piece went
+ *     from a 10 mm worst span to 48-66 with nothing failing
+ *
+ * The first two are ordering, the third is absence, and a comment saying "fill
+ * first" caught none of them. So the fill is TAGGED where it is produced and
+ * this asserts the tag never appears after a SUBTRACTION. It is cheap — a scan
+ * of a list of at most a few dozen entries — and it fails loudly at build time
+ * rather than quietly in a printed part.
+ *
+ * It deliberately does NOT require all additions before all subtractions: the
+ * elevator adds its housing and then cuts its shaft, which is correct.
+ */
+export const FILL_TAG = 'underside-fill';
+
+export function assertFillBeforeCarve(ops, piece) {
+    let cut = -1;
+    for (let i = 0; i < ops.length; i++) {
+        if (ops[i].op === SUBTRACTION && cut < 0) cut = i;
+        if (ops[i].tag === FILL_TAG && cut >= 0) {
+            throw new Error(
+                `op order: the under-deck fill for ${piece?.type ?? 'piece'} is at ${i}, `
+                + `after a SUBTRACTION at ${cut}. Everything that carves must follow `
+                + `everything that fills — see assertFillBeforeCarve.`);
+        }
+    }
+    return ops;
+}
+
+/**
  * FILL THE CAVITY. One rule for every piece that has one.
  *
  * This used to be three rules chosen by shape — spines along a straight, ribs
@@ -1123,7 +1168,8 @@ function undersideSupportOps(piece, spec) {
         const bot = (u) => floorAt(p.x + right[0] * u, p.z + right[2] * u) - y;
         profiles.push([[-uBot, bot(-uBot)], [uBot, bot(uBot)], [uTop, top], [-uTop, top]]);
     }
-    return [{ op: ADDITION, geometry: toBufferGeometry(sweepSolid(profiles, stations)) }];
+    return [{ op: ADDITION, tag: FILL_TAG,
+        geometry: toBufferGeometry(sweepSolid(profiles, stations)) }];
 }
 
 export function buildPieceExportGeometry(piece, opts = {}) {
@@ -1161,45 +1207,8 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     if (opts.extraOps) ops.push(...opts.extraOps(piece, spec));
     else ops.push(...undersideSupportOps(piece, spec));
 
-    if (piece.type === 'elevator' || piece.isElevator) {
-        const Wo = piece.innerWidth / 2 + spec.wall;
-        const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
-        const right = [-Math.sin(piece.entry.h), Math.cos(piece.entry.h)];
-        const c40 = [piece.entry.x + dir[0] * 40, piece.entry.z + dir[1] * 40];
-        const c110 = [piece.entry.x + dir[0] * 110, piece.entry.z + dir[1] * 110];
-        const housingPoly = [
-            [c40[0] - right[0] * Wo, c40[1] - right[1] * Wo],
-            [c40[0] + right[0] * Wo, c40[1] + right[1] * Wo],
-            [c110[0] + right[0] * Wo, c110[1] + right[1] * Wo],
-            [c110[0] - right[0] * Wo, c110[1] - right[1] * Wo]
-        ];
-        const housingSolid = toBufferGeometry(extrudePolygonY(housingPoly, piece.rimY, piece.exitDeck - spec.floorThk + 0.5));
-        ops.push({ op: ADDITION, geometry: housingSolid });
-
-        const W_slot = 12;
-        const c15 = [piece.entry.x + dir[0] * 15, piece.entry.z + dir[1] * 15];
-        const c135 = [piece.entry.x + dir[0] * 135, piece.entry.z + dir[1] * 135];
-        const slotPoly = [
-            [c15[0] - right[0] * (W_slot/2), c15[1] - right[1] * (W_slot/2)],
-            [c15[0] + right[0] * (W_slot/2), c15[1] + right[1] * (W_slot/2)],
-            [c135[0] + right[0] * (W_slot/2), c135[1] + right[1] * (W_slot/2)],
-            [c135[0] - right[0] * (W_slot/2), c135[1] - right[1] * (W_slot/2)]
-        ];
-        const slotSolid = toBufferGeometry(extrudePolygonY(slotPoly, piece.rimY - 5, piece.exitDeck + 15));
-        ops.push({ op: SUBTRACTION, geometry: slotSolid });
-    }
-    const Wi = piece.innerWidth / 2;
-
-    if (piece.type === 'start') {
-        const bump = planToWorld(
-            [[-Wi - 1, 2], [Wi + 1, 2], [Wi + 1, 10], [-Wi - 1, 10]],
-            { ...piece.entry }
-        );
-        ops.push({
-            op: ADDITION,
-            geometry: toBufferGeometry(extrudePolygonY(bump, piece.entryDeck - 4, piece.entryDeck + spec.railHeight + 14))
-        });
-    }
+    ops.push(...elevatorOps(piece, spec));
+    ops.push(...startBumperOps(piece, spec));
 
     if (hasEntryJoint) {
         // seam's uphill deck = this entry + the waterfall step
@@ -1222,7 +1231,7 @@ export function buildPieceExportGeometry(piece, opts = {}) {
     }
     ops.push(...bossOps(piece, spec, opts.support));
     ops.push(...engraveOps(piece, opts.code ?? pieceCode(piece, GEOMETRY_VERSION), spec));
-    const solid = csgChain(shell, ops, opts.simplifyTol);
+    const solid = csgChain(shell, assertFillBeforeCarve(ops, piece), opts.simplifyTol);
     return opts.forPrint ? tiltOntoUnderside(solid, piece, spec) : solid;
 }
 
@@ -1368,7 +1377,7 @@ export function buildSwitchExportGeometry(mainPiece, branchPiece, opts = {}) {
     ops.push(...engraveOps(mainPiece, opts.code ?? pieceCode(mainPiece, GEOMETRY_VERSION), spec,
         switchEngraveSpot(mainPiece, branchPiece, spec)));
 
-    const solid = csgChain(shell, ops);
+    const solid = csgChain(shell, assertFillBeforeCarve(ops, mainPiece));
     return opts.forPrint ? tiltOntoUnderside(solid, mainPiece, spec) : solid;
 }
 
