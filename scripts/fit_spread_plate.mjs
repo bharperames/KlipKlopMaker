@@ -1,45 +1,49 @@
-#!/usr/bin/env node
 /**
- * DOES TRUNCATING THE TENON'S CORNERS REDUCE THE SPREAD? — a plate built to
- * answer that and nothing else.
+ * A COMPLIANT BORE, BECAUSE THE TENON IS NOT ALLOWED TO MOVE.
  *
  *   node scripts/fit_spread_plate.mjs
  *
- * WHY REPEATS. Every fit plate so far carried ONE of each variant, and one of
- * each cannot answer this question. The complaint is not that the fit is wrong,
- * it is that it is INCONSISTENT: the same drawing measured 9.65 to 9.93 across
- * corners, and Brett found two nominally identical feet where "one seems to be
- * a .01mm wider across vertex measurement and that is just enough to make the
- * tenon stick". A single sample of a variable process tells you where one
- * sample landed. So this plate carries FOUR of each tenon, and the reading that
- * matters is how much they differ from each other, not how any one feels.
+ * Brett: "We have kept the tenon dimension invariant because of these ramp
+ * sockets and I want to keep it that way." The hex tenon mates with the HEX
+ * SOCKET in every ramp and curve already printed, and that pairing works.
+ * Changing it to suit the round bore would break the half that is proven to
+ * satisfy the half that is not. An earlier version of this plate carried a
+ * truncated tenon; it is gone.
  *
- * WHAT IS BEING COMPARED. A post is both halves of the joint — a tenon on top,
- * a bore in the base — so any post's tenon can be pushed into any post's bore
- * and the set cross-tests itself.
+ * SO THE ARITHMETIC FALLS ON THE BORE, and it is decisive. The same tenon
+ * drawing prints 9.65 to 9.93 across corners. A bore that always ACCEPTS the
+ * largest needs D >= 9.93; one that GRIPS the smallest needs D <= 9.65. No
+ * plain cylinder is both, which is why boreDia has moved five times in a day
+ * and why a 0.01 mm difference between two feet decided whether one stuck.
+ * Something has to be compliant, and this project has already proved that
+ * works: the gate pin is a split C at 0.00 clearance and reads "a great fit,
+ * perfect".
  *
- *   HEX A-D    plain hex tenon, bore 9.65     · 1 notch
- *   TRN A-D    corners clipped to 9.60, 9.65  · 2 notches
- *   HX60 A-B   plain hex tenon, bore 9.60     · 3 notches
- *   TR60 A-B   truncated tenon,  bore 9.60    · 4 notches
- *   FOOT A-B   two feet, full tenon           (the joint that stuck)
+ * TWO WAYS TO MAKE A ROUND HOLE COMPLIANT, both tested here, tenon untouched:
  *
- * HOW TO READ IT, in order:
+ *   RIB   a generous 10.00 bore with three ribs standing 0.20 proud at 120
+ *         degrees, so the grip diameter is 9.60 while the hole itself clears
+ *         the biggest tenon. Contact is three small pads that crush and bed in.
+ *   COL   a collet: the 9.70 bore slotted through the wall three times over the
+ *         socket depth, leaving three fingers that spring apart. This is the
+ *         gate pin's trick applied to the female half. 2.65 mm of wall is
+ *         available at the flats.
  *
- *  1. Push HEX A, B, C, D each into the SAME bore. Do they feel the same? The
- *     spread you feel here is today's problem, quantified by hand.
- *  2. Do the same with TRN A-D. If they feel more alike than the HEX four did,
- *     truncation works and the argument is settled. If they are just as varied,
- *     it does not and I should stop proposing it.
- *  3. Only then compare 9.60 against 9.65 within a tenon type, to pick a bore.
- *  4. The feet last: a full-size foot tenon into a 9.65 and a 9.60 bore.
+ * WHY REPEATS. The complaint is not that the fit is wrong, it is that it is
+ * INCONSISTENT. Every fit plate so far carried ONE of each variant, and one
+ * sample of a variable process tells you where one sample landed. Four plain
+ * bores establish today's spread by hand; three of each compliant bore say
+ * whether it collapses that spread.
  *
- * THE PREDICTION, written down first so it can be wrong: truncated tenons
- * should mate near 9.617 across corners with roughly a third of the spread,
- * because the contact moves from a 120 degree point (nozzle turns 60) to the
- * ends of a drawn 0.57 mm facet (nozzle turns 30). Against a 9.65 bore that is
- * +0.016 mm/side. If the TRN posts feel LOOSE rather than consistent, the
- * contact model is wrong — they contact at radius 4.809, not at the 4.800 flat.
+ *   HEX A-D   plain bore 9.70, the control      · 1 notch
+ *   RIB A-C   10.00 bore, 3 ribs to 9.60        · 2 notches
+ *   COL A-C   9.70 bore, 3 slots, collet        · 3 notches
+ *   FOOT A-B  two feet, full tenon              (the joint that stuck)
+ *
+ * HOW TO READ IT: push the four HEX tenons into the same HEX bore and feel how
+ * much they differ — that is the problem, measured by hand. Then push the same
+ * four tenons into a RIB bore, and into a COL bore. The winner is whichever
+ * makes four different tenons feel the SAME, not whichever feels best once.
  *
  * A cal_ramp rides along as thermal load, because the bore fit has already been
  * shown to move with what else is on the plate.
@@ -50,7 +54,7 @@ import path from 'node:path';
 import * as fflate from 'fflate';
 import { SPEC, layoutTrack, planPillarPositions } from '../js/track.js';
 import { initCSG, buildPieceExportGeometry, buildRiserGeometry,
-    buildSupportFootGeometry, csgChain, toBufferGeometry, SUBTRACTION,
+    buildSupportFootGeometry, csgChain, toBufferGeometry, SUBTRACTION, ADDITION,
     CALIBRATION } from '../js/pieces.js';
 import { extrudePolygonY } from '../js/geometry.js';
 import { analyzeMesh } from '../js/mesh_utils.js';
@@ -58,7 +62,6 @@ import { generateMultiObject3MFXML } from '../js/export_3mf.js';
 import { audit } from './overhang_audit.mjs';
 
 const OUT = 'test-parts/fit_spread';
-const CLIP_AC = 9.60;          // where the corners get cut back to
 
 /** Countable notches, same geometry as tenon_sweep and the first fit plate. */
 function notchOps(n) {
@@ -72,19 +75,44 @@ function notchOps(n) {
 }
 
 /**
- * Cut the six corners off a tenon so its across-corners is drawn, not emergent.
- * Six half-spaces at the CORNER angles — hexPlan puts vertices at 0/60/120, and
- * offsetting by 30 lands them on the flats, where a 4.80 cut removes nothing.
+ * Three ribs standing proud inside an oversize bore.
+ *
+ * The hole clears the largest tenon on record, and the ribs — not the hole —
+ * set the grip. A small tenon meets them lightly, a large one crushes them a
+ * little; either way it enters, which a plain cylinder cannot promise.
  */
-function truncateCorners(g, maxAC, y0, y1) {
-    const r = maxAC / 2;
+function ribbedBore(g, gripAC, socketDepth) {
+    const rGrip = gripAC / 2;
     const ops = [];
-    for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * 2 * Math.PI;
+    for (let i = 0; i < 3; i++) {
+        const a = (i / 3) * 2 * Math.PI;
         const ca = Math.cos(a), sa = Math.sin(a);
-        const rect = [[r, -14], [22, -14], [22, 14], [r, 14]]
+        // a 1.2 mm wide pad spanning from the grip radius outward into the wall
+        const rect = [[rGrip, -0.6], [rGrip + 1.2, -0.6], [rGrip + 1.2, 0.6], [rGrip, 0.6]]
             .map(([u, v]) => [u * ca - v * sa, u * sa + v * ca]);
-        ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(rect, y0, y1)) });
+        ops.push({ op: ADDITION, geometry: toBufferGeometry(
+            extrudePolygonY(rect, -0.4, socketDepth - 1.5)) });
+    }
+    return csgChain(g, ops);
+}
+
+/**
+ * A COLLET: slot the bore wall so it can open.
+ *
+ * Three radial slots over the socket depth leave three fingers. The gate pin
+ * does this on the male side — a hollow pin with one axial slot, a C-spring,
+ * mating at 0.00 clearance — and it is the only joint in this library that
+ * absorbs its own variation instead of being sized around it.
+ */
+function colletBore(g, socketDepth) {
+    const ops = [];
+    for (let i = 0; i < 3; i++) {
+        const a = ((i + 0.5) / 3) * 2 * Math.PI;      // between the ribs' angles
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const rect = [[3.0, -0.5], [9.0, -0.5], [9.0, 0.5], [3.0, 0.5]]
+            .map(([u, v]) => [u * ca - v * sa, u * sa + v * ca]);
+        ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(
+            extrudePolygonY(rect, -1, socketDepth + 0.5)) });
     }
     return csgChain(g, ops);
 }
@@ -106,24 +134,23 @@ const add = (name, g, note) => {
 
 const post = (bore, code) => buildRiserGeometry(15,
     { ...SPEC, socket: { ...SPEC.socket, boreDia: bore } }, { code });
-const trunc = (g) => truncateCorners(g, CLIP_AC, 14.9, 15 + SPEC.socket.depth);
+const DEPTH = SPEC.socket.depth;
 
 for (const L of ['A', 'B', 'C', 'D']) {
-    add(`HEX_${L}`, csgChain(post(9.65, `HEX ${L}`), notchOps(1)), 'plain tenon · bore 9.65');
+    add(`HEX_${L}`, csgChain(post(9.70, `HEX ${L}`), notchOps(1)),
+        'plain bore 9.70 — the control');
 }
-for (const L of ['A', 'B', 'C', 'D']) {
-    add(`TRN_${L}`, csgChain(trunc(post(9.65, `TRN ${L}`)), notchOps(2)),
-        `corners clipped to ${CLIP_AC} · bore 9.65`);
+for (const L of ['A', 'B', 'C']) {
+    add(`RIB_${L}`, csgChain(ribbedBore(post(10.00, `RIB ${L}`), 9.60, DEPTH), notchOps(2)),
+        '10.00 bore, 3 ribs to 9.60');
 }
-for (const L of ['A', 'B']) {
-    add(`HX60_${L}`, csgChain(post(9.60, `HX60 ${L}`), notchOps(3)), 'plain tenon · bore 9.60');
-}
-for (const L of ['A', 'B']) {
-    add(`TR60_${L}`, csgChain(trunc(post(9.60, `TR60 ${L}`)), notchOps(4)),
-        `corners clipped to ${CLIP_AC} · bore 9.60`);
+for (const L of ['A', 'B', 'C']) {
+    add(`COL_${L}`, csgChain(colletBore(post(9.70, `COL ${L}`), DEPTH), notchOps(3)),
+        '9.70 bore, slotted — collet');
 }
 for (const L of ['A', 'B']) {
-    add(`FOOT_${L}`, buildSupportFootGeometry(SPEC, { code: `FOOT ${L}` }), 'full tenon · the joint that stuck');
+    add(`FOOT_${L}`, buildSupportFootGeometry(SPEC, { code: `FOOT ${L}` }),
+        'full tenon · the joint that stuck');
 }
 
 // thermal load, and a real pocket/sole while we are here
