@@ -35,10 +35,12 @@
  * bores establish today's spread by hand; three of each compliant bore say
  * whether it collapses that spread.
  *
- *   HEX A-D   plain bore 9.70, the control      · 1 notch
- *   RIB A-C   10.00 bore, 3 ribs to 9.60        · 2 notches
- *   COL A-C   9.70 bore, 3 slots, collet        · 3 notches
- *   FOOT A-B  two feet, full tenon              (the joint that stuck)
+ * NOTCHES RUN TIGHTEST TO LOOSEST, and the engraved code is the grip diameter:
+ *
+ *   1 notch  R960 A-C   10.00 bore, ribs gripping at 9.60
+ *   2 notch  H970 A-D   plain bore 9.70 — the control
+ *   3 notch  C970 A-C   9.70 bore, slotted — a collet
+ *            FOOT A-B   two feet, full tenon (the joint that stuck)
  *
  * HOW TO READ IT: push the four HEX tenons into the same HEX bore and feel how
  * much they differ — that is the problem, measured by hand. Then push the same
@@ -158,17 +160,33 @@ const post = (bore, code) => buildRiserGeometry(15,
     { ...SPEC, socket: { ...SPEC.socket, boreDia: bore } }, { code });
 const DEPTH = SPEC.socket.depth;
 
+// MARKED WITH THE SIZE, NOT JUST THE FAMILY. The notches used to say which
+// VARIANT a post was, so four parts wore one notch and three wore two — Brett,
+// holding them: "it seems like multiple ones have 3 etched lines, or 2 etched
+// lines". Two things fix it. The engraved code now carries the GRIP DIAMETER
+// (`R960 A` is the ribbed bore gripping at 9.60, copy A), so a part states its
+// own size with no legend to look up. And the notches are re-ordered to run
+// TIGHTEST to LOOSEST, so counting them places a part in the hierarchy even if
+// the engraving is thumbed over.
+//
+// Two lines is the ceiling: at a 15 mm flat a three-line code is 10.67 mm
+// across against 7.66 available, and hexFlatEngraveOps drops what does not fit
+// SILENTLY — the part would arrive blank.
+//
+//   1 notch  R960  ribs grip at 9.60   — tightest
+//   2 notch  H970  plain bore 9.70     — the control
+//   3 notch  C970  slotted 9.70        — sprung, loosest at rest
+for (const L of ['A', 'B', 'C']) {
+    add(`RIB_${L}`, csgChain(ribbedBore(post(10.00, `R960 ${L}`), 9.60, DEPTH), notchOps(1)),
+        '1 notch · 10.00 bore, 3 ribs gripping at 9.60');
+}
 for (const L of ['A', 'B', 'C', 'D']) {
-    add(`HEX_${L}`, csgChain(post(9.70, `HEX ${L}`), notchOps(1)),
-        'plain bore 9.70 — the control');
+    add(`HEX_${L}`, csgChain(post(9.70, `H970 ${L}`), notchOps(2)),
+        '2 notches · plain bore 9.70 — the control');
 }
 for (const L of ['A', 'B', 'C']) {
-    add(`RIB_${L}`, csgChain(ribbedBore(post(10.00, `RIB ${L}`), 9.60, DEPTH), notchOps(2)),
-        '10.00 bore, 3 ribs to 9.60');
-}
-for (const L of ['A', 'B', 'C']) {
-    add(`COL_${L}`, csgChain(colletBore(post(9.70, `COL ${L}`), DEPTH), notchOps(3)),
-        '9.70 bore, slotted — collet');
+    add(`COL_${L}`, csgChain(colletBore(post(9.70, `C970 ${L}`), DEPTH), notchOps(3)),
+        '3 notches · 9.70 bore, slotted — collet');
 }
 for (const L of ['A', 'B']) {
     add(`FOOT_${L}`, buildSupportFootGeometry(SPEC, { code: `FOOT ${L}` }),
