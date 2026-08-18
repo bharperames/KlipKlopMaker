@@ -1152,7 +1152,14 @@ export function layoutTrack(sequence, params = {}) {
                 const frog = frogDeckKnots(main, branch, p);
                 if (frog) {
                     branch.deckKnots = frog.knots;
-                    branch.frogEndS = frog.sSep;
+                    // and close the LATERAL gap the knots leave behind: they
+                    // match the two decks along the branch centreline only.
+                    branch.bankKnots = frogBankKnots(main, branch).knots;
+                    // WITH THE DECKS COINCIDENT THE FADE IS NO LONGER NEEDED,
+                    // and it was never affordable: it cost the branch its
+                    // washboard over 75 mm and, through the envelope, the main
+                    // its own over 100. Both routes now carry a full field.
+                    branch.frogEndS = 0;
                     branch.ridgeFadeMm = RIDGE_FADE_MM;
                     branch.frogStartS = FROG_RIDGE_KEEP_MM;
                     // THE MAIN KEEPS ITS WASHBOARD, ALL OF IT. Fading both routes
@@ -1549,6 +1556,79 @@ function frogDeckKnots(main, branch, spec) {
     return { knots, sSep, mainSep: project(sSep).along };
 }
 
+/**
+ * THE FROG IS THE ONE PLACE ZERO BANK CANNOT HOLD, and this is why.
+ *
+ * Both routes fall at the same rate along their OWN path, and across the frog
+ * their headings differ by up to 45 degrees. Two planes of equal gradient
+ * magnitude in different directions meet along a LINE and nowhere else, so
+ * "both decks level across, both flush" does not exist. `frogDeckKnots` matches
+ * them along the branch CENTRELINE; away from it they diverge at 0.11 mm/mm,
+ * which is +-2.6 mm across a 48 mm channel.
+ *
+ * That divergence is the whole defect, wearing two costumes:
+ *   - the EDGE across the curve route, where the surface follows whichever deck
+ *     is lower and kinks at the main's channel boundary
+ *   - the FLAT, 75 mm of branch and 100 mm of main with no washboard at all,
+ *     because each route's clearance envelope is referenced to its OWN deck and
+ *     so passes under the other route's ridge crests and shaves them off
+ * One bug. Close the gap and both go.
+ *
+ * THERE IS NO SHARE TO PICK. Splitting the tilt half and half was built and
+ * measured, and the geometry refuses it: both along-slopes are already pinned
+ * (the main by its grade, the branch by frogDeckKnots matching it), and those
+ * two constraints determine the common surface UNIQUELY as the main's plane —
+ * branch takes all the cross-slope, main takes none. Half leaves +-1.3 mm,
+ * still twice what the envelope needs to clear a crest, so the shaving carries
+ * on and it measures barely better than doing nothing.
+ *
+ * Bank tapers out once the branch's channel is clear of the main's, so only the
+ * frog leans and both mouths keep the geometry their joints were cut against.
+ */
+const FROG_BANK_FADE_MM = 20;
+
+function frogBankKnots(main, branch) {
+    const m0 = planPosAt(main, 0);
+    const fwd = [Math.cos(m0.h), Math.sin(m0.h)];
+    const rt = [Math.sin(m0.h), -Math.cos(m0.h)];
+    const halfM = main.innerWidth / 2, halfB = branch.innerWidth / 2;
+    const gMain = main.planLen ? main.drop / main.planLen : 0;
+
+    const latAt = (s, u) => {
+        const p = planPosAt(branch, s);
+        const x = p.x + Math.sin(p.h) * u, z = p.z - Math.cos(p.h) * u;
+        return (x - m0.x) * rt[0] + (z - m0.z) * rt[1];
+    };
+    /** first s at which no part of the branch's channel is over the main's */
+    let sClear = branch.planLen;
+    for (let s = 0; s <= branch.planLen; s += 0.5) {
+        const a = latAt(s, -halfB), b = latAt(s, halfB);
+        if (Math.sign(a) === Math.sign(b) && Math.min(Math.abs(a), Math.abs(b)) > halfM) {
+            sClear = s; break;
+        }
+    }
+    const taper = (s) => {
+        if (s <= sClear) return 1;
+        if (s >= sClear + FROG_BANK_FADE_MM) return 0;
+        const f = 1 - (s - sClear) / FROG_BANK_FADE_MM;
+        return f * f * (3 - 2 * f);
+    };
+
+    const knots = [];
+    const N = Math.max(8, Math.round(branch.planLen / 2));
+    for (let i = 0; i <= N; i++) {
+        const s = (branch.planLen * i) / N;
+        const p = planPosAt(branch, s);
+        const rb = [Math.sin(p.h), -Math.cos(p.h)];
+        // how fast the MAIN's deck falls across the BRANCH's width. Matching it
+        // makes the branch's deck the main's plane, which is the one surface
+        // both routes can share.
+        const m = -gMain * (fwd[0] * rb[0] + fwd[1] * rb[1]) * taper(s);
+        knots.push([s, Math.atan(Math.max(-0.5, Math.min(0.5, m)))]);
+    }
+    return { knots, sClear };
+}
+
 export function planPosAt(piece, s) {
     if (!piece.radius) {
         const dir = [Math.cos(piece.entry.h), Math.sin(piece.entry.h)];
@@ -1612,6 +1692,28 @@ export function supportInFrame(support, frame) {
     return { ...support, ...inPlane(support.x, support.z, frame), h: support.h - frame.h };
 }
 
+/**
+ * Cross-slope at s, interpolated from `bankKnots`. Zero for anything without
+ * them, which is every piece but a switch's two halves — see frogBankKnots.
+ *
+ * It rides on the STATION and is applied inside `channelProfile`, not to the
+ * station's frame. Tilting the frame takes the rim with it and the part stops
+ * lying flat; tilting the section leans only the walking surface.
+ */
+export function bankAt(piece, s) {
+    const K = piece.bankKnots;
+    if (!K || K.length === 0) return 0;
+    if (s <= K[0][0]) return K[0][1];
+    for (let i = 1; i < K.length; i++) {
+        if (s <= K[i][0]) {
+            const [s0, b0] = K[i - 1], [s1, b1] = K[i];
+            const f = s1 === s0 ? 0 : (s - s0) / (s1 - s0);
+            return b0 + (b1 - b0) * f;
+        }
+    }
+    return K[K.length - 1][1];
+}
+
 export function stationsForPiece(piece, maxStep = 8, extra = []) {
     const n = Math.max(2, Math.ceil(piece.planLen / maxStep) + 1);
     const cuts = [];
@@ -1630,7 +1732,8 @@ export function stationsForPiece(piece, maxStep = 8, extra = []) {
         stations.push({
             s,
             origin: [x, deckYAt(piece, s), z],
-            right: [Math.sin(h), 0, -Math.cos(h)] // zero-bank rule
+            right: [Math.sin(h), 0, -Math.cos(h)], // the FRAME is always level
+            bank: bankAt(piece, s)                 // the SECTION may lean
         });
     }
     return stations;

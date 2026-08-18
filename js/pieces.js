@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
-    SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt,
+    SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt, bankAt,
     pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside,
     undersidePlane
 } from './track.js';
@@ -327,7 +327,12 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
     // are what took the switch non-manifold — 414.9 cm3 and broken — while the
     // same fade on a plain straight or curve stayed watertight, which is how
     // the envelope was identified as the culprit rather than the fade.
-    const h0At = (s) => spec.ridge.height * frogRidgeFade(piece, s) + 0.05;
+    // CLEAR THE CRESTS THAT ARE ACTUALLY THERE. This was scaled by THIS route's
+    // ridge fade, but the material the envelope cuts through belongs to the
+    // OTHER route, which is fully ridged — so across the frog the floor dropped
+    // to 0.05 above the deck and planed the other route's washboard off. With
+    // the decks now coincident (frogBankKnots) a constant clears both.
+    const h0At = () => spec.ridge.height + 0.05;
     const h1 = spec.railHeight + 8;
     // Follows the seam taper. Cutting at the body width all the way to the
     // mouth would eat into the other route's rails where the channel has
@@ -335,7 +340,13 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
     const profiles = stations.map(st => {
         const w = innerWidthAt(piece, st.s) / 2 - 0.05;
         const h0 = h0At(st.s);
-        return [[-w, h0], [w, h0], [w, h1], [-w, h1]];
+        // THE FLOOR FOLLOWS THE DECK. Across a frog the deck leans (see
+        // frogBankKnots) while the station frame stays level, so a level
+        // envelope floor digs into the raised side of its own channel — it took
+        // the branch's worst lateral step from 1.37 mm to 2.17. Only the floor
+        // needs it; h1 is 8 mm over the rails either way.
+        const tb = Math.tan(st.bank ?? 0);
+        return [[-w, h0 - w * tb], [w, h0 + w * tb], [w, h1], [-w, h1]];
     });
     return sweepSolid(profiles, stations);
 }
@@ -1157,16 +1168,26 @@ function undersideSupportOps(piece, spec) {
     // 0.5 mm shy of each face so nothing can protrude past it.
     const s0 = 0.5, s1 = piece.planLen - 0.5;
     if (s1 - s0 < 2) return [];
-    const top = -spec.floorThk + 0.3;   // into the floor, so no coplanar faces
+    // AND THE TOP FOLLOWS THE DECK. Across a switch's frog the deck leans (see
+    // frogBankKnots) while the station frame stays level, so a level fill top
+    // leaves a wedge of void under the raised side — 3.7 mm at the wall on a
+    // 7.9 deg bank. The span audit does not see it, because it is a shallow
+    // taper rather than a wide flat ceiling, but the slicer does: it is the
+    // difference between a switch that slices silent and one that reports a
+    // floating cantilever. Zero bank on every other piece, so this is the fill
+    // it has always been elsewhere.
+    const topAt = (u, tb) => -spec.floorThk + 0.3 + u * tb;
     const N = Math.max(2, Math.ceil((s1 - s0) / 3) + 1);
     const stations = [], profiles = [];
     for (let i = 0; i < N; i++) {
         const s = s0 + ((s1 - s0) * i) / (N - 1);
         const p = planPosAt(piece, s), y = deckYAt(piece, s);
         const right = [Math.sin(p.h), 0, -Math.cos(p.h)];
+        const tb = Math.tan(bankAt(piece, s));
         stations.push({ s, origin: [p.x, y, p.z], right });
         const bot = (u) => floorAt(p.x + right[0] * u, p.z + right[2] * u) - y;
-        profiles.push([[-uBot, bot(-uBot)], [uBot, bot(uBot)], [uTop, top], [-uTop, top]]);
+        profiles.push([[-uBot, bot(-uBot)], [uBot, bot(uBot)],
+                       [uTop, topAt(uTop, tb)], [-uTop, topAt(-uTop, tb)]]);
     }
     return [{ op: ADDITION, tag: FILL_TAG,
         geometry: toBufferGeometry(sweepSolid(profiles, stations)) }];

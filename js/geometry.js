@@ -188,7 +188,7 @@ export function channelProfile(o) {
     const {
         innerWidth, wall, railH, floorThk,
         filletR = 2, filletSegs = 4,
-        deckY, rimY, rimL = rimY, rimR = rimY, ridge = 0
+        deckY, rimY, rimL = rimY, rimR = rimY, ridge = 0, bank = 0
     } = o;
     const Wi = innerWidth / 2;
     const Wo = Wi + wall;
@@ -214,34 +214,51 @@ export function channelProfile(o) {
     // nozzle width of flat crest.
     const cr = Math.min(0.8, Math.max(0.2, (wall - 0.4) / 2));  // rail crest chamfer
     const ce = 0.5;  // bed-edge chamfer
+
+    // THE DECK CAN BANK; THE RIM NEVER DOES. Across a switch's frog the two
+    // routes' deck planes cannot both be level (see frogBankKnots) and the
+    // branch has to take the cross-slope. Tilting the whole STATION was tried
+    // and it takes the rim with it: the underside stops being planar, the part
+    // will not lie down, and the worst unsupported span went 10 mm to 70. So
+    // the tilt lives HERE, in the section, applied to everything that hangs off
+    // the deck line — floor, fillets, rail crests, drumhead ceiling — while
+    // `rimAt` is left exactly where it was. The rim plane is untouched, the
+    // part still prints flat, and only the walking surface leans.
+    //
+    // `bank` is 0 for every piece but a switch's two halves, so this is the
+    // profile it has always been everywhere else.
+    const tb = Math.tan(bank);
     const pts = [];
-    pts.push([-Wo + ce, rimAt(-Wo + ce)]);
-    pts.push([-Wo, rimAt(-Wo) + ce]);
-    pts.push([-Wo, railTop - cr]);
-    pts.push([-Wo + cr, railTop]);
-    pts.push([-Wi - cr, railTop]);
-    pts.push([-Wi, railTop - cr]);
-    pts.push([-Wi, dS + filletR]);
+    /** deck-borne point (tilts), or `rim` for one that must stay put */
+    const P = (u, y, rim = false) => pts.push([u, rim ? y : y + u * tb]);
+
+    P(-Wo + ce, rimAt(-Wo + ce), true);
+    P(-Wo, rimAt(-Wo) + ce, true);
+    P(-Wo, railTop - cr);
+    P(-Wo + cr, railTop);
+    P(-Wi - cr, railTop);
+    P(-Wi, railTop - cr);
+    P(-Wi, dS + filletR);
     // left fillet: quarter arc from wall down onto the floor
     for (let i = 1; i <= filletSegs; i++) {
         const t = Math.PI + (i / filletSegs) * (Math.PI / 2);
-        pts.push([(-Wi + filletR) + filletR * Math.cos(t), (dS + filletR) + filletR * Math.sin(t)]);
+        P((-Wi + filletR) + filletR * Math.cos(t), (dS + filletR) + filletR * Math.sin(t));
     }
     // right fillet: floor back up the wall
     for (let i = 1; i <= filletSegs; i++) {
         const t = (3 * Math.PI) / 2 + (i / filletSegs) * (Math.PI / 2);
-        pts.push([(Wi - filletR) + filletR * Math.cos(t), (dS + filletR) + filletR * Math.sin(t)]);
+        P((Wi - filletR) + filletR * Math.cos(t), (dS + filletR) + filletR * Math.sin(t));
     }
-    pts.push([Wi, railTop - cr]);
-    pts.push([Wi + cr, railTop]);
-    pts.push([Wo - cr, railTop]);
-    pts.push([Wo, railTop - cr]);
-    pts.push([Wo, rimAt(Wo) + ce]);
-    pts.push([Wo - ce, rimAt(Wo - ce)]);
-    pts.push([Wi, rimAt(Wi)]);
-    pts.push([Wi, ceilY]);
-    pts.push([-Wi, ceilY]);
-    pts.push([-Wi, rimAt(-Wi)]);
+    P(Wi, railTop - cr);
+    P(Wi + cr, railTop);
+    P(Wo - cr, railTop);
+    P(Wo, railTop - cr);
+    P(Wo, rimAt(Wo) + ce, true);
+    P(Wo - ce, rimAt(Wo - ce), true);
+    P(Wi, rimAt(Wi), true);
+    P(Wi, ceilY);
+    P(-Wi, ceilY);
+    P(-Wi, rimAt(-Wi), true);
     return pts;
 }
 
@@ -673,7 +690,10 @@ export function pieceProfiles(piece, stations, spec, withRidges, supportStations
         // that surface; the walker meets one field, whichever route it takes.
         ridge: withRidges
             ? ridgeOffset(st.s, piece.ridgePitch, spec.ridge.height) * frogRidgeFade(piece, st.s)
-            : 0
+            : 0,
+        // cross-slope, carried on the station so this module needs nothing from
+        // track.js — see channelProfile for why the rim is spared
+        bank: st.bank ?? 0
     }));
 }
 

@@ -1701,6 +1701,51 @@ describe('the deck ceiling is held up', () => {
             expect(`${hand}: worst span ${worst <= SPAN_LIMIT}`)
                 .toBe(`${hand}: worst span true`);
         }, 180000);
+
+    /*
+     * NOTHING MAY STAND IN THE CURVE ROUTE'S WAY.
+     *
+     * The frog's two deck planes can only agree along a line, so unless the
+     * branch is banked onto the main's plane the walking surface kinks at the
+     * main's channel boundary — measured at 1.94 mm down across the branch's
+     * inboard half, which is a ridge and a half of step under one foot. Brett
+     * saw it in a render before anything here could measure it.
+     *
+     * The gate is a LATERAL step, taken 1 mm at a time across the channel and
+     * with the washboard's own 0.6 mm allowed for: ridges run transverse, so
+     * they cost nothing across the channel and anything much over them is a
+     * feature that should not be there. It rejects — the unbanked switch reads
+     * 1.37 mm on the branch against this 1.00 limit.
+     *
+     * 1.00 and not 0.80 because of ONE remaining step, 0.90 on the main at
+     * s 110, and it is not the bank: lengthening the unwind from 20 mm to 35
+     * and to 50 leaves it at 0.90 exactly. It sits where the two channels
+     * finally part, which is the merged straight-and-curved wall Brett flagged
+     * separately. Tighten this to 0.80 when that wall is rebuilt as one curve.
+     */
+    test.each(['switchL', 'switchR'])(
+        'a %s has no edge across either route', async (hand) => {
+            const { probe } = await import('../scripts/deck_probe.mjs');
+            const { planPosAt } = await import('../js/track.js');
+            const { main, branch, top } = await probe(hand);
+            const worst = { step: 0, at: '' };
+            for (const [label, pc] of [['main', main], ['branch', branch]]) {
+                for (let s = 5; s <= pc.planLen - 5; s += 2.5) {
+                    const p = planPosAt(pc, s);
+                    let prev = null;
+                    for (let u = -19; u <= 19; u += 1) {
+                        const y = top(p.x + Math.sin(p.h) * u, p.z - Math.cos(p.h) * u);
+                        if (y != null && prev != null && Math.abs(y - prev) > worst.step) {
+                            worst.step = Math.abs(y - prev);
+                            worst.at = `${label} s=${s} u=${u}`;
+                        }
+                        prev = y;
+                    }
+                }
+            }
+            expect(`${hand}: worst lateral step ${worst.step.toFixed(2)} mm at ${worst.at}`)
+                .toBe(`${hand}: worst lateral step ${Math.min(worst.step, 1.00).toFixed(2)} mm at ${worst.at}`);
+        }, 240000);
 });
 
 describe('fill before carve', () => {
