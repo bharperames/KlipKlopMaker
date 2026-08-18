@@ -1692,6 +1692,54 @@ function stackedHex(levels) {
  * on the blind end so the slicer does not plant support inside a hole that can
  * never be reached.
  */
+/**
+ * A SLOTTED HEX SOCKET — the pillar joint, settled in plastic 2026-08-18.
+ *
+ * A hex tenon in a plain ROUND bore never worked across the real spread of
+ * printed tenons, and now we know why: a cylinder can only touch a hex on its
+ * CORNERS, and corners are the one feature a 0.4 mm nozzle cannot reproduce —
+ * it rounds them going out on a post and fills them in going into a hole. So
+ * the grip rode on the least repeatable dimension on the part, which is why
+ * `boreDia` moved five times in a single day and why, on the ladder, "none of
+ * the round bore hole collets felt like they worked with the range of tenons
+ * I have."
+ *
+ * A hex socket beds on six FLATS over the whole engagement instead, and three
+ * slots let it open for an oversize tenon. Measured against nine bases, two
+ * copies of each rung agreeing:
+ *   8.75 AF (the shipped socket, slotted)  too loose on the smallest
+ *   8.60 AF                                acceptable on the smallest, snug on
+ *                                          the largest — "acceptable because of
+ *                                          collet flex"
+ *   8.45 AF                                too tight on the largest
+ *
+ * THE TENON IS UNTOUCHED, which was the whole constraint: it still mates with
+ * every hex socket in every ramp and curve already printed.
+ *
+ * The slots sit at 60/180/300 deg, where BOTH hexes put a corner — the shaft's,
+ * so the cut misses the engraved flat, and the bore's, so each finger keeps two
+ * whole flats to bear on. They run out past the shaft's 8.66 corner radius, so
+ * they SEVER the shell: the first layer is three islands of ~38 mm2 rather than
+ * one of 116. That is inherent — a collet's fingers must be free at the mouth
+ * and the mouth is at the bed — so these parts want a brim. See the CLAUDE.md
+ * note on islands.
+ */
+function colletSocketOps(spec, cx = 0) {
+    const AF = spec.socket.colletAF;
+    const reach = spec.socket.colletSlotReach;
+    const ops = [{ op: SUBTRACTION,
+        geometry: hexSocketSolid(cx, 0, -0.5, spec.socket.depth, spec, AF) }];
+    for (let i = 0; i < 3; i++) {
+        const a = ((i + 0.5) / 3) * 2 * Math.PI;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const rect = [[3.0, -0.5], [9.0, -0.5], [9.0, 0.5], [3.0, 0.5]]
+            .map(([u, v]) => [cx + u * ca - v * sa, u * sa + v * ca]);
+        ops.push({ op: SUBTRACTION,
+            geometry: toBufferGeometry(extrudePolygonY(rect, -1, reach)) });
+    }
+    return ops;
+}
+
 function roundSocketSolid(dia, yOpen, yEnd, roofY = null, cx = 0, cz = 0) {
     const r = dia / 2;
     const dir = Math.sign(yEnd - yOpen);
@@ -1824,7 +1872,7 @@ export function buildJogGeometry(spec = SPEC, opts = {}) {
         { op: ADDITION, geometry: bar },
         { op: ADDITION, geometry: ends[1] },
         { op: ADDITION, geometry: tenon },
-        { op: SUBTRACTION, geometry: roundSocketSolid(spec.socket.boreDia, -0.5, spec.socket.depth, null, arm, 0) },
+        ...colletSocketOps(spec, arm),
         ...hexFlatEngraveOps(opts.code ?? null, 15, 0, H, spec, { capHeight: 1.6 })
     ]);
 }
@@ -2021,10 +2069,14 @@ export function buildRiserGeometry(sizeMm, spec = SPEC, opts = {}) {
         // hex-on-hex is the one pillar joint that has never been in doubt
         // ("very nice and tight"), so a slotted hex is a candidate the round
         // bore has to beat, and a candidate has to be buildable to be tried.
-        { op: SUBTRACTION, geometry: opts.hexSocketAF
-            ? hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec, opts.hexSocketAF)
-            : roundSocketSolid(
-                opts.roundSocketDia ?? spec.socket.boreDia, -0.5, spec.socket.depth) },
+        // `hexSocketAF` / `roundSocketDia` stay as TEST hooks so a ladder can
+        // still be built; the shipped socket is the collet.
+        ...(opts.roundSocketDia
+            ? [{ op: SUBTRACTION, geometry: roundSocketSolid(opts.roundSocketDia, -0.5, spec.socket.depth) }]
+            : opts.hexSocketAF
+                ? [{ op: SUBTRACTION, geometry: hexSocketSolid(0, 0, -0.5, spec.socket.depth, spec, opts.hexSocketAF) },
+                   ...(opts.slots === false ? [] : colletSocketOps(spec).slice(1))]
+                : colletSocketOps(spec)),
         // The code gets the WHOLE shaft to centre itself on now. It used to be
         // pushed into the band above the last grid mark, because centring on
         // sizeMm/2 put it exactly where a groove ran on a 30 and a 60 and the

@@ -96,13 +96,14 @@ const OUT = 'test-parts/collet';
 const CAP = 4.0;                  // engraved cap height — the first set was 2.4
 const REACH = SPEC.socket.depth + 0.5;   // 10.5, the finger length that was approved
 
-/** Rank within the family, countable by feel: 1 = tightest. */
+/** Rank within the family, countable by feel: 1 = tightest.
+ *  On the flat OPPOSITE the code — they were cut over the engraving. */
 function notchOps(n) {
     const ops = [];
     for (let k = 0; k < n; k++) {
         const y = 10.8 + k * 1.3;
         ops.push({ op: SUBTRACTION, geometry: toBufferGeometry(extrudePolygonY(
-            [[6.3, -12], [20, -12], [20, 12], [6.3, 12]], y, y + 0.8)) });
+            [[-20, -12], [-6.3, -12], [-6.3, 12], [-20, 12]], y, y + 0.8)) });
     }
     return ops;
 }

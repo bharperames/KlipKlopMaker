@@ -255,7 +255,27 @@ building, gait physics simulation, and watertight STL/3MF export.
   Also measured: one foot's tenon ran ~0.01 mm wider across corners than the
   other and that alone was enough to make it STICK in a bore. The joint is
   knife-edge at the hundredth — and the fix goes in the HOLE, never the tenon.
-- **THE ROUND BORE IS A COLLET. Measured against four real tenons, 2026-08-18.**
+- **THE PILLAR JOINT IS A SLOTTED HEX SOCKET AT 8.60 AF, SETTLED IN PLASTIC.**
+  `SPEC.socket.colletAF`. Measured against nine real base tenons, two copies of
+  each rung agreeing: **8.75** (the shipped socket, slotted) too loose on the
+  smallest · **8.60** acceptable on the smallest, "very snug on biggest, but
+  acceptable because of collet flex" · **8.45** too tight on the largest.
+  And the round bore is FINISHED as a friction joint — Brett, on the same
+  plate: "none of the round bore hole collets felt like they worked with the
+  range of tenons I have." The reason is now clear and it is not sizing: a
+  cylinder can only touch a hex on its CORNERS, and corners are the one feature
+  a 0.4 mm nozzle cannot reproduce — rounded off on a post, filled in in a hole.
+  The grip rode on the least repeatable dimension on the part, which is why
+  `boreDia` moved five times in one day. A hex beds on six FLATS over the whole
+  engagement; three slots let it open for an oversize tenon.
+  **THE TENON IS UNTOUCHED**, which was the constraint the whole search ran
+  under: it still mates with every hex socket in every ramp and curve printed.
+  `boreDia` survives only for `buildSpacerGeometry`, whose collar rings a pillar
+  rather than gripping it. Risers and the jog take `colletSocketOps`.
+  Cost, and it is real: the slots sever the shell, so a riser's first layer is
+  three ~38 mm2 islands rather than one of 116. **These parts want a brim** —
+  see the islands note above.
+- **THE ROUND BORE WAS A COLLET FIRST. Measured against four real tenons, 2026-08-18.**
   Three bores were printed and pushed onto foot tenons spanning the real printed
   range. Sizes each handled, out of four:
   · **COLLET (three slots through the wall) — 3 of 4.** Good on the largest,

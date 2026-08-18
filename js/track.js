@@ -40,7 +40,7 @@
  * printed parts stop mating (joint/socket/grid changes), MINOR for additive
  * compatible geometry, PATCH for cosmetic-only changes.
  */
-export const GEOMETRY_VERSION = '2.6.0';
+export const GEOMETRY_VERSION = '2.7.0';
 
 export const STANDARD = {
     gridMm: 15,
@@ -286,7 +286,16 @@ export const SPEC = {
          * accurately. Hex-in-hex bears on the flats, so every socket already
          * printed keeps its fit.
          */
+        // THE ROUND BORE IS RETIRED as a friction joint — none of the round
+        // collets took the real spread of tenons. Kept for buildSpacerGeometry,
+        // whose collar rings a pillar rather than gripping it.
         boreDia: 9.70,
+        // The slotted HEX socket that replaced it, read off a printed ladder
+        // against nine real base tenons, two copies of each rung agreeing:
+        // 8.75 too loose on the smallest, 8.45 too tight on the largest, 8.60
+        // acceptable on the smallest and snug on the largest.
+        colletAF: 8.60,
+        colletSlotReach: 10.5,
         /**
          * A LEAD-IN TAPER ON THE TENON, so it finds the bore before it has to
          * fit it. Brett: "I would like to consider a smaller taper on the
