@@ -70,29 +70,55 @@ export function integrateStep(slopeDeg, omega0, walker = DEFAULT_WALKER) {
     const gl = G_MM_S2 / walker.legLenMm;
     let phi = -(a - g);
     let omega = omega0;
-    let t = 0;
+    let t = 0, tdcTime = 0;
     const dt = 0.0005;
     const tMax = 3;
     while (phi < a + g) {
         omega += gl * Math.sin(phi) * dt;
         if (omega <= 0) return null; // fell back — stall
+        if (phi < 0) tdcTime = t;    // last instant before top dead center
         phi += omega * dt;
         t += dt;
         if (t > tMax) return null;
     }
-    return { stepTime: t, omegaEnd: omega };
+    return { stepTime: t, omegaEnd: omega, tdcTime };
 }
 
 /**
  * Full assessment of a slope against a walker + surface configuration.
+ *
+ * THE GAIT IS A GRIP-RELEASE CYCLE ON A RACK, not a continuous roll — Brett,
+ * off the toy: the figure rocks back, the front leg falls forward and its
+ * grooved rubber pad GRIPS a floor ridge and stops; the centre of mass then
+ * tips the body back, releasing the front grip as it rocks onto the hind
+ * hooves; the front leg comes forward ready for the next grip "several ridges
+ * down". The rimless wheel already carries this cycle — each strike is the
+ * grip, each stance the rock — but two things about it were unmodelled:
+ *
+ *  - THE GRIP PHASE. From strike to top dead center the stance angle φ is
+ *    negative: the COM is uphill of the new front contact, gravity torques the
+ *    body BACK, and the tangential reaction at the pad points uphill — so
+ *    without interlock the pad slides backward and the strike is not banked.
+ *    That is what the pad grooves and the washboard are for, and why a flat
+ *    patch is a disengaged drive (PHYSICS.md §3.1). The φ<0 time is returned
+ *    as `gripS`, the φ>0 fall-forward as `swingS`.
+ *  - THE RATCHET. The pad can only anchor meshed with a ridge, so the stride
+ *    is quantised: pass `ridgePitchMm` and the stride snaps to the nearest
+ *    whole number of ridges (never fewer than one). At the Standard pitch the
+ *    2·l·sinα = 16.1 mm swing lands 6 ridges down — Brett's "several".
+ *
  * @returns {{ status: 'stall'|'walk'|'slide'|'tumble',
- *             speedMmS, stepHz, strideMm, omegaSteady, detail }}
+ *             speedMmS, stepHz, strideMm, ridgesPerStep, gripS, swingS,
+ *             omegaSteady, detail }}
  */
 export function assessSlope(slopeDeg, opts = {}) {
     const walker = { ...DEFAULT_WALKER, ...opts.walker };
     const mu = opts.mu ?? FRICTION_PRESETS.washboard.mu;
     const a = d2r(walker.alphaDeg), g = d2r(slopeDeg);
-    const strideMm = 2 * walker.legLenMm * Math.sin(a);
+    const pitch = opts.ridgePitchMm > 0 ? opts.ridgePitchMm : 0;
+    const swingMm = 2 * walker.legLenMm * Math.sin(a);
+    const ridgesPerStep = pitch ? Math.max(1, Math.round(swingMm / pitch)) : 0;
+    const strideMm = pitch ? ridgesPerStep * pitch : swingMm;
 
     if (slopeDeg <= 0) {
         return { status: 'stall', speedMmS: 0, stepHz: 0, strideMm, omegaSteady: 0, detail: 'No gravity gradient — nothing drives the gait.' };
@@ -121,8 +147,12 @@ export function assessSlope(slopeDeg, opts = {}) {
         speedMmS,
         stepHz: 1 / step.stepTime,
         strideMm,
+        ridgesPerStep,
+        gripS: step.tdcTime,
+        swingS: step.stepTime - step.tdcTime,
         omegaSteady: omegaS,
-        detail: `Steady gait: ${(1 / step.stepTime).toFixed(1)} steps/s at ${speedMmS.toFixed(0)} mm/s.`
+        detail: `Steady gait: ${(1 / step.stepTime).toFixed(1)} steps/s at ${speedMmS.toFixed(0)} mm/s`
+            + (ridgesPerStep ? `, each grip ${ridgesPerStep} ridges down.` : '.')
     };
 }
 

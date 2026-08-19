@@ -1711,7 +1711,10 @@ function fitView() {
 // ---------------------------------------------------------------------------
 
 function physOpts() {
-    return { mu: FRICTION_PRESETS[state.muKey].mu, walker: state.walker };
+    // The stride ratchet only exists where there are ridges to grip — the
+    // washboard preset gets the Standard pitch, the smooth presets none.
+    return { mu: FRICTION_PRESETS[state.muKey].mu, walker: state.walker,
+             ridgePitchMm: state.muKey === 'washboard' ? SPEC.ridge.pitch : 0 };
 }
 
 function refreshPhysicsPanel() {

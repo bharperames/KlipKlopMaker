@@ -1160,40 +1160,28 @@ export function layoutTrack(sequence, params = {}) {
                 }
                 main.prevIndex = prev ? prev.index : null;
                 branch.prevIndex = prev ? prev.index : null;
-                // hold the branch level with the main across the frog, and
-                // make the frog itself SMOOTH on BOTH routes
+                // hold the branch's deck flush with the main's for as long as
+                // the two channels share ground (frogDeckKnots / frogClearS)
                 const frog = frogDeckKnots(main, branch, p);
                 if (frog) {
                     branch.deckKnots = frog.knots;
                     // and close the LATERAL gap the knots leave behind: they
                     // match the two decks along the branch centreline only.
                     branch.bankKnots = frogBankKnots(main, branch).knots;
-                    // WITH THE DECKS COINCIDENT THE FADE IS NO LONGER NEEDED,
-                    // and it was never affordable: it cost the branch its
-                    // washboard over 75 mm and, through the envelope, the main
-                    // its own over 100. Both routes now carry a full field.
+                    // BOTH ROUTES CARRY A FULL WASHBOARD, feathered together in
+                    // the frog. frogEndS = 0 disables the ridge fade: fading
+                    // was tried in every combination and each lost something
+                    // that mattered more than the chevron it prevented — both
+                    // routes faded took the grooves off half the through route
+                    // (Brett, on sight: "what im talking about is the apparent
+                    // loss of the grooves"), and the branch alone faded left a
+                    // broad flat that PHYSICS.md §3.1 now names for what it is:
+                    // a disengaged rack, with nothing for the pony's pads to
+                    // grip. The rack gate in tests/pieces.test.js (worst flat
+                    // patch <= 40 mm2) forbids either fade from returning.
                     branch.frogEndS = 0;
                     branch.ridgeFadeMm = RIDGE_FADE_MM;
                     branch.frogStartS = FROG_RIDGE_KEEP_MM;
-                    // THE MAIN KEEPS ITS WASHBOARD, ALL OF IT. Fading both routes
-                    // was tried and it takes far too much: the main's frog runs
-                    // s 20 to 100 of 150, so more than half the through route
-                    // came out smooth. The washboard is not decoration, it is
-                    // the gait surface (PHYSICS.md), and Brett caught the cost
-                    // on sight — "what im talking about is the apparent loss of
-                    // the grooves".
-                    //
-                    // Only the BRANCH goes smooth inside the frog, so exactly
-                    // one ridge field exists there and it is the main's. A
-                    // walker on the branch crosses it obliquely rather than
-                    // meeting nothing, which is strictly better than a smooth
-                    // patch and far better than two fields chevroning.
-                    //
-                    // This was believed impossible — fading the branch alone
-                    // once left its flat deck tangent to the main's ridge
-                    // valleys and the boolean died. That was with the decks
-                    // MISMATCHED and the fade running from s=0. With both of
-                    // those fixed it is watertight, retested at sinks 0 to 0.10.
                 }
                 walk(node.main ?? [], { cursor: main.exit, deck: main.exitDeck, piece: main }, [...address, 'main'], active && gate === 'main');
                 walk(node.branch ?? [], { cursor: branch.exit, deck: branch.exitDeck, piece: branch }, [...address, 'branch'], active && gate === 'branch');
@@ -1497,14 +1485,19 @@ export function deckYAt(piece, s) {
  * THE FIX is a reparameterised descent, not a new slope. The branch matches the
  * main tread for tread through the frog, then runs straight to the exit deck it
  * always had, so the grid is untouched and only the middle of the piece moves.
- * The run after separation steepens from 11.22 to 11.59 degrees — inside the
- * 10-12 green band, which is why this is affordable at all.
+ * The run after separation steepens from 11.22 to 12.26 degrees — over the
+ * green band's 12 but well inside the hard 8-14 window, and assessSlope walks
+ * it at 137 mm/s on the rack. It was 11.59 when the match released at the
+ * centreline; holding flush to the channel separation (frogClearS — the change
+ * that closed the knee) spends the same drop over 27 fewer millimetres, and
+ * the trough it removed was worth more than the fraction of a degree it costs.
  *
- * THE RIDGES go with it. Two washboard fields crossing at an angle is the
- * chevron interference in the render, and matching the decks would have made it
- * worse by bringing them into the same plane. So the branch carries NO ridges
- * inside the frog: the main owns that surface, and the branch fades its own in
- * over `RIDGE_FADE_MM` once it is clear. One field everywhere, always.
+ * THE RIDGES: both routes carry a full field, feathered together in the frog.
+ * An earlier design suppressed the branch's ridges inside the frog ("one field
+ * everywhere") on the chevron-interference argument; that left the broad flat
+ * Brett photographed, and PHYSICS.md §3.1 says why a flat is worse than a
+ * crossing — the washboard is a RACK, and a walker on a flat has nothing to
+ * grip. The rack gate in tests/pieces.test.js forbids the flat from returning.
  */
 const RIDGE_FADE_MM = 20;
 /**

@@ -96,6 +96,21 @@ Two consequences, and both are design rules rather than nice-to-haves:
   project did for a while — removes the nudge by removing the drive, and that
   is worse.
 
+The model carries the cycle explicitly (`assessSlope` with `ridgePitchMm`,
+which the simulator feeds from each piece's own snapped pitch). The full
+grip-release sequence, as Brett describes the toy: the figure rocks back, the
+front leg falls forward, its pad **grips** a ridge and stops; the centre of
+mass tips the body back, **releasing** the grip as it rocks onto the hind
+hooves; the front leg comes forward ready for the next grip several ridges
+down. Mapped onto the rimless wheel: the strike is the grip, and from strike
+to top dead centre (stance angle φ < 0) the COM is uphill of the pad — the
+tangential reaction points uphill and only the interlock holds the strike from
+sliding back. Past TDC the figure falls forward freely. `assessSlope` reports
+the two phases as `gripS`/`swingS`, and quantises the stride to the nearest
+whole ridge (`ridgesPerStep`, minimum one): 2·l·sin α = 16.07 mm of swing
+settles **6 ridges down** at the 2.5 mm pitch — a 15.0 mm stride, ~7% slower
+than the smooth-theory number the model used before.
+
 ## 4. Geometry constraints enforced by the app
 
 | Constraint | Value | Reason |

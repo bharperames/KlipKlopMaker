@@ -58,6 +58,35 @@ describe('rimless-wheel gait model', () => {
         const fast = assessSlope(13, { mu: 0.6 });
         expect(fast.speedMmS).toBeGreaterThan(slow.speedMmS);
     });
+
+    /*
+     * THE GRIP-RELEASE CYCLE ON THE RACK — Brett, off the toy: the front pad
+     * grips a ridge and stops, the COM tips the body back and releases the
+     * grip, and the front leg lands ready for the next grip "several ridges
+     * down". Two model consequences, both pinned here.
+     */
+    test('the stride is quantised to whole ridges of the rack', () => {
+        const r = assessSlope(11.217, { mu: 0.6, ridgePitchMm: 2.5 });
+        // 2·26·sin(18°) = 16.07 mm of swing → the pad settles 6 ridges down
+        expect(r.ridgesPerStep).toBe(6);
+        expect(r.strideMm).toBeCloseTo(15.0, 5);
+        // "several ridges down": the ratchet costs speed against smooth theory
+        const smooth = assessSlope(11.217, { mu: 0.6 });
+        expect(r.speedMmS).toBeLessThan(smooth.speedMmS);
+        expect(r.speedMmS).toBeGreaterThan(smooth.speedMmS * 0.85);
+        // even a coarse rack can never quantise the stride to zero
+        expect(assessSlope(11.217, { mu: 0.6, ridgePitchMm: 30 }).ridgesPerStep).toBe(1);
+    });
+
+    test('each step splits into a grip phase and a release-swing phase', () => {
+        const r = assessSlope(11.217, { mu: 0.6, ridgePitchMm: 2.5 });
+        // grip: strike → top dead center, COM uphill of the pad, rack loaded.
+        // swing: past TDC, falling forward into the next grip. Both real, and
+        // the fall is the longer half — the grip is an arrest, not a dwell.
+        expect(r.gripS).toBeGreaterThan(0.01);
+        expect(r.swingS).toBeGreaterThan(r.gripS);
+        expect(r.gripS + r.swingS).toBeCloseTo(1 / r.stepHz, 3);
+    });
 });
 
 describe('ballastPlan', () => {

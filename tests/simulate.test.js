@@ -12,7 +12,10 @@ describe('WALK regime', () => {
         const { pieces } = layoutTrack(['straight', 'straight', 'straight'], { slopeDeg: 11 });
         const r = simulateRun(pieces, { mu: FRICTION_PRESETS.washboard.mu });
         expect(r.outcome).toBe('arrived');
-        const predicted = assessSlope(11, { mu: FRICTION_PRESETS.washboard.mu }).speedMmS;
+        // the same surface the sim rides: the stride is quantised to the
+        // piece's own snapped ridge pitch (the grip-release ratchet)
+        const predicted = assessSlope(11,
+            { mu: FRICTION_PRESETS.washboard.mu, ridgePitchMm: pieces[0].ridgePitch }).speedMmS;
         // steady-state velocity samples (skip the ramp-in) should sit at the prediction
         const steady = r.trace.filter(s => s.mode === 'walk' && s.t > 0.5 && s.t < 2.0);
         expect(steady.length).toBeGreaterThan(10);

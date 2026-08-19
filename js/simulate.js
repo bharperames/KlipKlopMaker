@@ -70,7 +70,10 @@ export function simulateRun(pieces, opts = {}) {
         pc.isLift
             ? { status: 'lift', speedMmS: liftSpeed, stepHz: 0, strideMm: 0 }
             : pc.slopeDeg > 0
-                ? assessSlope(pc.slopeDeg, { mu, walker })
+                // Each piece's own snapped ridge pitch, so the stride ratchet
+                // (assessSlope: the pad can only grip meshed with a ridge)
+                // quantises to the rack the figure is actually standing on.
+                ? assessSlope(pc.slopeDeg, { mu, walker, ridgePitchMm: pc.ridgePitch })
                 : { status: 'platform', speedMmS: 0, stepHz: 0, strideMm: 0 }
     );
 
