@@ -1112,7 +1112,9 @@ function undersideSupportOps(piece, spec) {
     // this printed tilted onto its underside plane" and is FALSE for the flat
     // start and end platforms, their drop being zero. They were therefore given
     // nothing while having the plainest cavity in the project.
-    if (piece.skirtStyle !== 'minimal') return [];     // the arcade holds a viaduct up
+    // `minimal` AND `block` both fill; only the departed viaduct's arcade
+    // wanted its cavity open.
+    if (piece.skirtStyle !== 'minimal' && piece.skirtStyle !== 'block') return [];
     // ELEVATORS TOO. This skipped them as a "solid block from the rim up to
     // the deck", which is true only where the HOUSING is: it spans s 40-110,
     // and the landings either side of it carry deck over open channel — 9.8 mm
@@ -1133,8 +1135,13 @@ function undersideSupportOps(piece, spec) {
     // (138, -8) the part had material only from 75 to 102.3, with nothing
     // beneath it. The elevator prints rim-down, so its cavity floor is the RIM
     // and nothing else.
+    // A BLOCK PIECE FILLS TO ITS RIM — that is the style: the walls run
+    // vertically down to the flat rim plane and the fill goes with them, so
+    // the first layer is one slab and the slicer's infill owns the interior.
+    // `max(rimY, plane)` here would strand everything below the plane at the
+    // piece's high end as open cavity between full-depth walls.
     const floorAt = (x, z) => (lying ? pl0.at(x, z)
-        : (piece.isElevator || piece.type === 'elevator')
+        : (piece.skirtStyle === 'block' || piece.isElevator || piece.type === 'elevator')
             ? piece.rimY
             : Math.max(piece.rimY, pl0.at(x, z)));
 

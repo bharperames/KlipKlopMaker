@@ -34,6 +34,16 @@ export function slabIslands(P, I, y, pitch = 0.15) {
     }
     x0 -= pitch; x1 += pitch; z0 -= pitch; z1 += pitch;
     const nx = Math.ceil((x1 - x0) / pitch), nz = Math.ceil((z1 - z0) / pitch);
+    // A SAMPLE POINT MUST NEVER LAND ON A TRIANGLE EDGE. The containment test
+    // below keeps points with w >= 0, so a point exactly on the shared edge of
+    // two triangles is counted by BOTH and the parity flips the wrong way. A
+    // block-style straight has vertical edge planes at exact half-ridge-pitch
+    // x positions, the cell centres aligned with them every ~37.5 mm, and the
+    // raster read a solid slab as 11 islands — while a min-hit probe of the
+    // same mesh showed one. The offset is an irrational fraction of the pitch,
+    // so a centre and a mesh edge can only coincide by floating-point accident
+    // rather than by construction. Deterministic, same answer every run.
+    const jx = pitch * 0.5 * (Math.SQRT2 - 1), jz = pitch * 0.5 * (Math.sqrt(3) - 1.5);
     const cross = new Int16Array(nx * nz);
     for (let t = 0; t < I.length; t += 3) {
         const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
@@ -48,9 +58,9 @@ export function slabIslands(P, I, y, pitch = 0.15) {
         const j0 = Math.max(0, Math.floor((Math.min(az, bz, cz) - z0) / pitch));
         const j1 = Math.min(nz - 1, Math.ceil((Math.max(az, bz, cz) - z0) / pitch));
         for (let j = j0; j <= j1; j++) {
-            const pz = z0 + (j + 0.5) * pitch;
+            const pz = z0 + (j + 0.5) * pitch + jz;
             for (let i = i0; i <= i1; i++) {
-                const px = x0 + (i + 0.5) * pitch;
+                const px = x0 + (i + 0.5) * pitch + jx;
                 const w0 = ((px - ax) * (cz - az) - (pz - az) * (cx - ax)) / d;
                 const w1 = ((bx - ax) * (pz - az) - (bz - az) * (px - ax)) / d;
                 if (w0 < 0 || w1 < 0 || w0 + w1 > 1) continue;

@@ -1039,11 +1039,10 @@ export function layoutTrack(sequence, params = {}) {
         skirtDepth: SPEC.skirtDepth,
         ridgeHeight: SPEC.ridge.height,
         ridgePitch: SPEC.ridge.pitch,
-        // NOT settable any more — see normaliseSkirtStyle. `viaduct` is gone,
-        // so an option that names it is accepted and ignored rather than
-        // quietly producing a part that no longer exists.
         ...params,
-        skirtStyle: 'minimal'
+        // `minimal` or `block` — anything else (a saved `viaduct`) reloads as
+        // `minimal` rather than refusing to open. See normaliseSkirtStyle.
+        skirtStyle: normaliseSkirtStyle(params.skirtStyle)
     };
 
     const issues = [];
@@ -1122,7 +1121,7 @@ export function layoutTrack(sequence, params = {}) {
             innerWidth, isLift,
             isElevator: kind === 'elevator',
             ridgePitch: ridge.pitch, ridgeCount: ridge.count,
-            skirtStyle: 'minimal',
+            skirtStyle: p.skirtStyle,
             ...meta
         };
         pieces.push(piece);
@@ -2041,8 +2040,7 @@ export function undersidePlane(piece, spec = SPEC) {
  * straight. Platforms and powered tiles stay out: they are level already.
  */
 /**
- * THERE IS ONE UNDERSIDE NOW, and this function exists only to say so to old
- * data.
+ * TWO UNDERSIDES NOW: `minimal` (tilted slab) and `block` (z-up).
  *
  * `viaduct` is gone. It was never a style anyone chose for how it looked —
  * Brett: "The viaduct is not an intentional style, those were purely an attempt
@@ -2053,14 +2051,22 @@ export function undersidePlane(piece, spec = SPEC) {
  * worse than the thing it was competing with: 56 mm worst unsupported span on a
  * straight and 66 on a curve, against 10 and 10 for a filled minimal piece, with
  * 1067 mm2 ceilings open to the bed. Its one print on record failed on those
- * arched skirts.
+ * arched skirts. A scene saved as `viaduct` therefore reloads as `minimal`
+ * rather than refusing to open — a deliberate change of a printed part, which
+ * is why it is stated here and not silently coerced somewhere downstream.
  *
- * A scene saved as `viaduct` therefore reloads as `minimal` rather than
- * refusing to open. That is a deliberate change of a printed part, which is why
- * it is stated here and not silently coerced somewhere downstream.
+ * `block` is Brett's reaction to the tilted parts in practice: "the pieces
+ * look odd and are hard to reason about ... I suspect they will look more
+ * natural in the hand and make more sense." A block piece keeps the minimal
+ * deck, rails and joints but stands them on VERTICAL walls running down to a
+ * flat rim at `rimY` — printed and held exactly as assembled, no tilt — with
+ * the under-deck cavity filled to the rim and the slicer's infill carrying
+ * the interior. It is the solid-cavity shape that cleared the cantilever
+ * warning in the ablation; the price is the skirt is as deep as the drop at
+ * the piece's high end, paid in infill rather than walls.
  */
-export function normaliseSkirtStyle() {
-    return 'minimal';
+export function normaliseSkirtStyle(style) {
+    return style === 'block' ? 'block' : 'minimal';
 }
 
 export function laysOnUnderside(piece, spec) {

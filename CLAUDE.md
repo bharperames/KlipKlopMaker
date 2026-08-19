@@ -82,15 +82,52 @@ building, gait physics simulation, and watertight STL/3MF export.
   checks the floor is the highest thing in the channel; it is a surface check,
   not a per-feature one, so the next feature to get this wrong is caught too.
 - **Print-friendliness is a contract**, and the orientation is part of the
-  part. A `viaduct` piece prints RIM-DOWN on its arcade with no supports. A
-  `minimal` piece is exported already TILTED onto its own underside
+  part. A `minimal` piece is exported already TILTED onto its own underside
   (`tiltOntoUnderside`, gated by `laysOnUnderside`) — do not re-orient it in
-  the slicer, that is the reason it is that shape. Platforms, powered tiles
+  the slicer, that is the reason it is that shape. A `block` piece prints
+  RIM-DOWN on its flat bottom, exactly as assembled. Platforms, powered tiles
   and elevators are flat or block-bottomed and stay rim-down in both styles.
   Never add geometry that protrudes past an end face or floats above the bed
   (the original dovetail tab failed in the slicer as a floating cantilever) —
   joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`
   enforces the footprint rule.
+- **TWO PART SHAPES: `block` (z-up) and `minimal` (tilted slab), chosen in the
+  Print/Parts panel.** Brett, on the tilted parts in practice: "the pieces
+  look odd and are hard to reason about ... I suspect they will look more
+  natural in the hand and make more sense." A block piece keeps the minimal
+  deck, rails and joints but stands them on VERTICAL walls down to a flat rim
+  at `rimY`, cavity filled to the rim, printed and held exactly as assembled —
+  the slicer's infill carries the interior ("use the infill liberally").
+  Everything above the underside is IDENTICAL between the styles — same
+  joints, sockets, codes — so block and minimal parts mate and share one
+  `GEOMETRY_VERSION`. What block buys: the CURVE lies flat and slices SILENT
+  (140.25 g / 3h35 harness profile — no orientation of a curve had ever
+  managed silence before), and NO SPACER anywhere — the rim-based mouth lands
+  every support on-grid at 0.00, including curves (minimal curves each need
+  the 11.2 mm spacer). What it costs: ~+38% mass over minimal (straight
+  57.5 → 80.0 g harness). Both styles pass all four gates (analyzeMesh, span
+  ≤20, one first-layer island, footprint); `tests/pieces.test.js` "block
+  style" suite holds them there. NEITHER curve has been PRINTED at this
+  geometry yet — the block curve is the strongest candidate on every measure,
+  but "slices silent" is not "prints clean"; judge the middle third.
+- **`PRINT_WEIGHT_FRACTION.track` is 0.32, calibrated, and 0.95 was a live
+  bug.** 0.95 dated from when a track model was all thin walls; the under-deck
+  fill made most of the model volume sparse infill, and the shop was quoting a
+  57.5 g straight at 166 g and a 5-piece job at "110% of a 1 kg spool".
+  Sliced calibration (harness profile): minimal straight 0.33, start 0.36,
+  block straight 0.31, block curve 0.28. If the fill or infill density story
+  changes, re-run `test-parts/block_style/` through `slice_file.mjs` and
+  re-derive.
+- **A RASTER SAMPLE MUST NEVER LAND ON A TRIANGLE EDGE.** `slabIslands`
+  (first-layer islands gate) counts triangles above the slice with w >= 0
+  containment, so a cell centre exactly on a shared edge counts BOTH triangles
+  and the parity flips: a block straight — vertical edge planes at exact
+  half-ridge-pitch x positions — read as 11 islands while a min-hit probe of
+  the same mesh showed one continuous slab. The sample grid now carries an
+  irrational sub-cell offset (deterministic, no Math.random) so coincidence is
+  a float accident rather than a construction. If a parity raster ever
+  disagrees with a min-hit probe, believe the probe and suspect edge
+  alignment.
 - **ONE channel width everywhere** — `SPEC.curveWidenMm` is 0. A real Klip Klop
   figure measures 38 mm and its swept path fits 48 mm at every legal radius, so
   turns need nothing added. This is what makes each piece type a single shape

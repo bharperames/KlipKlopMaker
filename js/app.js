@@ -1128,6 +1128,20 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
 muSel.value = state.muKey;
 muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
 
+// Part shape: z-up block vs tilted slab — see normaliseSkirtStyle for the
+// styles themselves. A change re-lays the whole track (every piece carries the
+// style) and the Print shop's catalogue keys on it, so the next open rebuilds.
+const skirtSel = $('in-skirt-style');
+if (skirtSel) {
+    skirtSel.value = state.skirtStyle;
+    skirtSel.addEventListener('change', () => {
+        recordEdit();
+        state.skirtStyle = normaliseSkirtStyle(skirtSel.value);
+        rebuild();
+        saveState();
+    });
+}
+
 $('in-opacity').addEventListener('input', () => {
     state.figureOpacity = parseFloat($('in-opacity').value);
     $('out-opacity').textContent = `${Math.round(state.figureOpacity * 100)}%`;
@@ -5790,6 +5804,7 @@ function syncControls() {
     $('in-leg').value = state.walker.legLenMm; $('out-leg').textContent = `${state.walker.legLenMm} mm`;
     $('in-mass').value = state.walker.massG; $('out-mass').textContent = `${state.walker.massG} g`;
     muSel.value = state.muKey;
+    { const el = $('in-skirt-style'); if (el) el.value = state.skirtStyle; }
     for (const btn of document.querySelectorAll('[data-figstyle]')) {
         btn.classList.toggle('primary', btn.dataset.figstyle === state.figureStyle);
         btn.disabled = sim.running;

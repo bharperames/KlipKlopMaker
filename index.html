@@ -711,6 +711,17 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
         <div id="export-log"></div>
 
         <h2>Part shape</h2>
+        <select id="in-skirt-style" style="width:100%; margin-bottom:4px;">
+            <option value="block">🧱 Z-up block — flat bottom, vertical walls, prints as assembled</option>
+            <option value="minimal">📐 Tilted slab — thinnest part, exported lying on its underside</option>
+        </select>
+        <div class="hint" style="margin-bottom:10px">
+            Both fill the under-deck cavity and let the slicer's infill carry the
+            interior. The block stands on its own flat rim and is printed and held
+            exactly as you see it in the scene; the slab carries ~30% less plastic
+            but comes out tilted onto its underside — lay it down as exported.
+            Changing this re-shapes every track piece in the design.
+        </div>
 
         <h2 id="printable-parts-heading">Printable parts</h2>
         <div class="card" style="padding: 0; border: 1px solid var(--line); margin-bottom: 10px;">
@@ -744,9 +755,9 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <b>Walls &amp; infill:</b> barely matter — the track is a 2.4 mm shell, six
             lines wide at a 0.4 nozzle, so it prints solid whatever you set<br>
             <b>Track:</b> as oriented, and the orientation is part of the design.
-            Viaduct pieces stand rim-down on the arcade, no supports. Minimal
-            straights and lifts come out already tilted onto their own
-            underside — lay them down as exported and do not re-orient
+            Z-up block pieces stand rim-down on their flat bottom, exactly as
+            assembled. Tilted-slab pieces come out already tilted onto their
+            own underside — lay them down as exported and do not re-orient
             them<br>
             <b>Curves &amp; switches:</b> one part per plate. The cantilever warning
             fires on them regardless, so alone it is attributable and a failure

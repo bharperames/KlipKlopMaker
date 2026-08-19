@@ -598,6 +598,10 @@ export function archStations(piece, spec, supportStations = [], forced = null, p
 export function archedRimY(piece, s, spec, supportStations = [], forced = null, u = 0) {
     const { pad: PAD, margin: MARGIN, pier: PIER, maxRise: ARCH_MAX_RISE } = ARCH;
     const flat = piece.rimY;
+    // A `block` piece is the simplest answer this function can give: vertical
+    // walls straight down to the flat rim, everywhere, no plane and no arches.
+    // Printed and held exactly as assembled — see normaliseSkirtStyle.
+    if (piece.skirtStyle === 'block') return flat;
     if (piece.skirtStyle === 'minimal') {
         // ONE PLANE, and `u` is why it takes a lateral offset: under a curve the
         // plane is at a different height on each wall at the same station, which

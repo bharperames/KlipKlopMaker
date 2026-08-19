@@ -126,6 +126,99 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
     });
 });
 
+/*
+ * THE Z-UP BLOCK STYLE, held to every gate the minimal style is held to.
+ *
+ * Brett, on the tilted parts in practice: "the pieces look odd and are hard to
+ * reason about ... I suspect they will look more natural in the hand." A block
+ * piece keeps the minimal deck, rails and joints on vertical walls down to a
+ * flat rim, cavity filled to the rim, printed exactly as assembled — see
+ * normaliseSkirtStyle. Measured on the real CLI when it landed: straight
+ * 79.97 g / curve 140.25 g, both slicing SILENT — the curve included, which no
+ * orientation had managed before.
+ *
+ * The island gate matters here specifically: the raster used to misread this
+ * exact geometry (11 islands on a slab a min-hit probe showed whole), because
+ * block pieces have vertical edge planes at exact half-pitch positions and a
+ * sample point ON a shared edge counts both triangles. slabIslands carries an
+ * irrational sub-cell offset now; one island is the true reading.
+ */
+describe('the block style stands on its whole rim', () => {
+    const SPAN_LIMIT = 20;
+    const asPrinted = (g) => {
+        const V = [], T = [];
+        for (let i = 0; i < g.positions.length; i += 3) {
+            V.push([g.positions[i], -g.positions[i + 2], g.positions[i + 1]]);
+        }
+        for (let i = 0; i < g.indices.length; i += 3) {
+            T.push([g.indices[i], g.indices[i + 1], g.indices[i + 2]]);
+        }
+        return { name: 'part', V, T };
+    };
+
+    test.each(['start', 'straight', 'curveR', 'end'])(
+        'a block %s is watertight, bridges under the limit, and lands as one island',
+        async (type) => {
+            await initCSG();
+            const { audit } = await import('../scripts/overhang_audit.mjs');
+            const { slabIslands } = await import('../scripts/first_layer.mjs');
+            const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
+                { skirtStyle: 'block', slopeDeg: 11.2167 });
+            const world = pieces.find((q) => q.type === type);
+            expect(world.skirtStyle).toBe('block');
+            const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
+            const g = buildPieceExportGeometry(world, { support: sup, forPrint: true });
+
+            const a = analyzeMesh(g.positions, g.indices);
+            expect(`${type}: manifold ${a.isManifold} consistent ${a.isConsistent} outward ${a.windsOutward}`)
+                .toBe(`${type}: manifold true consistent true outward true`);
+
+            const over = audit(asPrinted(g), 5).filter((r) => r.span > SPAN_LIMIT);
+            expect(`${type}: ${over.length} span(s) over ${SPAN_LIMIT} mm`)
+                .toBe(`${type}: 0 span(s) over ${SPAN_LIMIT} mm`);
+
+            let ymin = Infinity;
+            for (let i = 1; i < g.positions.length; i += 3) ymin = Math.min(ymin, g.positions[i]);
+            const isl = slabIslands(g.positions, g.indices, ymin + 0.1);
+            expect(`${type}: ${isl.islands} island(s), smallest ${Math.round(isl.areas[isl.areas.length - 1] ?? 0)} mm2`)
+                .toBe(`${type}: 1 island(s), smallest ${Math.round(isl.areas[0] ?? 0)} mm2`);
+        }, 180000);
+
+    test('a block switch passes the same three gates', async () => {
+        await initCSG();
+        const { audit } = await import('../scripts/overhang_audit.mjs');
+        const { slabIslands } = await import('../scripts/first_layer.mjs');
+        const { pieces } = layoutTrack(
+            [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['straight'] }],
+            { skirtStyle: 'block' });
+        const main = pieces.find((p) => p.role === 'main');
+        const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === main.index);
+        const g = buildSwitchExportGeometry(main, pieces.find((p) => p.role === 'branch'),
+            { support: sup, forPrint: true });
+        const a = analyzeMesh(g.positions, g.indices);
+        expect(a.isManifold && a.isConsistent && a.windsOutward).toBe(true);
+        const over = audit(asPrinted(g), 5).filter((r) => r.span > SPAN_LIMIT);
+        expect(over.length).toBe(0);
+        let ymin = Infinity;
+        for (let i = 1; i < g.positions.length; i += 3) ymin = Math.min(ymin, g.positions[i]);
+        expect(slabIslands(g.positions, g.indices, ymin + 0.1).islands).toBe(1);
+    }, 240000);
+
+    /*
+     * A BLOCK PIECE IS NEVER TILTED — its rim is its bed contact, and the
+     * exporter must agree with the geometry about that or the part balances
+     * on an edge (the failure printsLyingDown exists to prevent).
+     */
+    test('block pieces do not lie on their underside; minimal ramps still do', () => {
+        const block = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
+            { skirtStyle: 'block', slopeDeg: 11.2167 }).pieces;
+        for (const pc of block) expect(printsLyingDown(pc)).toBe(false);
+        const minimal = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
+            { skirtStyle: 'minimal', slopeDeg: 11.2167 }).pieces;
+        expect(printsLyingDown(minimal.find((p) => p.type === 'straight'))).toBe(true);
+    });
+});
+
 describe('engraved part codes', () => {
     const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
 
