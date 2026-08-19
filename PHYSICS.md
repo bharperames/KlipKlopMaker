@@ -68,6 +68,34 @@ every seam applies the **waterfall rule**: the downhill floor starts 0.25 mm
 lower. A toy can step *down* a microscopic ledge but stubs its toe on even a
 0.2 mm uphill lip (printer warp/over-extrusion tolerance).
 
+### 3.1 The ridges are a RACK, and the pony's front feet are the pinion
+
+The paragraphs above treat the washboard as a friction aid, which understates
+it. Brett, off the toy itself: the front hooves carry **little grooved rubber
+pads**, and "the function of the pony requires contact and grip from these
+front feet to the surface". The pad grooves and the floor ridges are the same
+pitch family — they *mesh*. That is why grip here is modelled at μs≈0.6 rather
+than PLA's 0.32: the mechanism is interlock, not adhesion.
+
+Two consequences, and both are design rules rather than nice-to-haves:
+
+- **A smooth patch is not "slightly less grippy", it is a DISENGAGED rack.**
+  The pads have nothing to bite and the walker free-wheels or stalls. So a flat
+  area anywhere on the walking surface is a functional failure, not a cosmetic
+  one — which is why `deck_probe.mjs` reports relief as a first-class number
+  alongside height, and why any flat cell in the frog is a defect.
+- **Ridge DIRECTION steers.** A rack meshing at an angle to travel resolves a
+  sideways component at every hoof strike, so, in Brett's words, the ridge
+  direction "determines the perpendicular path of the horse". This is what
+  makes ridges perpendicular to travel a *requirement* and not a convention,
+  and it is the real difficulty at a **frog**, where the two routes' fields
+  cross at up to 45°. A branch walker inside the frog meets some of the main's
+  ridges obliquely and is nudged toward the main. Feathering the two fields
+  into one another spreads that nudge over many strikes instead of handing the
+  walker one long oblique rack; suppressing one field entirely — which this
+  project did for a while — removes the nudge by removing the drive, and that
+  is worse.
+
 ## 4. Geometry constraints enforced by the app
 
 | Constraint | Value | Reason |

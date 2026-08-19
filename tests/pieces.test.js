@@ -1717,11 +1717,14 @@ describe('the deck ceiling is held up', () => {
      * feature that should not be there. It rejects — the unbanked switch reads
      * 1.37 mm on the branch against this 1.00 limit.
      *
-     * 1.00 and not 0.80 because of ONE remaining step, 0.90 on the main at
-     * s 110, and it is not the bank: lengthening the unwind from 20 mm to 35
-     * and to 50 leaves it at 0.90 exactly. It sits where the two channels
-     * finally part, which is the merged straight-and-curved wall Brett flagged
-     * separately. Tighten this to 0.80 when that wall is rebuilt as one curve.
+     * 0.70, and the 0.90 mm step this used to allow for is GONE. It was blamed
+     * on the merged straight-and-curved wall, on the evidence that lengthening
+     * the bank unwind from 20 mm to 35 and to 50 left it at 0.90 exactly. That
+     * evidence was sound and the conclusion was wrong: the unwind was never the
+     * variable, because the bank already ran to the channel separation while
+     * the DECK MATCH released at the centreline, 27 mm earlier (frogClearS).
+     * Matching both to the same s takes it to 0.65 on all four routes. The wall
+     * may still be worth rebuilding, but it is not what this was measuring.
      */
     test.each(['switchL', 'switchR'])(
         'a %s has no edge across either route', async (hand) => {
@@ -1744,7 +1747,7 @@ describe('the deck ceiling is held up', () => {
                 }
             }
             expect(`${hand}: worst lateral step ${worst.step.toFixed(2)} mm at ${worst.at}`)
-                .toBe(`${hand}: worst lateral step ${Math.min(worst.step, 1.00).toFixed(2)} mm at ${worst.at}`);
+                .toBe(`${hand}: worst lateral step ${Math.min(worst.step, 0.70).toFixed(2)} mm at ${worst.at}`);
         }, 240000);
 
     /*
@@ -1776,10 +1779,14 @@ describe('the deck ceiling is held up', () => {
      * count. Measured against the straight line from each route's own entry
      * deck to its own exit, plus its bank.
      *
-     * 0.30 mm on a plain piece, where the measured spread is 0.00 to 0.23. It
-     * is known to reject: the SWITCH's main route reads 0.42 at the knee on
-     * this same measurement, which is why the switch limit below is 0.50 and
-     * not 0.30. Tighten it when the merged wall at the knee is rebuilt.
+     * 0.30 mm on a plain piece, where the measured spread is 0.00 to 0.23, and
+     * a SWITCH is now held to the same 0.30 — it has stopped being a special
+     * case. It used to read 0.42-0.47 at the knee and was allowed 0.50; with
+     * the deck match carried out to the channel separation (frogClearS) all
+     * four routes read 0.18 or less.
+     *
+     * It is known to reject, and by a lot: release the match at the centreline
+     * again and the main route goes straight back to 0.47.
      */
     test.each(['start', 'straight', 'curveR', 'end'])(
         'a %s has no trough along the route', async (type) => {
@@ -1797,6 +1804,34 @@ describe('the deck ceiling is held up', () => {
                 .toBe(`${type}: dip ${Math.min(d.dip, 0.30).toFixed(2)} mm at ${d.at}`);
         }, 180000);
 
+    /*
+     * NO BROAD FLAT AREAS, which is a FUNCTIONAL requirement and not a
+     * cosmetic one. The pony's front hooves carry grooved rubber pads that mesh
+     * with the floor ridges (PHYSICS.md §3.1) — Brett: "the function of the
+     * pony requires contact and grip from these front feet to the surface". A
+     * smooth patch is a disengaged drive.
+     *
+     * Nothing measured this before; the frog was judged on height alone, and
+     * height gates cannot see an amplitude hole. Measured spread with the
+     * shipped geometry is 0 mm2 on straight/curve/end and 6 mm2 — a single
+     * sample cell against a fillet — on all four switch routes, so 40 is a
+     * wide margin over reality rather than a number tuned to pass.
+     *
+     * IT REJECTS, and by the design it exists to forbid: restore the old "one
+     * ridge field in the frog" suppression, which is the broad flat Brett
+     * photographed, and the branch reads 90 mm2 on switchL and 66 on switchR.
+     */
+    test.each(['switchL', 'switchR'])(
+        'a %s has a rack under both routes end to end', async (hand) => {
+            const { probe, worstFlatPatch } = await import('../scripts/deck_probe.mjs');
+            const { main, branch, top } = await probe(hand);
+            for (const [label, pc] of [['main', main], ['branch', branch]]) {
+                const f = worstFlatPatch(top, pc);
+                expect(`${hand} ${label}: flat patch ${f.areaMm2} mm2 at ${f.at}`)
+                    .toBe(`${hand} ${label}: flat patch ${Math.min(f.areaMm2, 40)} mm2 at ${f.at}`);
+            }
+        }, 240000);
+
     test.each(['switchL', 'switchR'])(
         'a %s has no trough along either route', async (hand) => {
             const { probe, worstDip } = await import('../scripts/deck_probe.mjs');
@@ -1804,7 +1839,7 @@ describe('the deck ceiling is held up', () => {
             for (const [label, pc] of [['main', main], ['branch', branch]]) {
                 const d = worstDip(top, pc);
                 expect(`${hand} ${label}: dip ${d.dip.toFixed(2)} mm at ${d.at}`)
-                    .toBe(`${hand} ${label}: dip ${Math.min(d.dip, 0.50).toFixed(2)} mm at ${d.at}`);
+                    .toBe(`${hand} ${label}: dip ${Math.min(d.dip, 0.30).toFixed(2)} mm at ${d.at}`);
             }
         }, 240000);
 

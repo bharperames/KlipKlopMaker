@@ -104,6 +104,71 @@ export function worstDip(top, piece, us = [-18, -9, 0, 9, 18], dS = 2) {
     return { dip: -worst, at };
 }
 
+/**
+ * THE LARGEST PATCH OF WALKING SURFACE WITH NO RACK IN IT, in mm2.
+ *
+ * The washboard is not a friction coating, it is a RACK that the pony's front
+ * pads mesh with (PHYSICS.md §3.1) — Brett: "the function of the pony requires
+ * contact and grip from these front feet to the surface". So a smooth patch is
+ * a disengaged drive, not a slightly slippier floor, and "no broad flat areas"
+ * is a functional requirement he stated in exactly those words.
+ *
+ * Relief is peak-to-trough within one ridge pitch ALONG the route, so a deck
+ * that is merely steep or banked reads full and only a genuine loss of
+ * amplitude reads flat. Cells below `frac` of the nominal ridge height are
+ * flat; the answer is the biggest CONNECTED patch of them, not the total,
+ * because scattered singles are sampling noise at a rail fillet while one
+ * contiguous region is a stride with nothing to push against.
+ */
+export function worstFlatPatch(top, piece, { frac = 0.5, dS = 2, dU = 3, endMm = 6 } = {}) {
+    const half = piece.innerWidth / 2 - 2;         // clear of the fillets
+    const lim = SPEC.ridge.height * frac;
+    const rows = [];
+    // SKIP THE END BANDS. A seam face is not walking surface — the pitch is
+    // snapped so the seam lands in a valley, so the last row before a face is
+    // a valley floor by construction and reads flat however healthy the field
+    // is. The start platform's bumper end is the same story. 6 mm is two ridge
+    // pitches, enough to clear both and far short of anything a stride cares
+    // about.
+    for (let s = endMm; s <= piece.planLen - endMm + 1e-9; s += dS) {
+        const p = planPosAt(piece, Math.min(s, piece.planLen));
+        const rx = Math.sin(p.h), rz = -Math.cos(p.h);
+        const row = [];
+        for (let u = -half; u <= half + 1e-9; u += dU) {
+            let lo = Infinity, hi = -Infinity;
+            for (let t = -1.25; t <= 1.25; t += 0.25) {
+                const q = planPosAt(piece, Math.max(0, Math.min(s + t, piece.planLen)));
+                const y = top(q.x + Math.sin(q.h) * u, q.z - Math.cos(q.h) * u);
+                if (y != null) { lo = Math.min(lo, y); hi = Math.max(hi, y); }
+            }
+            row.push(lo === Infinity ? null : hi - lo);
+        }
+        rows.push({ s, u0: -half, row });
+    }
+    const seen = rows.map((r) => r.row.map(() => false));
+    let best = 0, at = 'nowhere';
+    for (let i = 0; i < rows.length; i++) for (let j = 0; j < rows[i].row.length; j++) {
+        const v = rows[i].row[j];
+        if (seen[i][j] || v == null || v >= lim) continue;
+        let n = 0;
+        const stack = [[i, j]];
+        seen[i][j] = true;
+        while (stack.length) {
+            const [a, b] = stack.pop();
+            n++;
+            for (const [da, db] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const p = a + da, q = b + db;
+                if (p < 0 || q < 0 || p >= rows.length || q >= rows[p].row.length) continue;
+                const w = rows[p].row[q];
+                if (seen[p][q] || w == null || w >= lim) continue;
+                seen[p][q] = true; stack.push([p, q]);
+            }
+        }
+        if (n * dS * dU > best) { best = n * dS * dU; at = `s=${rows[i].s.toFixed(0)} u=${(rows[i].u0 + j * dU).toFixed(0)}`; }
+    }
+    return { areaMm2: best, at };
+}
+
 /** Sample one route: [s][u] grid of deck height, null off the deck. */
 function sampleRoute(top, piece, halfW, dS, dU) {
     const rows = [];

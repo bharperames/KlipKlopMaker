@@ -1,0 +1,84 @@
+<!doctype html>
+<!--
+  LOOK AT THE FROG'S WALKING SURFACE, from the same angle Brett photographs it.
+
+  `deck_probe.mjs` measures the surface and is the authority on whether a defect
+  is there; this is for the other half of the job — showing what the measurement
+  found, and catching the kind of fault an eye sees first. It renders the REAL
+  export mesh (buildSwitchExportGeometry), not the display shell, so what is on
+  screen is what would be sliced.
+
+  Served: /scripts/frog_render.html?hand=switchL&az=…&el=…&dist=…
+-->
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#0b0f16;overflow:hidden}</style>
+<script type="importmap">
+{ "imports": {
+    "three": "../vendor/three/three.module.js",
+    "three/addons/": "../vendor/three/addons/",
+    "manifold-3d": "../vendor/manifold-3d/manifold.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { layoutTrack, planPillarPositions, planPosAt, pieceFrame, pieceInFrame } from '../js/track.js';
+import { initCSG, buildSwitchExportGeometry } from '../js/pieces.js';
+
+const q = new URLSearchParams(location.search);
+const hand = q.get('hand') ?? 'switchL';
+const az = parseFloat(q.get('az') ?? '2.2');
+const el = parseFloat(q.get('el') ?? '0.55');
+const dist = parseFloat(q.get('dist') ?? '330');
+
+await initCSG();
+const sw = layoutTrack([{ type: hand, gate: 'main', main: ['straight'], branch: ['straight'] }],
+    { skirtStyle: 'minimal' });
+const sups = planPillarPositions(sw.pieces);
+const main0 = sw.pieces.find((p) => p.role === 'main');
+const branch0 = sw.pieces.find((p) => p.role === 'branch');
+const g = buildSwitchExportGeometry(main0, branch0,
+    { support: sups.find((x) => x.pieceIndex === main0.index) });
+
+const geo = new THREE.BufferGeometry();
+geo.setAttribute('position', new THREE.BufferAttribute(g.positions, 3));
+geo.setIndex(new THREE.BufferAttribute(g.indices, 1));
+geo.computeVertexNormals();
+geo.computeBoundingBox();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f16);
+// Flat gold with hard edges — the Shaded + HLR convention from the inspector,
+// which is the style a washboard reads in at all. A glossy material hides
+// 0.6 mm ridges in its own specular.
+scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0xe8bf62 })));
+scene.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 24),
+    new THREE.LineBasicMaterial({ color: 0x1a1206 })));
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 0.95);
+key.position.set(-0.4, 1, 0.35);
+scene.add(key);
+
+// AIM AT THE FROG, not at the part's centroid. The frog is where the two
+// channels overlap; the part's bounding box centre is out in the branch.
+const target = (() => {
+    const frame = pieceFrame(main0);
+    const m = pieceInFrame(main0, frame);
+    const p = planPosAt(m, m.planLen * 0.45);
+    return new THREE.Vector3(p.x, m.entryDeck - m.drop * 0.45, p.z);
+})();
+
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 1, 5000);
+camera.position.set(
+    target.x + dist * Math.cos(el) * Math.cos(az),
+    target.y + dist * Math.sin(el),
+    target.z + dist * Math.cos(el) * Math.sin(az));
+camera.lookAt(target);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(2);
+document.body.appendChild(renderer.domElement);
+renderer.render(scene, camera);
+document.title = `frog ${hand} ready`;
+window.__ready = true;
+</script>
