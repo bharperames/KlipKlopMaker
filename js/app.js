@@ -2595,11 +2595,13 @@ function refreshPrintPartsList() {
         totalWeight += wt * part.count;
         const wtText = wt > 0 ? `${wt.toFixed(0)}g` : '...';
         li.innerHTML = `<span>🧩 ${part.name}${countLabel}</span><span class="wt">${wtText} 🔍</span>`;
-        li.addEventListener('click', () => {
-            selectGalleryPart(i);
+        li.title = 'Click to inspect · ⌘/Ctrl-click to add to a scene-position selection';
+        li.addEventListener('click', (ev) => {
+            selectGalleryPart(i, ev.metaKey || ev.ctrlKey);
         });
         list.appendChild(li);
     });
+    gallery.sceneSelection = null;   // the placements were just rebuilt
 
     // The list was rebuilt from new geometry, so whatever the inspector is
     // showing is stale — changing the underside style rebuilt every piece and
@@ -3345,9 +3347,11 @@ function assembleParts() {
         const support = (state.supports ?? []).find(s => s.pieceIndex === pc.index);
         const sig = getPieceSignature(pc, support);
         if (uniqueParts.has(sig)) {
-            uniqueParts.get(sig).count++;
+            const u = uniqueParts.get(sig);
+            u.count++;
+            u.instances.push(pc);      // every placement, for the all-scene view
         } else {
-            uniqueParts.set(sig, { pc, support, count: 1 });
+            uniqueParts.set(sig, { pc, support, count: 1, instances: [pc] });
         }
     }
 
@@ -3408,8 +3412,16 @@ function assembleParts() {
         nameUse.set(base, n);
         return n === 1 ? base : `${base}_${n}`;
     };
+    // WHERE A PART REALLY SITS, for the inspector's all-scene view: local
+    // export solid (NO print tilt — assembled orientation) plus one world
+    // placement per instance. rotation.y = -h inverts `inPlane`; verified
+    // against the built scene rather than trusted from the derivation.
+    const placementOf = (pc) => {
+        const f = pieceFrame(pc);
+        return { at: [f.x, f.y, f.z], yaw: -f.h };
+    };
     for (const [sig, item] of uniqueParts.entries()) {
-        const { pc, support, count } = item;
+        const { pc, support, count, instances } = item;
         const shape = shapeOf(pc);
         const baseName = uniqueName(shape +
             (bossSplit.has(shape) ? (hasBoss(support) ? '_boss' : '_plain') : ''));
@@ -3423,7 +3435,10 @@ function assembleParts() {
                 kind: 'track',
                 piece: pair.main,
                 support: support,
-                build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support, forPrint: true })
+                build: () => buildSwitchExportGeometry(pair.main, pair.branch, { support, forPrint: true }),
+                buildScene: () => buildSwitchExportGeometry(pair.main, pair.branch, { support }),
+                placements: instances.map((p) =>
+                    placementOf(p.role === 'main' ? p : switchPairs.get(p.switchKey).main))
             });
         } else {
             parts.push({
@@ -3437,14 +3452,33 @@ function assembleParts() {
                 // forPrint lays a minimal piece on its own underside; it is a
                 // no-op for a viaduct piece and for any curve (see
                 // tiltOntoUnderside), so it is safe to ask for unconditionally
-                build: () => buildPieceExportGeometry(pc, { support, forPrint: true })
+                build: () => buildPieceExportGeometry(pc, { support, forPrint: true }),
+                buildScene: () => buildPieceExportGeometry(pc, { support }),
+                placements: instances.map(placementOf)
             });
         }
     }
     if (switchPairs.size) {
-        parts.push({ name: 'gate_paddle', count: switchPairs.size, sig: 'gate_paddle', kind: 'gate', note: note.gate, build: () => buildGateGeometry(SPEC, { forPrint: true }) });
+        // parked in its slot: pin at the deck bore, blade along the wall — the
+        // yaw that points the +Z vane along heading h is h - 90 deg
+        parts.push({ name: 'gate_paddle', count: switchPairs.size, sig: 'gate_paddle', kind: 'gate', note: note.gate,
+            build: () => buildGateGeometry(SPEC, { forPrint: true }),
+            buildScene: () => buildGateGeometry(SPEC),
+            placements: [...switchPairs.values()].filter((p) => p.main && p.branch).map((p) => {
+                // same formula the scene's display paddle uses, parked pose
+                const pin = gatePinPosition(p.main, p.branch);
+                return { at: [pin.x, pin.deckY, pin.z], yaw: Math.PI / 2 - pin.yawParked };
+            }) });
     }
-    parts.push({ name: 'bowtie_key', count: joints, sig: 'bowtie_key', kind: 'key', note: note.key, build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }) });
+    parts.push({ name: 'bowtie_key', count: joints, sig: 'bowtie_key', kind: 'key', note: note.key,
+        build: () => buildKeyGeometry(SPEC, { code: partCode('KEY', GEOMETRY_VERSION) }),
+        // seated in its pocket: centred on the seam face, top at the pocket
+        // ceiling 3 mm under the uphill deck. Mostly hidden inside the ribs in
+        // the all-scene view, which is the honest picture of an assembled key.
+        placements: pieces.filter((pc) => !pc.isImplicitStart && pc.role !== 'branch').map((pc) => ({
+            at: [pc.entry.x, (pc.entryDeck + SPEC.waterfallStepMm) - 3 - SPEC.key.height, pc.entry.z],
+            yaw: -pc.entry.h
+        })) });
 
     // supports: reusable standard modules (foot + risers) with print counts —
     // never cut-to-height "magic" pillars unless custom parameters force it
@@ -3454,29 +3488,58 @@ function assembleParts() {
         let feet = 0, jogs = 0;
         const riserCounts = new Map();
         const spacerCounts = new Map();
+        // true assembled placements per kind, mirroring rebuild()'s stacking
+        const put = (map, key, at, yaw = 0) => {
+            if (!map.has(key)) map.set(key, []);
+            map.get(key).push({ at, yaw });
+        };
+        const footAt = [], jogAt = [];
+        const riserAt = new Map(), spacerAt = new Map();
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
-            if (sup.mode === 'jog') jogs++;
             // counted before the decompose, because a grounded minimal piece
             // has NO stack under its spacer and would drop out at the `continue`
             const sp = spacerHeightMm(pc);
-            if (sp > 0) spacerCounts.set(sp, (spacerCounts.get(sp) ?? 0) + 1);
+            let y = stackHeightMm(pc, sup);
+            const boss = supportBossPos(pc, sup);
+            if (sup.mode === 'jog') {
+                jogs++;
+                jogAt.push({ at: [sup.x, y, sup.z],
+                    yaw: -Math.atan2(boss.z - sup.z, boss.x - sup.x) });
+            }
+            if (sp > 0) {
+                spacerCounts.set(sp, (spacerCounts.get(sp) ?? 0) + 1);
+                put(spacerAt, sp, [boss.x, y + (sup.mode === 'jog' ? SPEC.jog.heightMm : 0), boss.z]);
+            }
             const dec = decomposeSupport(stackHeightMm(pc, sup));
             if (!dec) continue;
             feet++;
-            for (const r of dec.risers) riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
+            footAt.push({ at: [sup.x, 0, sup.z], yaw: 0 });
+            let ry = STANDARD.footHeight;
+            for (const r of [...dec.risers].sort((a, b) => b - a)) {
+                riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
+                put(riserAt, r, [sup.x, ry, sup.z]);
+                ry += r;
+            }
         }
-        if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog, build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION), brim: shop.brimPosts }) });
+        if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog,
+            build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION), brim: shop.brimPosts }),
+            placements: jogAt });
         for (const [h, count] of [...spacerCounts.entries()].sort((a, b) => b[0] - a[0])) {
             const v = spacerVariant(h);
             parts.push({
                 name: `support_spacer_${v.code}`, count, sig: `support_spacer_${v.code}`,
-                kind: 'support', note: note.spacer, build: () => spacerGeometryFor(h, true, shop.brimPosts)
+                kind: 'support', note: note.spacer, build: () => spacerGeometryFor(h, true, shop.brimPosts),
+                placements: spacerAt.get(h) ?? []
             });
         }
-        if (feet) parts.push({ name: 'support_foot', count: feet, sig: 'support_foot', kind: 'support', note: note.pillar, build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })) });
+        if (feet) parts.push({ name: 'support_foot', count: feet, sig: 'support_foot', kind: 'support', note: note.pillar,
+            build: () => toArraysFromBG(buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })),
+            placements: footAt });
         for (const [r, count] of [...riserCounts.entries()].sort((a, b) => b[0] - a[0])) {
-            parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar, build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION), brim: shop.brimPosts }) });
+            parts.push({ name: `support_riser_${r}mm`, count, sig: `support_riser_${r}mm`, kind: 'support', note: note.pillar,
+                build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION), brim: shop.brimPosts }),
+                placements: riserAt.get(r) ?? [] });
         }
     } else {
         for (const sup of supList) {
@@ -3684,6 +3747,9 @@ function initGallery() {
     paintModeButton('print-part-mode', gallery.mode);
     $('print-part-mode').addEventListener('click', () => cycleRenderMode(gallery, 'print-part-mode', applyGalleryStyle));
     $('print-part-dims').addEventListener('change', () => { gallery.showDims = $('print-part-dims').value; applyGalleryStyle(); });
+    const allBtn = $('print-all-scene');
+    if (allBtn) allBtn.addEventListener('click', () =>
+        selectGalleryScene(gallery.parts.map((_, i) => i), 'whole scene'));
 }
 
 /**
@@ -4313,7 +4379,9 @@ function applyViewerStyle(target, resizeFn) {
 
     if (showEdges) {
         target.lineRes = target.lineRes ?? new THREE.Vector2(1, 1);
-        const kind = target.parts?.[target.selectedIndex]?.kind;
+        // a scene composite is mostly track, so it takes the washboard angle
+        const kind = target.sceneSelection ? 'track'
+            : target.parts?.[target.selectedIndex]?.kind;
         target.edges = makePartEdges(target.geo, target.lineRes, mode === 'hlr',
             kind === 'track' ? EDGE_ANGLE.washboard : EDGE_ANGLE.plain);
         target.lineMats = target.edges.userData.lineMats;
@@ -4334,7 +4402,9 @@ function applyViewerStyle(target, resizeFn) {
         target.scene.add(target.wire);
     }
 
-    if (target.showDims && target.showDims !== 'none') {
+    // no dims on a scene composite — they describe ONE part's bounding box,
+    // and a whole-tower box dimension is a number nobody asked for
+    if (target.showDims && target.showDims !== 'none' && target.selectedIndex != null) {
         // from the geometry, not the mesh — there is no mesh in HLR/wire mode
         target.geo.computeBoundingBox();
         target.dims = makeDimGroup(
@@ -4396,7 +4466,83 @@ function closeGallery() {
     setTab('build');
 }
 
-function selectGalleryPart(i) {
+/**
+ * EVERY SELECTED PART AT ITS TRUE SCENE POSITION, as one display geometry.
+ *
+ * Each part carries `placements` (world position + yaw per instance, recorded
+ * by assembleParts from the same data rebuild() places the scene with) and
+ * `buildScene` (the export solid WITHOUT the print tilt — assembled
+ * orientation). Instances are transformed and concatenated: legal here because
+ * this mesh is only ever rendered — never exported, measured or sliced, which
+ * is where concatenation voids results.
+ *
+ * Handing the merged geometry to `gallery.geo` is the point: the whole viewer
+ * pipeline — Shaded + HLR, HLR-only, wireframe, every material — works on it
+ * unchanged.
+ */
+function compositeSceneGeometry(indices) {
+    const pos = [], idx = [];
+    let base = 0, placed = 0;
+    for (const i of indices) {
+        const part = gallery.parts[i];
+        const places = part?.placements ?? [];
+        if (!places.length) continue;
+        const g = (part.buildScene ?? part.build)();
+        for (const pl of places) {
+            const c = Math.cos(pl.yaw ?? 0), s = Math.sin(pl.yaw ?? 0);
+            const P = g.positions, I = g.indices;
+            for (let k = 0; k < P.length; k += 3) {
+                const x = P[k], y = P[k + 1], z = P[k + 2];
+                pos.push(pl.at[0] + x * c + z * s, pl.at[1] + y, pl.at[2] - x * s + z * c);
+            }
+            for (let k = 0; k < I.length; k++) idx.push(I[k] + base);
+            base += P.length / 3;
+            placed++;
+        }
+    }
+    return { positions: new Float32Array(pos), indices: new Uint32Array(idx), placed };
+}
+
+function selectGalleryScene(indices, label) {
+    gallery.selectedIndex = null;
+    gallery.sceneSelection = indices;
+    const rows = [...$('print-parts-list').children];
+    rows.forEach((li, k) => li.classList.toggle('selected', indices.includes(k)));
+    $('print-part-caption').innerHTML = '⏳ building scene geometry…';
+    setTimeout(() => {
+        if (gallery.geo) gallery.geo.dispose();
+        const merged = compositeSceneGeometry(indices);
+        if (!merged.placed) {
+            $('print-part-caption').innerHTML = 'Nothing in this selection has a scene position.';
+            return;
+        }
+        gallery.geo = toBufferGeometry(merged);
+        applyGalleryStyle();
+        gallery.geo.computeBoundingBox();
+        const box = gallery.geo.boundingBox.clone();
+        const c = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        gallery.controls.target.copy(c);
+        gallery.camera.position.set(c.x + size * 0.55, c.y + size * 0.4, c.z + size * 0.55);
+        gallery.controls.update();
+        framePartShadow(gallery, box, c, size);
+        const vol = computeMeshVolumeMm3(merged.positions, merged.indices);
+        $('print-part-caption').innerHTML =
+            `<b>${label}</b> · ${merged.placed} part${merged.placed === 1 ? '' : 's'} at scene positions · ` +
+            `${(vol / 1000).toFixed(0)} cm³ of parts<br>` +
+            `<span style="opacity:.8">Every part in assembled orientation where it really sits — ` +
+            `⌘/Ctrl-click rows to add or remove parts.</span>`;
+    }, 30);
+}
+
+function selectGalleryPart(i, additive = false) {
+    if (additive) {
+        const set = new Set(gallery.sceneSelection ?? (gallery.selectedIndex != null ? [gallery.selectedIndex] : []));
+        if (set.has(i)) set.delete(i); else set.add(i);
+        if (set.size > 1) { selectGalleryScene([...set].sort((a, b) => a - b), 'selection'); return; }
+        i = [...set][0] ?? i;
+    }
+    gallery.sceneSelection = null;
     const part = gallery.parts[i];
     if (!part) return;
     gallery.selectedIndex = i;
