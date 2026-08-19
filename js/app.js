@@ -3326,6 +3326,38 @@ function toast(msg) {
  * current design with a lazy geometry builder. Used by the ZIP export AND the
  * Parts gallery, so what you inspect is byte-identical to what you download.
  */
+/**
+ * WHAT MAKES TWO PIECES THE SAME PART. Module-scope because two consumers
+ * must agree on it: assembleParts dedupes the design with it, and the shop
+ * catalogue uses it to recognise that a design piece already IS the canonical
+ * standard form — listing both was the duplicate row Brett flagged.
+ */
+function getPieceSignature(pc, support) {
+    const sigParts = [
+        pc.type,
+        pc.innerWidth.toFixed(1),
+        // The seam taper is neighbour-dependent, so a curve entering from a
+        // straight is genuinely a different solid from one mid-helix. Two
+        // of them must not share a part number.
+        (pc.entryWidth ?? pc.innerWidth).toFixed(1),
+        (pc.exitWidth ?? pc.innerWidth).toFixed(1),
+        pc.planLen.toFixed(1),
+        pc.drop.toFixed(3),
+        pc.slopeDeg.toFixed(3),
+        pc.ridgePitch ? pc.ridgePitch.toFixed(3) : '0',
+        pc.waterfall ? pc.waterfall.toFixed(3) : '0',
+        pc.switchType ?? '',
+        // the underside is a different solid, not a view setting
+        pc.skirtStyle ?? SPEC.skirt.style
+    ];
+    // The support contributes ONE bit to the shape now: whether the piece
+    // has a socket boss at all. Where the column goes is the jog's problem,
+    // not the track's, so mode/station/side must not split a part number —
+    // they used to, and that alone listed one curve as four.
+    sigParts.push(support && support.mode !== 'none' ? 'boss' : 'no-boss');
+    return sigParts.join('|');
+}
+
 function assembleParts() {
     const { pieces } = state.layout;
     const parts = [];
@@ -3348,32 +3380,6 @@ function assembleParts() {
             pair[pc.role] = pc;
             switchPairs.set(pc.switchKey, pair);
         }
-    }
-    
-    function getPieceSignature(pc, support) {
-        const sigParts = [
-            pc.type,
-            pc.innerWidth.toFixed(1),
-            // The seam taper is neighbour-dependent, so a curve entering from a
-            // straight is genuinely a different solid from one mid-helix. Two
-            // of them must not share a part number.
-            (pc.entryWidth ?? pc.innerWidth).toFixed(1),
-            (pc.exitWidth ?? pc.innerWidth).toFixed(1),
-            pc.planLen.toFixed(1),
-            pc.drop.toFixed(3),
-            pc.slopeDeg.toFixed(3),
-            pc.ridgePitch ? pc.ridgePitch.toFixed(3) : '0',
-            pc.waterfall ? pc.waterfall.toFixed(3) : '0',
-            pc.switchType ?? '',
-            // the underside is a different solid, not a view setting
-            pc.skirtStyle ?? SPEC.skirt.style
-        ];
-        // The support contributes ONE bit to the shape now: whether the piece
-        // has a socket boss at all. Where the column goes is the jog's problem,
-        // not the track's, so mode/station/side must not split a part number —
-        // they used to, and that alone listed one curve as four.
-        sigParts.push(support && support.mode !== 'none' ? 'boss' : 'no-boss');
-        return sigParts.join('|');
     }
 
     const uniqueParts = new Map();
@@ -5474,14 +5480,24 @@ async function openPrintShop(opts = {}) {
             const seq = SIMPLE_TYPES.flatMap(t => [t, 'straight']);
             const canon = layoutTrack(seq, STD);
             const canonSup = planPillarPositions(canon.pieces);
-            // Always catalogued, whatever the canvas holds: these are the
-            // plain forms, and the standard group has to be the same three
-            // rows on every design or it is not a standard group.
+            // Catalogued UNLESS the design already contains the identical
+            // solid. At the Standard almost every design does — its straight
+            // IS the standard straight — and listing both put two rows in the
+            // shop for one part: "straight · jog pier @61" with the design's
+            // count and "straight · standard form" at zero, which Brett read
+            // (rightly) as the one-curve-listed-as-four regression come back.
+            // Sameness is the part SIGNATURE, the same test assembleParts
+            // dedupes the design with; when they match, the design's row is
+            // the standard form, and ordering spares through it orders the
+            // same solid. A custom-parameter design matches nothing and still
+            // gets the full standard group, which is what it needs.
+            const designSigs = new Set(parts.map(p => p.sig));
             const canonical = SIMPLE_TYPES
                 .map(t => {
                     const pc = canon.pieces.find(p => p.type === t);
                     if (!pc) return null;
                     const support = canonSup.find(x => x.pieceIndex === pc.index);
+                    if (designSigs.has(getPieceSignature(pc, support))) return null;
                     return {
                         name: `standard_${t}`, kind: 'track', count: 0,
                         build: () => buildPieceExportGeometry(pc, { support, forPrint: true })
