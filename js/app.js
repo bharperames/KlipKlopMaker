@@ -5605,8 +5605,15 @@ async function openPrintShop(opts = {}) {
                 ...[60, 30, 15].map(r => ({
                     name: `support_riser_${r}mm`, kind: 'support', build: () => buildRiserGeometry(r, SPEC, { code: partCode(`R${r}`, GEOMETRY_VERSION), brim: shop.brimPosts }) })),
                 { name: 'support_jog', kind: 'support', build: () => buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION), brim: shop.brimPosts }) },
-                ...SPACER_VARIANTS.map(v => ({
-                    name: `support_spacer_${v.code}`, kind: 'support', build: () => spacerGeometryFor(v.heightMm, true, shop.brimPosts) })),
+                // NO spacers in a block-style catalogue. The spacer exists to
+                // make up what a tilted-slab piece's recessed socket mouth
+                // leaves off the grid; a block piece's mouth is its rim and
+                // lands on-grid at exactly 0.00 everywhere, so for that style
+                // the part is not a spare — it is dead stock that cannot mate
+                // with anything in the design. (Brett: the "standard print"
+                // eliminates the spacer; the shop should agree.)
+                ...(state.skirtStyle === 'block' ? [] : SPACER_VARIANTS.map(v => ({
+                    name: `support_spacer_${v.code}`, kind: 'support', build: () => spacerGeometryFor(v.heightMm, true, shop.brimPosts) }))),
                 { name: 'scenery_tower', kind: 'scenery', build: () => buildTowerGeometry(100) },
                 { name: 'scenery_patio', kind: 'scenery', build: () => buildPatioGeometry() },
                 { name: 'scenery_palm_island', kind: 'scenery', build: () => buildPalmIslandGeometries().island },
