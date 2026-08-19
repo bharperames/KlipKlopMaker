@@ -431,7 +431,13 @@ function rebuild() {
         let y = stackHeightMm(pc, sup);
         if (y > 1) trackGroup.add(buildSupportObject(y, sup.x, sup.z));
         const boss = supportBossPos(pc, sup);
+        const ringAt = (rx, ry, rz) => {
+            const ring = seamRing(0);
+            ring.position.set(rx, ry, rz);
+            trackGroup.add(ring);
+        };
         if (sup.mode === 'jog') {
+            if (y > 1) ringAt(sup.x, y, sup.z);       // stack top -> jog
             const jog = makeStackedSupportMesh(supportGeom('jog'), MAT.pillar);
             jog.position.set(sup.x, y, sup.z);
             jog.rotation.y = -Math.atan2(boss.z - sup.z, boss.x - sup.x);
@@ -440,6 +446,7 @@ function rebuild() {
         }
         const spacer = spacerHeightMm(pc);
         if (spacer > 0) {
+            if (y > 1) ringAt(boss.x, y, boss.z);     // stack/jog top -> spacer
             const mesh = makeStackedSupportMesh(supportGeom(`spacer:${spacer}`), MAT.pillar);
             mesh.position.set(boss.x, y, boss.z);
             trackGroup.add(mesh);
@@ -513,12 +520,21 @@ function usingStandard() {
 const supportGeomCache = new Map();
 function supportGeom(kind) {
     if (!supportGeomCache.has(kind)) {
+        // WITH the stamped code, unlike every other display build. Engraving is
+        // export-only as a rule because a track rebuild is per-piece and codes
+        // would be re-CSG'd on every edit — but support kinds are cached once
+        // per session right here, so the scene can show the same mark the
+        // printed part carries. That is the point: a stack on screen should
+        // read as the parts you will actually pick up, code and all.
         supportGeomCache.set(kind,
-            kind === 'foot' ? buildSupportFootGeometry()
-                : kind === 'jog' ? toBufferGeometry(buildJogGeometry())
+            kind === 'foot'
+                ? buildSupportFootGeometry(SPEC, { code: partCode('FOOT', GEOMETRY_VERSION) })
+                : kind === 'jog'
+                    ? toBufferGeometry(buildJogGeometry(SPEC, { code: partCode('JOG', GEOMETRY_VERSION) }))
                     : String(kind).startsWith('spacer:')
-                        ? toBufferGeometry(spacerGeometryFor(Number(String(kind).slice(7))))
-                        : toBufferGeometry(buildRiserGeometry(Number(kind))));
+                        ? toBufferGeometry(spacerGeometryFor(Number(String(kind).slice(7)), true))
+                        : toBufferGeometry(buildRiserGeometry(Number(kind), SPEC,
+                            { code: partCode(`R${Number(kind)}`, GEOMETRY_VERSION) })));
     }
     return supportGeomCache.get(kind);
 }
@@ -536,13 +552,38 @@ function makeStackedSupportMesh(geometry, material) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
-    
+
     const edges = new THREE.EdgesGeometry(geometry, 20); // 20 degrees threshold
     const lineMat = new THREE.LineBasicMaterial({ color: 0x3d2716, linewidth: 1.5 });
     const lines = new THREE.LineSegments(edges, lineMat);
     group.add(lines);
-    
+
     return group;
+}
+
+/**
+ * A SEAM RING where two real parts meet in a stack.
+ *
+ * Each segment already gets its own EdgesGeometry, but two 15 AF hexes stacked
+ * flush share a silhouette, the rim loops coincide, and in the pillar's own
+ * dark line colour the boundary vanishes — the stack reads as one extrusion.
+ * Brett asked for the opposite: the scene should show WHERE the printed parts
+ * are, because that is what you assemble. This is display-only and it marks
+ * REAL boundaries; the 15 mm grid marks that were deleted were fake seams
+ * inside one part, which is the difference that makes this not a regression.
+ *
+ * A hex LineLoop a hair outset so it cannot z-fight the faces it sits on, in
+ * the light tone the track's HLR lines use — visible against the dark shaft.
+ */
+function seamRing(y, af = 15) {
+    const r = (af / 2) / Math.cos(Math.PI / 6) + 0.3;
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        pts.push(new THREE.Vector3(r * Math.cos(a), y, r * Math.sin(a)));
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    return new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: 0xd9c6a5 }));
 }
 
 /** A support at (x,z): stacked standard parts on-grid, legacy pillar otherwise. */
@@ -558,11 +599,15 @@ function buildSupportObject(heightMm, x, z) {
     const footGroup = makeStackedSupportMesh(supportGeom('foot'), MAT.pillar);
     g.add(footGroup);
     let y = STANDARD.footHeight;
-    for (const r of [...dec.risers].sort((a, b) => b - a)) {
+    g.add(seamRing(y));                    // foot-to-riser is a real joint too
+    const risers = [...dec.risers].sort((a, b) => b - a);
+    for (let i = 0; i < risers.length; i++) {
+        const r = risers[i];
         const mGroup = makeStackedSupportMesh(supportGeom(String(r)), MAT.pillar);
         mGroup.position.y = y;
         g.add(mGroup);
         y += r;
+        if (i < risers.length - 1) g.add(seamRing(y));
     }
     g.position.set(x, 0, z);
     return g;
@@ -3159,6 +3204,18 @@ window.__frameHorse = (theta = Math.PI / 4, phi = 1.25, dist = 160) => {
         c.x + dist * Math.sin(phi) * Math.cos(az),
         c.y + dist * Math.cos(phi),
         c.z + dist * Math.sin(phi) * Math.sin(az));
+    controls.update();
+    return true;
+};
+
+/** Dev hook: frame an arbitrary world point — supports and scenery have no
+ *  piece index, and the screenshot scripts need to look at them too. */
+window.__frameAt = (x, y, z, { az = 0.6, el = 0.25, dist = 320 } = {}) => {
+    controls.target.set(x, y, z);
+    camera.position.set(
+        x + dist * Math.cos(el) * Math.cos(az),
+        y + dist * Math.sin(el),
+        z + dist * Math.cos(el) * Math.sin(az));
     controls.update();
     return true;
 };
