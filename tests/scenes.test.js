@@ -18,6 +18,51 @@ test('there are scenes to verify', () => {
     expect(sceneFiles.length).toBeGreaterThanOrEqual(5);
 });
 
+/*
+ * 'start' AND 'end' TOKENS ARE ALIASES FOR THE IMPLICIT PLATFORMS, and the
+ * builder and the validator apply ONE rule to them. They used to disagree
+ * twice over: the validator rejected the tokens everywhere (so a file
+ * spelling the natural thing refused to load and the app silently fell back
+ * to the demo), while the builder accepted them everywhere and BUILT them —
+ * ['start','straight','end'], the spelling half this suite uses, quietly
+ * produced five pieces, with a phantom platform 0.25 mm under each real one.
+ */
+describe('platform tokens are aliases, agreed between builder and validator', () => {
+    const walker = { alphaDeg: 18, legLenMm: 26, efficiency: 0.26, massG: 45 };
+
+    test('tokens in their implicit positions validate, build once, and round-trip', () => {
+        const scene = {
+            format: 'klipklop-scene', version: 2,
+            name: 'One straight one switch',
+            sequence: ['start', 'straight',
+                { type: 'switchR', gate: 'branch', main: ['end'], branch: ['end'] }],
+            scenery: [], surface: 'washboard', walker
+        };
+        expect(validateScene(scene)).toEqual([]);
+        const state = deserializeScene(scene);
+        expect(roundTrip(state).sequence).toEqual(scene.sequence);
+        const { pieces, issues } = layoutTrack(state.sequence, {});
+        expect(issues.filter(i => i.level === 'error')).toEqual([]);
+        // ONE start and ONE end per route — the alias never doubles
+        expect(pieces.filter(p => p.type === 'start')).toHaveLength(1);
+        expect(pieces.filter(p => p.type === 'end')).toHaveLength(2);
+    });
+
+    test('the plain spelling builds the same pieces as the token spelling', () => {
+        const spell = (seq) => layoutTrack(seq, {}).pieces.map(p => p.type).join(',');
+        expect(spell(['start', 'straight', 'end'])).toBe(spell(['straight']));
+    });
+
+    test('a misplaced platform token is rejected by both sides', () => {
+        const seq = ['straight', 'end', 'straight'];
+        const scene = { format: 'klipklop-scene', version: 2, name: 'x',
+            sequence: seq, scenery: [], surface: 'washboard', walker };
+        expect(validateScene(scene)).not.toEqual([]);
+        const { issues } = layoutTrack(seq, {});
+        expect(issues.some(i => i.code === 'misplaced-platform')).toBe(true);
+    });
+});
+
 describe.each(sceneFiles)('%s', (file) => {
     const raw = JSON.parse(fs.readFileSync(path.join(SCENES_DIR, file), 'utf8'));
 

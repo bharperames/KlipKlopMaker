@@ -108,7 +108,17 @@ function validateNodes(nodes, problems, path) {
     if (!Array.isArray(nodes)) { problems.push(`${path}: not an array`); return; }
     nodes.forEach((n, i) => {
         if (typeof n === 'string') {
-            if (!SIMPLE_TYPES.includes(n)) problems.push(`${path}[${i}]: unknown segment type "${n}"`);
+            // 'start' and 'end' are ALIASES for the implicit platforms, legal
+            // only where their implicit twin lives — the same rule layoutTrack
+            // enforces (misplaced-platform). The validator used to reject them
+            // everywhere while the builder accepted them everywhere and built
+            // DOUBLED platforms; agreeing on one rule ends both failure modes.
+            if (n === 'start' || n === 'end') {
+                const ok = n === 'start' ? (path === 'sequence' && i === 0) : i === nodes.length - 1;
+                if (!ok) problems.push(`${path}[${i}]: "${n}" platforms are implicit — an explicit token is only legal ${n === 'start' ? 'as the first node of the design' : 'as the last node of its route'}`);
+            } else if (!SIMPLE_TYPES.includes(n)) {
+                problems.push(`${path}[${i}]: unknown segment type "${n}"`);
+            }
         } else if (isSwitchNode(n)) {
             if (i !== nodes.length - 1) problems.push(`${path}[${i}]: a switch must be the last node of its branch`);
             validateNodes(n.main ?? [], problems, `${path}[${i}].main`);

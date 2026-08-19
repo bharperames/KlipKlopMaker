@@ -1194,6 +1194,25 @@ export function layoutTrack(sequence, params = {}) {
                     msg: `"${kind}" is not a piece type. Use one of: ${SEGMENT_TYPES.join(', ')}, or a switch node.` });
                 continue;
             }
+            // EXPLICIT PLATFORM TOKENS ARE ALIASES, NOT PIECES. Platforms are
+            // implicit — the walk builds the start and caps every leaf with
+            // its corral — but writing ['start', ..., 'end'] is the natural
+            // spelling and half the test suite does it. Building the token AS
+            // WELL AS the implicit platform stacked two platforms 0.25 mm
+            // apart, so ['start','straight','end'] quietly produced FIVE
+            // pieces. A token in the position its implicit twin occupies is
+            // now simply that twin; anywhere else it is an error, because a
+            // platform mid-route would strand everything after it.
+            if (kind === 'start' || kind === 'end') {
+                const aliasOk = kind === 'start'
+                    ? (containerPath.length === 0 && i === 0)
+                    : i === nodes.length - 1;
+                if (!aliasOk) {
+                    issues.push({ level: 'error', code: 'misplaced-platform',
+                        msg: `"${kind}" platforms are implicit; an explicit token is only legal ${kind === 'start' ? 'as the first node of the design' : 'as the last node of its route'}.` });
+                }
+                continue;
+            }
             const piece = makePiece(kind, node, cursor, entryDeck, { address, active });
             piece.prevIndex = prev ? prev.index : null;
             prev = piece;
@@ -1217,7 +1236,14 @@ export function layoutTrack(sequence, params = {}) {
     // open run and every leaf gets its corral.
     let isCircuit = false;
     const rootHasSwitch = sequence.some(isSwitchNode);
-    if (sequence.length && !rootHasSwitch) {
+    // at least one REAL segment: platform aliases occupy no run, so a
+    // sequence of nothing but aliases walks zero distance, "lands back on its
+    // head", and would read as a closed circuit with no platforms anywhere
+    const hasRun = sequence.some((n) => {
+        const k = typeof n === 'string' ? n : n?.type;
+        return SEGMENT_TYPES.includes(k) && k !== 'start' && k !== 'end';
+    });
+    if (hasRun && !rootHasSwitch) {
         const probePieces = [];
         const probeCounter = { n: 0 };
         // cheap pose-only probe using the same segment math
@@ -1227,6 +1253,9 @@ export function layoutTrack(sequence, params = {}) {
         for (const node of sequence) {
             const kind = typeof node === 'string' ? node : node.type;
             if (!SEGMENT_TYPES.includes(kind)) continue;   // reported in walk()
+            // platform aliases occupy no run — and falling through would hand
+            // them to the CURVE branch, bending the pose probe with a phantom
+            if (kind === 'start' || kind === 'end') continue;
             let plan, drop;
             if (kind === 'straight' || kind === 'lift' || kind === 'elevator' || kind === 'powered') {
                 plan = segmentPlan('straightish', cur, { len: p.tileLen });
