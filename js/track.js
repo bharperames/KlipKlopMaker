@@ -1519,8 +1519,41 @@ const RIDGE_FADE_MM = 20;
  */
 const FROG_RIDGE_KEEP_MM = 20;
 
+/**
+ * THE ONE s THAT MATTERS AT A FROG: where the branch's CHANNEL — not its
+ * centreline — is finally clear of the main's.
+ *
+ * Both the deck match and the bank are answers to the same question: wherever
+ * the two routes' walking surfaces occupy the same ground, they must be ONE
+ * surface, because the union hands the walker whichever is higher and any
+ * difference becomes a step or a planed trough. So both must hold until the
+ * ground stops being shared, and that is here.
+ *
+ * The deck match used to release at the CENTRELINE separation instead, 84.5 mm
+ * against this 111.5. Over those 27 mm the branch's section stayed parallel to
+ * the main's plane (the bank was still full) but sank away from it, reaching
+ * 1.29 mm at s=110 — and the branch's clearance envelope, floored on its own
+ * deck, planed that difference into the main's walking surface. That was the
+ * knee Brett found with his fingers: a trough along the main route, invisible
+ * to a lateral-step gate because it runs the way the walker walks.
+ */
+function frogClearS(main, branch) {
+    const halfM = main.innerWidth / 2, halfB = branch.innerWidth / 2;
+    const m0 = planPosAt(main, 0);
+    const rt = [Math.sin(m0.h), -Math.cos(m0.h)];
+    const latAt = (s, u) => {
+        const p = planPosAt(branch, s);
+        const x = p.x + Math.sin(p.h) * u, z = p.z - Math.cos(p.h) * u;
+        return (x - m0.x) * rt[0] + (z - m0.z) * rt[1];
+    };
+    for (let s = 0; s <= branch.planLen; s += 0.5) {
+        const a = latAt(s, -halfB), b = latAt(s, halfB);
+        if (Math.sign(a) === Math.sign(b) && Math.min(Math.abs(a), Math.abs(b)) > halfM) return s;
+    }
+    return branch.planLen;
+}
+
 function frogDeckKnots(main, branch, spec) {
-    const halfM = main.innerWidth / 2;
     const m0 = planPosAt(main, 0);
     const fwd = [Math.cos(m0.h), Math.sin(m0.h)];
     const rt = [Math.sin(m0.h), -Math.cos(m0.h)];
@@ -1531,12 +1564,12 @@ function frogDeckKnots(main, branch, spec) {
         return { along: d[0] * fwd[0] + d[1] * fwd[1],
                  lat: Math.abs(d[0] * rt[0] + d[1] * rt[1]) };
     };
-    let sSep = null;
-    for (let s = 0; s <= branch.planLen; s += 0.5) {
-        const q = project(s);
-        if (q.along > 0 && q.lat > halfM) { sSep = s; break; }
-    }
-    if (sSep == null || sSep >= branch.planLen) return null;
+    // MATCH TO THE CHANNEL, NOT THE CENTRELINE — frogClearS says why. The main's
+    // deck is level across, so extending its plane sideways past its own rails
+    // is exact, which is what lets the match run on after the branch centreline
+    // has left the main's channel.
+    const sSep = frogClearS(main, branch);
+    if (sSep >= branch.planLen) return null;
     // the MAIN's drop at a given along-distance — both routes share an entry
     // height, so matching drops is matching decks however the piece is rebased
     const mainDrop = (along) => {
@@ -1604,22 +1637,12 @@ function frogBankKnots(main, branch) {
     const m0 = planPosAt(main, 0);
     const fwd = [Math.cos(m0.h), Math.sin(m0.h)];
     const rt = [Math.sin(m0.h), -Math.cos(m0.h)];
-    const halfM = main.innerWidth / 2, halfB = branch.innerWidth / 2;
     const gMain = main.planLen ? main.drop / main.planLen : 0;
 
-    const latAt = (s, u) => {
-        const p = planPosAt(branch, s);
-        const x = p.x + Math.sin(p.h) * u, z = p.z - Math.cos(p.h) * u;
-        return (x - m0.x) * rt[0] + (z - m0.z) * rt[1];
-    };
-    /** first s at which no part of the branch's channel is over the main's */
-    let sClear = branch.planLen;
-    for (let s = 0; s <= branch.planLen; s += 0.5) {
-        const a = latAt(s, -halfB), b = latAt(s, halfB);
-        if (Math.sign(a) === Math.sign(b) && Math.min(Math.abs(a), Math.abs(b)) > halfM) {
-            sClear = s; break;
-        }
-    }
+    // THE SAME s THE DECK MATCH USES. These two were computed separately and
+    // answered different questions — the bank released at the channel, the deck
+    // at the centreline — and the 27 mm between them was the knee.
+    const sClear = frogClearS(main, branch);
     const taper = (s) => {
         if (s <= sClear) return 1;
         if (s >= sClear + FROG_BANK_FADE_MM) return 0;
