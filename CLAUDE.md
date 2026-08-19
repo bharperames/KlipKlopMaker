@@ -386,6 +386,43 @@ building, gait physics simulation, and watertight STL/3MF export.
   far too small to clamp — with `seatLandMm` kept so the ceiling still sets
   deck flushness. That is a POCKET change and helps new pieces only.
 
+## One authority per contract
+
+The bug class this project rediscovers most is **duplicated authority**: one
+contract encoded independently in two places, with nothing running the two
+encodings against each other. Seven instances were found in two days, each by
+a person tripping over the seam — the validator rejected 'end' tokens the
+builder accepted (and the builder doubled the platforms the validator was
+right about); `frogDeckKnots` and `frogBankKnots` answered "where does the
+frog end" differently and the 27 mm between them was the knee; state ran at
+`toFixed(4)` of a Standard the docs misquoted as 11.2167 — a number that never
+equalled `atan(29.75/150)` at all; the shop's canonical rows and the design
+signature disagreed on "same part"; "the ground" meant absolute zero to the
+stranded check and the layout datum to everything else; the parity raster and
+the min-hit probe measured one first layer two ways.
+
+How to hunt them BY INSPECTION, when touching any module:
+- **Two names for one noun.** Grep the noun ("valid", "standard", "ground",
+  "same", "underside", "mouth") and list every function/constant claiming to
+  define it. More than one definer with no test diffing them = a live seam.
+- **A list and its subset.** `SIMPLE_TYPES` vs `SEGMENT_TYPES` was the token
+  bug; any pair of overlapping constant lists is a candidate.
+- **A number stated twice.** A constant computed in code and quoted in a
+  comment, doc table, or test literal. The quote WILL drift; derive it or
+  assert it.
+- **Rounding at ingestion.** `toFixed` on state rather than at the display
+  edge forks the value from its source of truth.
+- **Two measurements of one property.** Keep both, but make one the stated
+  arbiter and assert agreement on shipped artifacts (islands note above).
+
+And the standing enforcement: `tests/contracts.test.js` sweeps every sequence
+up to length 3 through validator AND builder and fails on any verdict
+mismatch (proven to reject: the pre-fix contract disagrees on 143 of 1464),
+round-trips serialize⟺deserialize to identity, and asserts the Standard's
+numbers as DERIVATIONS from the grid, not decimals. When you find a new
+contract pair, add its differential there rather than fixing the instance and
+walking away — the instance is never the last one.
+
 ## Browser verification
 
 `npx serve -l 3311 .` then run the Playwright smoke script pattern (see git
