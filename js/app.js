@@ -1183,7 +1183,8 @@ if (skirtSel) {
         recordEdit();
         state.skirtStyle = normaliseSkirtStyle(skirtSel.value);
         rebuild();
-        saveState();
+        refreshPrintPartsList();     // the list, weights and Print Information
+        saveState();                 // all describe the style just chosen
     });
 }
 
@@ -2581,7 +2582,43 @@ function getPartWeight(part, sig) {
 // second time by -entry.h. Deleted rather than kept as a no-op — a transform
 // that must not be called is worse than no transform at all.
 
+/**
+ * The Print Information card, written for the CURRENT settings. Orientation
+ * advice for a style you have not selected is noise, and the card used to
+ * carry three stale claims at once: PLA (Brett prints PETG — "I think it is
+ * superior"), "walls & infill barely matter" (true before the cavity fill;
+ * infill density is now the knob that sets a filled part's weight), and a
+ * cantilever-warning note from before the parts sliced silent.
+ */
+function refreshPrintInfo() {
+    const card = $('print-info-card');
+    if (!card) return;
+    const orientation = state.skirtStyle === 'block'
+        ? `<b>Track:</b> prints rim-down on its flat bottom, exactly as assembled —
+           what you see in the scene is the print orientation`
+        : `<b>Track:</b> as oriented, and the orientation is part of the design —
+           tilted-slab pieces come out already tilted onto their own underside;
+           lay them down as exported and do not re-orient them`;
+    const infill = state.skirtStyle === 'block'
+        ? `<b>Walls &amp; infill:</b> the under-deck volume is filled and the slicer's
+           sparse infill carries it, so infill density is the knob that sets a
+           part's weight — the estimates here assume ~15%`
+        : `<b>Walls &amp; infill:</b> the under-deck cavity is filled and sliced as
+           sparse infill; walls and floors are 2.4 mm and print solid at any
+           setting, so infill density sets the filled portion's weight`;
+    card.innerHTML =
+        `<b>Material:</b> PETG (every confirmed fit in this project was measured
+         in PETG)<br>
+         ${infill}<br>
+         ${orientation}<br>
+         <b>Big parts:</b> one curve or switch per plate is still the cautious
+         choice — a failure then costs one part<br>
+         <b>Cooling:</b> run it full; the walking surface is bridged across the
+         channel`;
+}
+
 function refreshPrintPartsList() {
+    refreshPrintInfo();
     const list = $('print-parts-list');
     if (!list) return;
     list.innerHTML = '';
@@ -2614,7 +2651,7 @@ function refreshPrintPartsList() {
     const heading = $('printable-parts-heading');
     if (heading) {
         heading.innerHTML = `Printable parts <span class="wt" style="color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 13px;">` +
-            `· print job ≈ ${totalWeight.toFixed(0)}g PLA (${spoolPct.toFixed(0)}% of a 1kg spool, ≈$${(totalWeight / 1000 * 20).toFixed(2)} filament)</span>`;
+            `· print job ≈ ${totalWeight.toFixed(0)}g PETG (${spoolPct.toFixed(0)}% of a 1kg spool, ≈$${(totalWeight / 1000 * 20).toFixed(2)} filament)</span>`;
     }
 }
 
@@ -3589,10 +3626,53 @@ const GALLERY_MATS = {
     // where every face is seen edge-on. Half the clearcoat and a rougher one
     // keeps the sheen without the flip, and the part looks like the same
     // plastic from both sides.
-    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.45, metalness: 0, clearcoat: 0.22, clearcoatRoughness: 0.5, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
+    // glossy PETG: the material the parts are actually printed in — a touch
+    // more clearcoat and less base roughness than the PLA preset, which is
+    // the difference the two filaments show in the hand
+    plastic: () => new THREE.MeshPhysicalMaterial({ color: 0xe8b23a, roughness: 0.35, metalness: 0, clearcoat: 0.35, clearcoatRoughness: 0.4, envMapIntensity: 0.3, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
     pla: () => new THREE.MeshStandardMaterial({ color: 0xe8b23a, roughness: 0.85, metalness: 0, envMapIntensity: 0.25, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }),
-    clay: () => new THREE.MeshLambertMaterial({ color: 0xe8b23a }),
-    normals: () => new THREE.MeshNormalMaterial()
+    // neutral matte gray — the "primer" study finish that lets HLR lines and
+    // form read without any material story getting in the way
+    clay: () => new THREE.MeshLambertMaterial({ color: 0xb8b4ac }),
+    /**
+     * OVERHANG INSPECTOR, world-referenced. This was MeshNormalMaterial,
+     * which colors by VIEW-space normals — the reference is the camera, so
+     * the same face changes color as you orbit and the display answers no
+     * question. The print question is a face's angle from the build plate's
+     * up axis, so the colors are anchored to the world:
+     *   green  — safe: upward, vertical, or mild slope
+     *   amber  — downward past ~35°, approaching the support threshold
+     *   red    — downward past 45°, the same threshold the slicer and
+     *            overhang_audit.mjs use (DOWN_COS)
+     * NOTE: judged in the part's DISPLAYED orientation. A single part is
+     * shown assembled; a tilted-slab piece prints tilted, so its red is
+     * where the tilt exists to fix — the fill and the audits are the gates,
+     * this is the picture.
+     */
+    normals: () => new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: `
+            varying vec3 vNw;
+            void main() {
+                vNw = normalize(mat3(modelMatrix) * normal);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }`,
+        fragmentShader: `
+            varying vec3 vNw;
+            void main() {
+                float y = normalize(vNw).y;      // world up-ness of the face
+                vec3 safe  = vec3(0.42, 0.72, 0.42);
+                vec3 warn  = vec3(0.93, 0.72, 0.25);
+                vec3 bad   = vec3(0.86, 0.26, 0.22);
+                vec3 c = safe;
+                if (y < -0.7071) c = bad;                       // past 45 deg
+                else if (y < -0.57) c = mix(warn, bad, (-y - 0.57) / (0.7071 - 0.57));
+                else if (y < -0.35) c = mix(safe, warn, (-y - 0.35) / (0.57 - 0.35));
+                // keep the form readable: cheap hemispheric shade, world-lit
+                float shade = 0.75 + 0.25 * clamp(y * 0.5 + 0.5, 0.0, 1.0);
+                gl_FragColor = vec4(c * shade, 1.0);
+            }`
+    })
 };
 
 /**
