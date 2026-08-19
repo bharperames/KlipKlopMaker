@@ -1287,8 +1287,37 @@ export function layoutTrack(sequence, params = {}) {
         }
     }
 
-    // ground shift: lowest skirt rim rests on the ground
-    const minRim = Math.min(...pieces.map(pc => pc.rimY));
+    // GROUND SHIFT: the lowest point of the lowest PART rests on the ground —
+    // which is not always a rim. A tilted-slab piece's underside is the
+    // unclamped plane (archedRimY: "the bottom doesn't have to end up level"),
+    // and at a sloped piece's low end that plane hangs below rimY: 4.75 mm on
+    // a straight, ~12.5 on a curve. Grounding on rims alone let a grounded
+    // slab curve run below y=0 — invisible in the Build view, whose ground
+    // fill hides it, and Brett caught it in the assembled inspector view: the
+    // scene "renders the end piece attached to the curve flush with ground,
+    // but that is an illusion, because some of the curve is actually below
+    // the ground". Physically that part cannot sit at its designed height.
+    const lowestOf = (pc) => {
+        if (!laysOnUnderside(pc, SPEC)) return pc.rimY;
+        const pl = undersidePlane(pc, SPEC);
+        let lo = pc.rimY;
+        const Wo = pc.innerWidth / 2 + SPEC.wall;
+        for (let s = 0; s <= pc.planLen; s += 5) {
+            const q = planPosAt(pc, s);
+            for (const u of [-Wo, Wo]) {
+                lo = Math.min(lo, pl.at(q.x + Math.sin(q.h) * u, q.z - Math.cos(q.h) * u));
+            }
+        }
+        return lo;
+    };
+    const minRimRaw = Math.min(...pieces.map(pc => pc.rimY));
+    const minLow = Math.min(...pieces.map(lowestOf));
+    // Snap the extra lift UP to whole grid units, so decks stay where the 15 mm
+    // grid expects them and decomposeSupport still lands on standard risers —
+    // Brett's own precedent, from the socket seat: "raise the bottom slightly
+    // to snap to whole units ... it keeps it uniform with the others".
+    const minRim = minRimRaw
+        - Math.ceil(Math.max(0, minRimRaw - minLow) / STANDARD.gridMm) * STANDARD.gridMm;
     for (const pc of pieces) {
         pc.entryDeck -= minRim;
         pc.exitDeck -= minRim;
@@ -1324,10 +1353,16 @@ export function layoutTrack(sequence, params = {}) {
 function checkStrandedEnds(pieces, p) {
     const out = [];
     const G = STANDARD.gridMm;
+    // Stranded means one unit above the LAYOUT'S OWN DATUM, not above y=0.
+    // The ground shift lifts a slab layout in whole grid units so undersides
+    // clear the floor, so "the ground" a leg can reach is the lowest rim in
+    // the layout — measured against absolute zero, every slab design's
+    // grounded leg read as stranded the moment the lift landed.
+    const base = Math.min(...pieces.map((q) => q.rimY));
     for (const pc of pieces) {
         if (pc.type !== 'end') continue;
-        const units = Math.round(pc.rimY / G);
-        if (Math.abs(pc.rimY - units * G) > 0.1 || units !== 1) continue;
+        const units = Math.round((pc.rimY - base) / G);
+        if (Math.abs(pc.rimY - base - units * G) > 0.1 || units !== 1) continue;
         out.push({
             level: 'warn',
             code: 'stranded-end',

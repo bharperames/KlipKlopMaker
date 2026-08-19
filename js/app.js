@@ -3661,8 +3661,13 @@ function makeGraphPlate(extent) {
     return g;
 }
 
-/** Fits the shadow frustum and ground plane to the selected part. */
-function framePartShadow(target, box, center, size) {
+/** Fits the shadow frustum and ground plane to the selected part.
+ *  `floorY` overrides where the plate sits: a single part is recentred so its
+ *  lowest point IS the bed, but a scene composite keeps world heights — its
+ *  floor is the world's y=0, and putting the plate under the bbox min instead
+ *  parked it under the lowest PART, leaving everything else "floating" (the
+ *  first thing Brett saw in the all-scene view). */
+function framePartShadow(target, box, center, size, floorY = null) {
     if (target.key) {
         const r = size * 0.62;
         const sc = target.key.shadow.camera;
@@ -3690,8 +3695,9 @@ function framePartShadow(target, box, center, size) {
     // 0.06, not 0.45: the plate is what tells you the part is SITTING on the
     // bed, and at inspection zoom a 0.45 mm gap reads as the part hovering.
     // The shadow catcher stays a little lower so it never z-fights the grid.
-    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, box.min.y - 0.25, center.z);
-    target.grid.position.set(center.x, box.min.y - 0.06, center.z);
+    const plateY = floorY ?? box.min.y;
+    if (target.shadowCatcher) target.shadowCatcher.position.set(center.x, plateY - 0.25, center.z);
+    target.grid.position.set(center.x, plateY - 0.06, center.z);
 }
 
 function initGallery() {
@@ -4525,7 +4531,8 @@ function selectGalleryScene(indices, label) {
         gallery.controls.target.copy(c);
         gallery.camera.position.set(c.x + size * 0.55, c.y + size * 0.4, c.z + size * 0.55);
         gallery.controls.update();
-        framePartShadow(gallery, box, c, size);
+        // scene composites keep world heights — the floor is the world's, y=0
+        framePartShadow(gallery, box, c, size, 0);
         const vol = computeMeshVolumeMm3(merged.positions, merged.indices);
         $('print-part-caption').innerHTML =
             `<b>${label}</b> · ${merged.placed} part${merged.placed === 1 ? '' : 's'} at scene positions · ` +

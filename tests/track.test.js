@@ -1,7 +1,7 @@
 import {
     SPEC, layoutTrack, samplePath, stationsForPiece, checkClearances,
     effectiveRidgePitch, ridgeOffset, appendSpiralTier, degToRad,
-    supportBossPos, stackHeightMm, needsPier
+    supportBossPos, stackHeightMm, needsPier, laysOnUnderside, undersidePlane
 } from '../js/track.js';
 
 describe('layoutTrack', () => {
@@ -32,10 +32,61 @@ describe('layoutTrack', () => {
         }
     });
 
-    test('lowest skirt rim rests exactly on the ground', () => {
+    /*
+     * THE LOWEST POINT OF THE LOWEST PART RESTS ON THE GROUND — which for a
+     * tilted-slab piece is its UNDERSIDE, not its rim: the underside plane
+     * hangs 4.75 mm below rimY on a straight and ~12.5 on a curve. Grounding
+     * on rims alone put a grounded slab curve below y=0, which Brett caught
+     * in the assembled inspector view: "some of the curve is actually below
+     * the ground". The lift is snapped to whole grid units so decks stay on
+     * the 15 mm grid, so the invariant is a band, not an exact zero: nothing
+     * below ground, and never a full spare grid unit of daylight.
+     */
+    test('the lowest point of the lowest part rests on the ground (within one grid unit)', () => {
         const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11 });
+        const lowest = Math.min(...pieces.map((pc) => {
+            if (!laysOnUnderside(pc, SPEC)) return pc.rimY;
+            const pl = undersidePlane(pc, SPEC);
+            let lo = pc.rimY;
+            const Wo = pc.innerWidth / 2 + SPEC.wall;
+            for (let s = 0; s <= pc.planLen; s += 5) {
+                const q = planPosAt(pc, s);
+                for (const u of [-Wo, Wo]) lo = Math.min(lo, pl.at(q.x + Math.sin(q.h) * u, q.z - Math.cos(q.h) * u));
+            }
+            return lo;
+        }));
+        expect(lowest).toBeGreaterThanOrEqual(0);
+        expect(lowest).toBeLessThan(STANDARD.gridMm);
+        // and the rims themselves stay on the grid datum
         const minRim = Math.min(...pieces.map(p => p.rimY));
-        expect(minRim).toBeCloseTo(0, 9);
+        expect(minRim % STANDARD.gridMm).toBeCloseTo(0, 9);
+    });
+
+    /*
+     * The stranded-end warning measures against the layout's own datum, not
+     * absolute zero — the slab ground lift moved the datum up a grid unit and
+     * every grounded slab design read as stranded until it did. Both halves
+     * pinned: a real parity trap still warns, and a clean Y stays silent.
+     */
+    test('a stranded end is still caught, and a grounded one is not', () => {
+        // main leg drops 4 units to its end, branch 3 — the main grounds the
+        // datum and the branch's end hangs exactly one unit up: the parity trap
+        const trapped = layoutTrack([
+            { type: 'switchR', gate: 'main', main: ['straight', 'end'], branch: ['end'] }
+        ], {});
+        expect(trapped.issues.filter(i => i.code === 'stranded-end')).toHaveLength(1);
+        const clean = layoutTrack(['straight',
+            { type: 'switchR', gate: 'branch', main: ['straight', 'straight', 'end'], branch: ['curveR', 'straight', 'end'] }
+        ], {});
+        expect(clean.issues.filter(i => i.code === 'stranded-end')).toHaveLength(0);
+    });
+
+    test('a block layout still grounds its rims at exactly zero', () => {
+        // a block piece's lowest point IS its rim, so no lift is needed and
+        // the old invariant survives unchanged for this style
+        const { pieces } = layoutTrack(['straight', 'straight'],
+            { slopeDeg: 11, skirtStyle: 'block' });
+        expect(Math.min(...pieces.map(p => p.rimY))).toBeCloseTo(0, 9);
     });
 
     test('90° curve exits perpendicular at the correct offset', () => {
@@ -217,9 +268,14 @@ describe('lift pieces', () => {
         expect(lift.rimY).toBeCloseTo(lift.entryDeck + SPEC.waterfallStepMm - SPEC.skirtDepth, 9);
     });
 
-    test('lowest rim still lands on the ground with lifts in play', () => {
+    test('lowest rim still lands on the grid datum with lifts in play', () => {
+        // grounding is by the lowest UNDERSIDE now (see the ground-shift test),
+        // lifted in whole grid units — so the rim invariant is grid membership,
+        // with the true low point pinned in [0, grid) by the same shift
         const { pieces } = layoutTrack(['lift', 'lift', 'curveL', 'curveL', 'straight'], { slopeDeg: 11 });
-        expect(Math.min(...pieces.map(p => p.rimY))).toBeCloseTo(0, 9);
+        const minRim = Math.min(...pieces.map(p => p.rimY));
+        expect(minRim % STANDARD.gridMm).toBeCloseTo(0, 9);
+        expect(minRim).toBeLessThanOrEqual(STANDARD.gridMm);
     });
 });
 
@@ -602,13 +658,19 @@ describe('the spacer', () => {
      * VIADUCT piece, which could; that underside no longer exists.)
      */
     test('a grounded minimal piece still needs something under it', () => {
-        const ground = chain(SPIRAL, 'minimal').find(({ pc }) => pc.rimY < 1);
-        expect(ground).toBeDefined();
+        // "grounded" = the lowest piece in the layout. Its rim is no longer at
+        // 0 — the ground shift lifts a slab layout one grid unit so the
+        // underside plane clears the floor — so find it by minimum, not by
+        // rimY < 1.
+        const all = chain(SPIRAL, 'minimal');
+        const ground = all.reduce((a, b) => (b.pc.rimY < a.pc.rimY ? b : a));
         expect(needsPier(ground.pc)).toBe(true);
-        // its seat is a whole grid unit up, so the stack is a foot and nothing
-        // else — the spacer that used to stand on the bed here is gone
-        expect(stackHeightMm(ground.pc, ground.sup)).toBeCloseTo(15, 2);
-        expect(decomposeSupport(stackHeightMm(ground.pc, ground.sup))).not.toBeNull();
+        // one grid unit for the lift plus the grid unit its seat already sat
+        // up: foot + R15, still a standard stack on the grid
+        const h = stackHeightMm(ground.pc, ground.sup);
+        expect(h % 15).toBeCloseTo(0, 2);
+        expect(h).toBeGreaterThan(0);
+        expect(decomposeSupport(h)).not.toBeNull();
     });
 
     /**
