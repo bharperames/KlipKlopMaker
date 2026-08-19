@@ -895,7 +895,32 @@ function clearGhost() {
 }
 
 // --- design persistence -----------------------------------------------------
-$('btn-save').addEventListener('click', () => {
+/**
+ * SAVING ASKS FOR A NAME. The name rode along silently from wherever the
+ * session started — Brett built a fresh design over the demo and it saved as
+ * "Demo Tower", a name that then misled everyone who read the file (this
+ * session included: the notes design turned up as demo_tower.klipklop.json).
+ * The name is the file's identity — it becomes the filename, the scene's
+ * `name` field, and the export zip prefix — so it is worth one keystroke of
+ * confirmation. Prefilled and select-all'd: keeping the old name is Enter.
+ */
+$('btn-save').addEventListener('click', async () => {
+    const name = await showDialog({
+        title: '💾 Save design',
+        html: `<label style="display:block; margin-bottom:6px">Name this design — it becomes the
+               filename and the name inside the file:</label>
+               <input id="save-name" type="text" style="width:100%; font-size:14px; padding:6px 8px;
+                   border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--ink);"
+                   value="${String(state.name ?? 'My Klip Klop Track').replace(/[&<>"]/g, '')}">`,
+        buttons: [
+            { label: 'Cancel', value: null },
+            { label: 'Save', value: 'save', primary: true }
+        ],
+        focus: '#save-name'
+    });
+    if (name === null) return;
+    const typed = document.getElementById('save-name')?.value?.trim();
+    if (typed) { state.name = typed; saveState(); }
     const scene = serializeScene(state, { name: state.name });
     const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -903,7 +928,7 @@ $('btn-save').addEventListener('click', () => {
     a.download = `${(scene.name || 'track').replace(/\W+/g, '_').toLowerCase()}.klipklop.json`;
     a.click();
     designDirty = false;
-    toast('💾 Design saved as a portable scene file');
+    toast(`💾 Saved as "${scene.name}"`);
 });
 $('btn-open').addEventListener('click', () => $('file-open').click());
 $('file-open').addEventListener('change', async (e) => {
@@ -3274,25 +3299,39 @@ window.__framePiece = (index, { az = 0.6, el = 0.25, dist = 320 } = {}) => {
     return true;
 };
 
-/** Styled modal dialog replacing native alert/confirm. Resolves a button value. */
-function showDialog({ title, html, buttons = [{ label: 'OK', value: true, primary: true }] }) {
+/** Styled modal dialog replacing native alert/confirm. Resolves a button value.
+ *  `focus` (a selector inside the body) focuses and selects an input on open,
+ *  and Enter anywhere in the dialog presses the primary button — the pair
+ *  that makes a prompt dialog usable without touching the mouse. */
+function showDialog({ title, html, buttons = [{ label: 'OK', value: true, primary: true }], focus = null }) {
     return new Promise((resolve) => {
         $('dialog-title').textContent = title;
         $('dialog-body').innerHTML = html;
         const bar = $('dialog-buttons');
         bar.innerHTML = '';
+        const close = (value) => {
+            $('dialog-overlay').style.display = 'none';
+            $('dialog-overlay').removeEventListener('keydown', onKey);
+            resolve(value);
+        };
+        const primary = buttons.find((b) => b.primary);
+        const onKey = (e) => {
+            if (e.key === 'Enter' && primary) { e.preventDefault(); close(primary.value); }
+        };
         for (const b of buttons) {
             const el = document.createElement('button');
             el.textContent = b.label;
             if (b.primary) el.classList.add('primary');
             if (b.danger) el.classList.add('danger');
-            el.addEventListener('click', () => {
-                $('dialog-overlay').style.display = 'none';
-                resolve(b.value);
-            });
+            el.addEventListener('click', () => close(b.value));
             bar.appendChild(el);
         }
+        $('dialog-overlay').addEventListener('keydown', onKey);
         $('dialog-overlay').style.display = '';
+        if (focus) {
+            const el = $('dialog-body').querySelector(focus);
+            if (el) { el.focus(); el.select?.(); }
+        }
     });
 }
 
