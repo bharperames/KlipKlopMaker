@@ -1026,7 +1026,7 @@ function build(v) {
     if (v.wall) SPEC.wall = v.wall;
     try {
         const { pieces } = layoutTrack(['straight', PIECE, 'straight'],
-            { slopeDeg: 11.2167, skirtStyle: v.style ?? SPEC.skirt.style });
+            { skirtStyle: v.style ?? SPEC.skirt.style });
         const pc = pieces.find(p => p.type === PIECE) ?? pieces[1];
         const support = planPillarPositions(pieces).find(s => s.pieceIndex === pc.index);
         const one = (extraOps, forPrint) => buildPieceExportGeometry(pc, { support, forPrint, extraOps });

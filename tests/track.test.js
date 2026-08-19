@@ -351,7 +351,7 @@ describe('planPillarPositions', () => {
         // stack. What has to hold is unchanged — the height still decomposes
         // onto the grid.
         for (const skirtStyle of ['minimal']) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167, skirtStyle });
+            const { pieces } = layoutTrack(seq, { skirtStyle });
             for (const sup of planPillarPositions(pieces)) {
                 const pc = pieces.find(p => p.index === sup.pieceIndex);
                 if (!needsPier(pc)) continue;
@@ -489,7 +489,7 @@ describe('seam widths', () => {
     const seams = (pieces) => pieces
         .map(pc => [pc.prevIndex == null ? null : pieces.find(q => q.index === pc.prevIndex), pc])
         .filter(([a]) => a);
-    const WIDE = { slopeDeg: 11.2167, curveWidenMm: 3 };
+    const WIDE = { curveWidenMm: 3 };
 
     test('at the Standard the channel is one width from end to end', () => {
         for (const seq of [
@@ -497,7 +497,7 @@ describe('seam widths', () => {
             ['straight', ...appendSpiralTier([], 'L'), 'straight'],
             [{ type: 'switchL', gate: 'main', main: ['straight'], branch: ['curveL'] }]
         ]) {
-            for (const pc of layoutTrack(seq, { slopeDeg: 11.2167 }).pieces) {
+            for (const pc of layoutTrack(seq, {}).pieces) {
                 expect(`${pc.name} ${pc.entryWidth}/${pc.innerWidth}/${pc.exitWidth}`)
                     .toBe(`${pc.name} 48/48/48`);
                 for (const s of [0, 15, pc.planLen / 2, pc.planLen]) {

@@ -80,7 +80,7 @@ fs.mkdirSync(OUT, { recursive: true });
 // The track pieces come from a real layout so they carry a real support
 // station — the boss is at the piece's centre of mass, not mid-length.
 const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-    { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+    { skirtStyle: 'minimal' });
 const sup = planPillarPositions(pieces);
 const track = (type, solidIt = false) => {
     const pc = pieces.find(p => p.type === type);

@@ -194,7 +194,7 @@ add('bowtie_key_b', buildKeyGeometry(SPEC, { code: 'KEY 2' }), 'spare');
 // plate are taken under light conditions and may not transfer to a full build.
 // Settle that deliberately later rather than smuggling it in here.
 const t = layoutTrack(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
-    { skirtStyle: 'minimal', slopeDeg: 11.2167, tileLen: CALIBRATION.rampTileLenMm });
+    { skirtStyle: 'minimal', tileLen: CALIBRATION.rampTileLenMm });
 const sups = planPillarPositions(t.pieces);
 let tile = null, tileSup = null;
 for (const p of t.pieces.filter((q) => q.type === 'straight')) {

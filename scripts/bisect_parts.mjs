@@ -63,7 +63,7 @@ import fs from 'node:fs';
 import { layoutTrack, planPillarPositions } from './js/track.js';
 import { initCSG, buildPieceExportGeometry } from './js/pieces.js';
 await initCSG();
-const { pieces } = layoutTrack(['straight', ${JSON.stringify(PIECE)}, 'straight'], { slopeDeg: 11.2167 });
+const { pieces } = layoutTrack(['straight', ${JSON.stringify(PIECE)}, 'straight'], {});
 const pc = pieces.find(p => p.type === ${JSON.stringify(PIECE)}) ?? pieces[1];
 const sup = planPillarPositions(pieces).find(s => s.pieceIndex === pc.index);
 const g = buildPieceExportGeometry(pc, { support: sup });

@@ -107,9 +107,9 @@ describe('exported track pieces survive CSG watertight and stay inside their foo
         // makes a different part. This is the shape that used to be
         // `straight_between_curves`; it is now just a straight, and the mesh
         // has to be byte-identical to prove it.
-        const flanked = layoutTrack(['curveL', 'straight', 'curveL'], { slopeDeg: 11.2167 })
+        const flanked = layoutTrack(['curveL', 'straight', 'curveL'], {})
             .pieces.find(p => p.type === 'straight');
-        const plainRun = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 }).pieces;
+        const plainRun = layoutTrack(['straight', 'straight'], {}).pieces;
         const plain = plainRun.filter(p => p.type === 'straight')[1];
         expect(flanked.entryWidth).toBe(flanked.innerWidth);
         expect(flanked.exitWidth).toBe(flanked.innerWidth);
@@ -163,7 +163,7 @@ describe('the block style stands on its whole rim', () => {
             const { audit } = await import('../scripts/overhang_audit.mjs');
             const { slabIslands } = await import('../scripts/first_layer.mjs');
             const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-                { skirtStyle: 'block', slopeDeg: 11.2167 });
+                { skirtStyle: 'block' });
             const world = pieces.find((q) => q.type === type);
             expect(world.skirtStyle).toBe('block');
             const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
@@ -211,16 +211,16 @@ describe('the block style stands on its whole rim', () => {
      */
     test('block pieces do not lie on their underside; minimal ramps still do', () => {
         const block = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-            { skirtStyle: 'block', slopeDeg: 11.2167 }).pieces;
+            { skirtStyle: 'block' }).pieces;
         for (const pc of block) expect(printsLyingDown(pc)).toBe(false);
         const minimal = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-            { skirtStyle: 'minimal', slopeDeg: 11.2167 }).pieces;
+            { skirtStyle: 'minimal' }).pieces;
         expect(printsLyingDown(minimal.find((p) => p.type === 'straight'))).toBe(true);
     });
 });
 
 describe('engraved part codes', () => {
-    const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], { slopeDeg: 11.2167 });
+    const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], {});
 
     const cutVolume = (build) => {
         const plain = analyzeGeometry(build(''));
@@ -358,7 +358,7 @@ describe('export geometry is independent of where the piece sits in the tower', 
         // An exported part is a function of its shape, not of its address.
         const { pieces } = layoutTrack(
             ['straight', 'curveL', 'straight', 'curveL', 'straight', 'straight'],
-            { slopeDeg: 11.2167 });
+            {});
         const curves = pieces.filter(p => p.type === 'curveL');
         expect(curves.length).toBeGreaterThan(1);
         // genuinely different elevations, or the test proves nothing
@@ -572,7 +572,7 @@ describe('export decimation stays inside its error bound', () => {
 
     test('decimated surfaces stay within the tolerance of the undecimated part', async () => {
         const { SIMPLIFY_TOL_MM } = await import('../js/geometry.js');
-        const { pieces } = layoutTrack(['straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight'], {});
         const pc = pieces[1];
         const lean = buildPieceExportGeometry(pc);
         const full = buildPieceExportGeometry(pc, { simplifyTol: 0 });
@@ -598,7 +598,7 @@ describe('export decimation stays inside its error bound', () => {
     });
 
     test('decimation preserves volume, so no feature is lost', async () => {
-        const { pieces } = layoutTrack(['straight', 'curveL'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'curveL'], {});
         for (const pc of [pieces[1], pieces[2]]) {
             const lean = analyzeMesh(...Object.values({ p: buildPieceExportGeometry(pc) })
                 .flatMap(m => [m.positions, m.indices]));
@@ -641,7 +641,7 @@ describe('every part is ONE solid', () => {
         // ever stops being true the support axis is back in the track library.
         const { planPillarPositions } = await import('../js/track.js');
         const { pieces } = layoutTrack(
-            ['straight', ...Array(8).fill('curveL'), 'straight'], { slopeDeg: 11.2167 });
+            ['straight', ...Array(8).fill('curveL'), 'straight'], {});
         const sups = planPillarPositions(pieces);
         expect(sups.some(s => s.mode === 'jog')).toBe(true);
         for (const pc of pieces) {
@@ -668,7 +668,7 @@ describe('every part is ONE solid', () => {
             ['straight', 'elevator', 'straight', 'powered', 'straight'],
             ['curveL', 'straight', 'curveR', 'straight', 'straight']
         ]) {
-            const { pieces } = layoutTrack(seq, { slopeDeg: 11.2167 });
+            const { pieces } = layoutTrack(seq, {});
             const supports = planPillarPositions(pieces);
             for (const pc of pieces) {
                 if (pc.role === 'branch') continue;
@@ -686,7 +686,7 @@ describe('mating faces line up', () => {
         const { planPillarPositions } = await import('../js/track.js');
         const { pieces } = layoutTrack(
             ['straight', 'curveL', 'curveL', 'straight', 'curveR', 'straight'],
-            { slopeDeg: 11.2167 });
+            {});
         const supports = planPillarPositions(pieces);
         const mesh = new Map();
         for (const pc of pieces) {
@@ -756,7 +756,7 @@ describe('nothing pokes up through the walking surface', () => {
     test.each(['straight', 'curveR', 'lift'])('%s: the floor is the highest thing in the channel', async (type) => {
         const { SPEC, pieceInFrame, planPosAt, deckYAt, innerWidthAt, planPillarPositions } =
             await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'curveR', 'lift', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'curveR', 'lift', 'straight'], {});
         const sup = planPillarPositions(pieces);
         const world = pieces.find(p => p.type === type);
         const g = buildPieceExportGeometry(world, { support: sup.find(s => s.pieceIndex === world.index) });
@@ -805,7 +805,7 @@ describe('the minimal skirt', () => {
      * and the spacer makes up the rest of the way to the grid.
      */
     const { pieces } = layoutTrack(['start', 'straight', 'curveL', 'lift', 'straight', 'end'],
-        { slopeDeg: 11.2167, skirtStyle: 'minimal' });
+        { skirtStyle: 'minimal' });
 
     /** Every surface height at (x,z), high to low. */
     const surfacesAt = (g, x, z) => {
@@ -1137,7 +1137,7 @@ describe('the key can actually be fitted', () => {
     test('the key travels from the rim to its seat without meeting anything', async () => {
         const { SPEC, pieceInFrame } = await import('../js/track.js');
         const { bowtieKeyPlan } = await import('../js/geometry.js');
-        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'straight'], {});
         const world = pieces[1];
         const pc = pieceInFrame(world);
         const g = buildPieceExportGeometry(world);
@@ -1179,7 +1179,7 @@ describe('the key can actually be fitted', () => {
         // reads the built mesh: pocket depth at a series of heights, which has
         // to be flat up the throat and then close as the key nears its seat.
         const { SPEC, pieceInFrame } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'straight'], {});
         const world = pieces[1];
         const pc = pieceInFrame(world);
         const g = buildPieceExportGeometry(world);
@@ -1229,7 +1229,7 @@ describe('the key can actually be fitted', () => {
         // tightening pulls the seam SHUT. Read the built mesh: pocket width on
         // the centreline at a series of heights.
         const { SPEC, pieceInFrame } = await import('../js/track.js');
-        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11.2167 });
+        const { pieces } = layoutTrack(['straight', 'straight'], {});
         const world = pieces[1];
         const pc = pieceInFrame(world);
         const g = buildPieceExportGeometry(world);
@@ -1751,7 +1751,7 @@ describe('the deck ceiling is held up', () => {
         'a %s bridges nothing wider than the limit', async (type) => {
             await initCSG();
             const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-                { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+                { skirtStyle: 'minimal' });
             const world = pieces.find((q) => q.type === type);
             const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
             const g = buildPieceExportGeometry(world, { support: sup, forPrint: true });
@@ -1887,7 +1887,7 @@ describe('the deck ceiling is held up', () => {
             const { topSurface, worstDip } = await import('../scripts/deck_probe.mjs');
             const { pieceFrame, pieceInFrame } = await import('../js/track.js');
             const { pieces } = layoutTrack(['start', 'straight', 'curveR', 'straight', 'end'],
-                { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+                { skirtStyle: 'minimal' });
             const world = pieces.find((q) => q.type === type);
             const sup = planPillarPositions(pieces).find((x) => x.pieceIndex === world.index);
             const g = buildPieceExportGeometry(world, { support: sup });
@@ -1962,7 +1962,7 @@ describe('fill before carve', () => {
         await initCSG();
         const { pieces } = layoutTrack(
             ['start', 'straight', 'curveL', 'curveR', 'lift', 'powered', 'elevator', 'end'],
-            { skirtStyle: 'minimal', slopeDeg: 11.2167 });
+            { skirtStyle: 'minimal' });
         const sup = planPillarPositions(pieces);
         for (const pc of pieces) {
             const support = sup.find((s) => s.pieceIndex === pc.index);

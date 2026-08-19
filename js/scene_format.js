@@ -24,7 +24,13 @@ export function serializeScene(state, meta = {}) {
     return {
         format: SCENE_FORMAT,
         version: SCENE_VERSION,
+        // the compatibility claim, full semver: same MAJOR mates, MINOR is
+        // additive, PATCH is cosmetic — the same code the parts are engraved
+        // with (MAJOR.MINOR) and the export README promises against
         geometry: GEOMETRY_VERSION,
+        // when this file was written. Provenance only — nothing keys on it —
+        // and meta.savedAt lets a test serialize deterministically.
+        savedAt: meta.savedAt ?? new Date().toISOString(),
         name: meta.name ?? state.name ?? 'Untitled track',
         description: meta.description ?? state.description ?? '',
         sequence: cloneNodes(state.sequence),
@@ -32,11 +38,15 @@ export function serializeScene(state, meta = {}) {
         figureStyle: state.figureStyle ?? 'knight',
         knightVariant: state.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof state.figureOpacity === 'number' ? state.figureOpacity : 1,
-        params: {
-            slopeDeg: +STANDARD.slopeDeg.toFixed(4),
-            innerWidth: STANDARD.innerWidth,
-            curveRadius: +STANDARD.curveRadius.toFixed(2)
-        },
+        // NO params block. A scene that pins nothing IS the Standard — the
+        // same doctrine the stock scenes follow (scene_currency.test.js). The
+        // app cannot produce custom parameters, and the block it used to write
+        // pinned a toFixed(4) ROUNDING of the Standard: Brett saw 11.2181 in
+        // a fresh save, flagged it as drift, and the investigation found the
+        // opposite bug — 11.2181 is atan(29.75/150) correctly rounded, and
+        // the "11.2167" the docs quoted was the number that never existed.
+        // Legacy files with a params block still load: deserialize reads it
+        // only to warn when it is genuinely non-Standard.
         // Which underside the pieces are built with. A scene saved with
         // `minimal` must come back as `minimal` — it is a different printed
         // part, not a view setting.
@@ -163,10 +173,14 @@ export function deserializeScene(obj) {
         knightVariant: obj.knightVariant === 'comb' ? 'comb' : 'trumpet',
         figureOpacity: typeof obj.figureOpacity === 'number' ? Math.min(1, Math.max(0.3, obj.figureOpacity)) : 1,
         // parameters are CONSTANT: every design lays out on the canonical
-        // geometry; legacy/custom params in the file are reported, not obeyed
-        slopeDeg: +STANDARD.slopeDeg.toFixed(4),
+        // geometry; legacy/custom params in the file are reported, not obeyed.
+        // EXACT, not toFixed(4) — the rounding forked the app itself off the
+        // Standard by 8e-5 deg, which is 26 nm of drop per tile: physically
+        // nothing, but it made state.slopeDeg !== STANDARD.slopeDeg and every
+        // identity comparison fuzzy for no benefit at all.
+        slopeDeg: STANDARD.slopeDeg,
         innerWidth: STANDARD.innerWidth,
-        curveRadius: +STANDARD.curveRadius.toFixed(2),
+        curveRadius: STANDARD.curveRadius,
         skirtStyle: normaliseSkirtStyle(obj.skirtStyle),
         geometryOfFile: obj.geometry ?? null,
         // Same MAJOR mates — that is the promise the export README makes, and

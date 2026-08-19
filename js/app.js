@@ -64,9 +64,11 @@ const state = {
     knightVariant: 'trumpet', // helmet crest of the mirrored toy: trumpet | comb
     figureOpacity: 1,
     simSpeed: 1.0,
-    slopeDeg: +STANDARD.slopeDeg.toFixed(4),
+    // exact — a toFixed(4) here forked the whole app off the Standard by a
+    // rounding, which is how a "brand new save" came out stamped 11.2181
+    slopeDeg: STANDARD.slopeDeg,
     innerWidth: STANDARD.innerWidth,
-    curveRadius: +STANDARD.curveRadius.toFixed(2),
+    curveRadius: STANDARD.curveRadius,
     muKey: 'washboard',
     skirtStyle: SPEC.skirt.style,
     walker: { ...DEFAULT_WALKER },
@@ -1868,7 +1870,7 @@ function renderGauge(zone) {
             <div class="needle" style="left:calc(${pct(state.slopeDeg)}% - 1.5px)"></div>
         </div>
         <div class="scale"><span>4°</span><span>8°</span><span>11°</span><span>14°</span><span>18°</span></div>
-        <div class="readout"><b>${state.slopeDeg}°</b> → <b>${status}</b> · ${modelTxt}</div>`;
+        <div class="readout"><b>${state.slopeDeg.toFixed(2)}°</b> → <b>${status}</b> · ${modelTxt}</div>`;
 }
 
 const MATRIX = [
@@ -3051,7 +3053,7 @@ function saveFilm() {
     const secs = ((performance.now() - film.t0) / 1000).toFixed(0);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `klipklop_ride_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_${state.slopeDeg}deg.${ext}`;
+    a.download = `klipklop_ride_${(state.name || 'track').replace(/\W+/g, '_').toLowerCase()}_${state.slopeDeg.toFixed(1)}deg.${ext}`;
     a.click();
     toast(`🎬 Ride film saved — ${secs}s, ${(blob.size / 1e6).toFixed(1)} MB (${ext.toUpperCase()})` +
         (ext === 'webm' ? ' · this browser cannot encode MP4; the WebM plays in Chrome/VLC' : ''));
@@ -5820,7 +5822,7 @@ function calibrationSheet(items) {
     const L = [];
     L.push(`# Calibration measurements — geometry v${GEOMETRY_VERSION}`, '');
     L.push(`Underside style: **${state.skirtStyle}**. Printed at the Klip Klop Standard`,
-        '(slope 11.217°, curve R 143.64, channel 48) regardless of the open design.', '');
+        '(slope 11.218°, curve R 143.64, channel 48) regardless of the open design.', '');
     L.push('Coupons are cut from the real parts and keep their full section and',
         'print orientation, so these numbers transfer to a whole track piece.', '');
     L.push('| coupon | qty | feature | nominal mm | measured mm | delta |');
@@ -6019,7 +6021,7 @@ function exportReadme(joints, switchCount, plateManifest = null, unstable = []) 
     return `KLIP KLOP KONSTRUCTOR — print & assembly notes
 ==============================================
 CANONICAL GEOMETRY v${GEOMETRY_VERSION} — parts from any same-major export mate.
-Design: "${state.name}" — slope ${state.slopeDeg}°, channel ${state.innerWidth} mm, curves R${state.curveRadius} mm.
+Design: "${state.name}" — slope ${state.slopeDeg.toFixed(2)}°, channel ${state.innerWidth} mm, curves R${state.curveRadius.toFixed(2)} mm.
 ${joints} seam${joints === 1 ? '' : 's'}. Every mesh is watertight (Manifold CSG kernel), a single
 solid, and pre-oriented. No support material is needed anywhere.
 
@@ -6083,7 +6085,7 @@ ${sceneryLines}
 
 TUNING
 Use the app's Troubleshooting matrix. Test one straight tile first, at the
-design slope of ${state.slopeDeg}°, before committing to a whole tower.
+design slope of ${state.slopeDeg.toFixed(2)}°, before committing to a whole tower.
 
 WHEN YOU LOAD THESE
 ${BAMBU_CONFIG_NOTE}

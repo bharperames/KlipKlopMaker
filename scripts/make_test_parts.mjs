@@ -78,7 +78,7 @@ function wallAngles(g) {
 }
 
 function buildOne() {
-    const { pieces } = layoutTrack(['straight', PIECE, 'straight'], { slopeDeg: 11.2167 });
+    const { pieces } = layoutTrack(['straight', PIECE, 'straight'], {});
     const pc = pieces.find(p => p.type === PIECE) ?? pieces[1];
     const sup = planPillarPositions(pieces).find(s => s.pieceIndex === pc.index);
     const g = buildPieceExportGeometry(pc, { support: sup });

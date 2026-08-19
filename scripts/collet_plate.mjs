@@ -180,7 +180,7 @@ LADDER.forEach(([code, opts, note], i) => {
 
 // thermal load, so this plate prints under the same conditions as the last one
 const t = layoutTrack(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
-    { skirtStyle: 'minimal', slopeDeg: 11.2167, tileLen: CALIBRATION.rampTileLenMm });
+    { skirtStyle: 'minimal', tileLen: CALIBRATION.rampTileLenMm });
 const sups = planPillarPositions(t.pieces);
 let tile = null, tileSup = null;
 for (const p of t.pieces.filter((q) => q.type === 'straight')) {

@@ -642,7 +642,7 @@ viaduct curve 71 mm.
   runs the vane out to z=50, so placing it at the track's heading points it
   ACROSS the channel, through open air, where it reports almost nothing and
   every number is fiction. The yaw that points it along heading h is h - 90 deg.
-- **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.217°,
+- **The Klip Klop Standard is load-bearing** (PHYSICS.md §6): slope 11.218°,
   curve R 143.64, width 48 — chosen so every tile drops whole 15 mm grid units
   and supports stack from five reusable riser designs. Never change STANDARD
   values casually; custom parameters are an explicit non-interoperable mode.

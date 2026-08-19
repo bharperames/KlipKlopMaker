@@ -25,7 +25,7 @@
  * printed part interoperates forever:
  *  - Each running tile drops a whole number of 15 mm grid units INCLUDING its
  *    0.25 mm waterfall seam: straights/lifts = 30 mm, curves = 45 mm.
- *  - Therefore ramp slope = atan(29.75/150) = 11.217° (dead center of the
+ *  - Therefore ramp slope = atan(29.75/150) = 11.218° (dead center of the
  *    10–12° passive-walker green zone) and curve radius = 143.64 mm (above
  *    the 120 mm rigid-body minimum).
  *  - Every deck boundary — and every support rim — lands on the 15 mm grid,
@@ -46,7 +46,7 @@ export const STANDARD = {
     gridMm: 15,
     tileDropMm: 30,
     curveDropMm: 45,
-    slopeDeg: Math.atan(29.75 / 150) * 180 / Math.PI,        // 11.2167°
+    slopeDeg: Math.atan(29.75 / 150) * 180 / Math.PI,        // 11.21808° — the docs said 11.2167 for a long time, and that number was never atan(29.75/150)
     liftSlopeDeg: Math.atan(30.25 / 150) * 180 / Math.PI,    // 11.4045° (powered)
     curveRadius: (44.75 / (29.75 / 150)) / (Math.PI / 2),    // 143.637 mm
     innerWidth: 48,

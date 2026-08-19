@@ -195,7 +195,7 @@ for (const L of ['A', 'B']) {
 
 // thermal load, and a real pocket/sole while we are here
 const t = layoutTrack(['start', 'straight', 'straight', 'curveR', 'straight', 'end'],
-    { skirtStyle: 'minimal', slopeDeg: 11.2167, tileLen: CALIBRATION.rampTileLenMm });
+    { skirtStyle: 'minimal', tileLen: CALIBRATION.rampTileLenMm });
 const sups = planPillarPositions(t.pieces);
 let tile = null, tileSup = null;
 for (const p of t.pieces.filter((q) => q.type === 'straight')) {

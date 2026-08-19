@@ -159,7 +159,7 @@ locked standard makes every part reusable:
 |---|---|
 | Tile drop = **30 mm** (straights & lifts, incl. the 0.25 mm waterfall seam) | two 15 mm grid units |
 | Curve drop = **45 mm** | three grid units |
-| Ramp slope = atan(29.75/150) = **11.217°** | dead center of the 10–12° green zone |
+| Ramp slope = atan(29.75/150) = **11.218°** | dead center of the 10–12° green zone |
 | Lift slope = atan(30.25/150) = **11.405°** | powered; nets +30 mm after its seam |
 | Curve radius = **143.64 mm** | gives the 45 mm curve drop; above the 120 mm rigid-body minimum |
 | Channel width = **48 mm** | center of the 46–50 mm spec |
