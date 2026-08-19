@@ -47,8 +47,8 @@ export const STANDARD = {
     tileDropMm: 30,
     curveDropMm: 45,
     slopeDeg: Math.atan(29.75 / 150) * 180 / Math.PI,        // 11.21808° — the docs said 11.2167 for a long time, and that number was never atan(29.75/150)
-    liftSlopeDeg: Math.atan(30.25 / 150) * 180 / Math.PI,    // 11.4045° (powered)
-    curveRadius: (44.75 / (29.75 / 150)) / (Math.PI / 2),    // 143.637 mm
+    liftSlopeDeg: Math.atan(30.25 / 150) * 180 / Math.PI,    // 11.40172° (powered)
+    curveRadius: (44.75 / (29.75 / 150)) / (Math.PI / 2),    // 143.64068 mm
     innerWidth: 48,
     /**
      * The riser ladder. Every size is exactly TWICE the next, which is the

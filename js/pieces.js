@@ -21,7 +21,7 @@ import * as THREE from 'three';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import Module from 'manifold-3d';
 import {
-    SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt, bankAt,
+    SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt, bankAt, massCentreS,
     pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside,
     undersidePlane
 } from './track.js';
@@ -213,10 +213,16 @@ function planToWorld(pts, face) {
  * Arc-length stations carrying a socket boss. A pier is nudged onto one when a
  * division is happening anyway, so it merges with the boss instead of standing
  * a few millimetres off it. `undefined` (no support info at all, e.g. a
- * standalone display build) falls back to the usual mid-piece boss.
+ * standalone display build) falls back to `massCentreS` — the SAME station
+ * planPillarPositions supplies, because "the socket never moves" is only true
+ * if every path that guesses guesses the same place. The fallback was
+ * `planLen / 2`, and a curve built without support info was a measurably
+ * different solid (10907 vs 10591 vertices) from the one every shipped path
+ * builds — latent, and exactly the drift the part signature assumes cannot
+ * happen. tests/contracts.test.js pins the invariance now.
  */
 export const supportStations = (support, piece) =>
-    support === undefined ? [piece.planLen / 2]
+    support === undefined ? [massCentreS(piece)]
         : support && support.mode !== 'none' ? [support.s]
             : [];
 
@@ -262,7 +268,7 @@ function startBumperOps(piece, spec) {
 
 /** Fast, ridgeless shell for the interactive scene. */
 export function buildPieceDisplayGeometry(piece, spec = SPEC, bossStations, support) {
-    const pads = bossStations ?? [piece.planLen / 2];
+    const pads = bossStations ?? [massCentreS(piece)];
     const stations = stationsForPiece(piece, 6, archStations(piece, spec, pads));
     const profiles = pieceProfiles(piece, stations, spec, false, pads);
     const shell = toBufferGeometry(sweepSolid(profiles, stations));
@@ -356,7 +362,7 @@ function routeClearanceEnvelope(piece, spec, maxStep = 10) {
 /** Display union of a switch's two route shells with an open frog. */
 export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, bossStations, support) {
     const mk = (piece) => {
-        const pads = bossStations ?? [piece.planLen / 2];
+        const pads = bossStations ?? [massCentreS(piece)];
         const stations = stationsForPiece(piece, 8, archStations(piece, spec, pads));
         return toBufferGeometry(sweepSolid(pieceProfiles(piece, stations, spec, false, pads), stations));
     };
@@ -399,7 +405,7 @@ export function buildSwitchDisplayGeometry(mainPiece, branchPiece, spec = SPEC, 
 
 /** Fine washboard shell (positions/indices) for one piece. */
 function fineShell(piece, spec, bossStations, forced) {
-    const pads = bossStations ?? [piece.planLen / 2];
+    const pads = bossStations ?? [massCentreS(piece)];
     const stations = stationsForPiece(piece,
         ridgeStationSpacing(spec.ridge.height / 2, piece.ridgePitch),
         archStations(piece, spec, pads, forced));
@@ -759,7 +765,7 @@ function bossOps(piece, spec, support) {
     // belongs to the SUPPORT. The offset now lives in a jog (SPEC.jog), so
     // every piece of a type is one shape.
     {
-        const s = support?.s ?? piece.planLen / 2;
+        const s = support?.s ?? massCentreS(piece);
         const f = s / piece.planLen;
         const m = planPosAt(piece, s);
         bx = m.x; bz = m.z;

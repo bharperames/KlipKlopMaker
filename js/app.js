@@ -49,7 +49,7 @@ import {
 } from './geometry.js';
 import { buildKnightHorseModel } from './horse_model.js';
 import { generate3MFXML, generateBinarySTL, generateMultiObject3MFXML, placeForPlate } from './export_3mf.js';
-import { analyzeMesh, bedStability } from './mesh_utils.js';
+import { analyzeMesh, bedStability, slabIslands } from './mesh_utils.js';
 import { packPlates, describePlates, PLATE } from './plate_pack.js';
 import { EXPORT_SETS, getExportSet, describeExportSet } from './export_sets.js';
 
@@ -430,29 +430,20 @@ function rebuild() {
         // that steps the column across, then the spacer that makes up whatever
         // the 15 mm grid could not. A grounded minimal piece has no stack at
         // all — its spacer stands on the bed.
-        let y = stackHeightMm(pc, sup);
-        if (y > 1) trackGroup.add(buildSupportObject(y, sup.x, sup.z));
-        const boss = supportBossPos(pc, sup);
-        const ringAt = (rx, ry, rz) => {
-            const ring = seamRing(0);
-            ring.position.set(rx, ry, rz);
-            trackGroup.add(ring);
-        };
-        if (sup.mode === 'jog') {
-            if (y > 1) ringAt(sup.x, y, sup.z);       // stack top -> jog
-            const jog = makeStackedSupportMesh(supportGeom('jog'), MAT.pillar);
-            jog.position.set(sup.x, y, sup.z);
-            jog.rotation.y = -Math.atan2(boss.z - sup.z, boss.x - sup.x);
-            trackGroup.add(jog);
-            y += SPEC.jog.heightMm;
-        }
-        const spacer = spacerHeightMm(pc);
-        if (spacer > 0) {
-            if (y > 1) ringAt(boss.x, y, boss.z);     // stack/jog top -> spacer
-            const mesh = makeStackedSupportMesh(supportGeom(`spacer:${spacer}`), MAT.pillar);
-            mesh.position.set(boss.x, y, boss.z);
+        const plan = planSupportAssembly(pc, sup);
+        plan.forEach((it, i) => {
+            const mesh = it.kind === 'pillar'
+                ? makeStackedSupportMesh(buildPillarGeometry(it.heightMm), MAT.pillar)
+                : makeStackedSupportMesh(supportGeom(it.kind), MAT.pillar);
+            mesh.position.set(...it.at);
+            mesh.rotation.y = it.yaw;
             trackGroup.add(mesh);
-        }
+            if (i > 0) {                 // a real joint: this part sits on the last
+                const ring = seamRing(0);
+                ring.position.set(...it.at);
+                trackGroup.add(ring);
+            }
+        });
     }
 
     // gate blades: hinged on the wall opposite the branch — parked flat along
@@ -589,30 +580,41 @@ function seamRing(y, af = 15) {
 }
 
 /** A support at (x,z): stacked standard parts on-grid, legacy pillar otherwise. */
-function buildSupportObject(heightMm, x, z) {
-    const dec = usingStandard() ? decomposeSupport(heightMm) : null;
-    if (!dec) {
-        const pillarGeo = buildPillarGeometry(heightMm);
-        const group = makeStackedSupportMesh(pillarGeo, MAT.pillar);
-        group.position.set(x, 0, z);
-        return group;
+/**
+ * THE ONE DESCRIPTION OF HOW A SUPPORT ASSEMBLES. This existed three times —
+ * the scene renderer, buildSupportObject, and the parts catalogue's placement
+ * collection each re-derived "foot, then risers tallest-first, then the jog,
+ * then the spacer at the boss" — and three copies of one assembly rule is the
+ * duplicated-authority seam this project keeps paying for (CLAUDE.md, "one
+ * authority per contract"). Ordered bottom-up; `kind` is a supportGeom key
+ * ('foot', '60'/'30'/'15', 'jog', 'spacer:H') or 'pillar' with heightMm when
+ * the Standard cannot decompose the stack (custom parameters, cut-to-height).
+ */
+function planSupportAssembly(pc, sup) {
+    const items = [];
+    let y = stackHeightMm(pc, sup);
+    const boss = supportBossPos(pc, sup);
+    if (y > 1) {
+        const dec = usingStandard() ? decomposeSupport(y) : null;
+        if (!dec) {
+            items.push({ kind: 'pillar', heightMm: y, at: [sup.x, 0, sup.z], yaw: 0 });
+        } else {
+            items.push({ kind: 'foot', at: [sup.x, 0, sup.z], yaw: 0 });
+            let ry = STANDARD.footHeight;
+            for (const r of [...dec.risers].sort((a, b) => b - a)) {
+                items.push({ kind: String(r), at: [sup.x, ry, sup.z], yaw: 0 });
+                ry += r;
+            }
+        }
     }
-    const g = new THREE.Group();
-    const footGroup = makeStackedSupportMesh(supportGeom('foot'), MAT.pillar);
-    g.add(footGroup);
-    let y = STANDARD.footHeight;
-    g.add(seamRing(y));                    // foot-to-riser is a real joint too
-    const risers = [...dec.risers].sort((a, b) => b - a);
-    for (let i = 0; i < risers.length; i++) {
-        const r = risers[i];
-        const mGroup = makeStackedSupportMesh(supportGeom(String(r)), MAT.pillar);
-        mGroup.position.y = y;
-        g.add(mGroup);
-        y += r;
-        if (i < risers.length - 1) g.add(seamRing(y));
+    if (sup.mode === 'jog') {
+        items.push({ kind: 'jog', at: [sup.x, y, sup.z],
+            yaw: -Math.atan2(boss.z - sup.z, boss.x - sup.x) });
+        y += SPEC.jog.heightMm;
     }
-    g.position.set(x, 0, z);
-    return g;
+    const spacer = spacerHeightMm(pc);
+    if (spacer > 0) items.push({ kind: `spacer:${spacer}`, at: [boss.x, y, boss.z], yaw: 0 });
+    return items;
 }
 
 /**
@@ -2581,6 +2583,36 @@ function setTab(t) {
 
 const partWeightCache = new Map();
 
+
+/** Smallest-island analysis for a Y-up mesh, sliced half a layer above its
+ *  lowest point — the shop's bed warnings gate on this, not on area alone.
+ *
+ *  `persistentIslands` is the hazard number: islands still separate 1 mm up.
+ *  The bed slice alone flagged the FOOT, whose engraved code sits on its base
+ *  — the counters of the two O's are genuine 5 mm2 first-layer islands, but
+ *  they merge with the body at groove depth two layers up. A tower has to
+ *  stay separate to have to hold itself down; a letter counter does not. The
+ *  riser's collet slots run the part's full height, so it reads 3 both ways. */
+function firstLayerIslands(mesh) {
+    let ymin = Infinity;
+    for (let i = 1; i < mesh.positions.length; i += 3) ymin = Math.min(ymin, mesh.positions[i]);
+    const atBed = slabIslands(mesh.positions, mesh.indices, ymin + 0.1);
+    const persistent = atBed.islands > 1
+        ? slabIslands(mesh.positions, mesh.indices, ymin + 1.0).islands
+        : 1;
+    return { ...atBed, persistentIslands: persistent };
+}
+
+/** ONE answer to "which weight class is this part" — this regex chain lived
+ *  twice (here and the inspector caption), which is how the two grams shown
+ *  for one part could ever disagree. */
+function partWeightCategory(name) {
+    return /^(pillar|support)/.test(name) ? 'pillar'
+        : /^scenery/.test(name) ? 'scenery'
+        : /^figure_body|^figure_pend/.test(name) ? 'figure'
+        : /^connector|^gate|plugs/.test(name) ? 'small' : 'track';
+}
+
 function getPartWeight(part, sig) {
     if (!sig) return 0;
     if (partWeightCache.has(sig)) {
@@ -2589,11 +2621,7 @@ function getPartWeight(part, sig) {
     try {
         const mesh = part.build();
         const report = analyzeMesh(mesh.positions, mesh.indices);
-        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
-            : /^scenery/.test(part.name) ? 'scenery'
-            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
-            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
-        const wt = printedWeightG(report.volumeMm3, cat);
+        const wt = printedWeightG(report.volumeMm3, partWeightCategory(part.name));
         partWeightCache.set(sig, wt);
         return wt;
     } catch (e) {
@@ -3569,41 +3597,35 @@ function assembleParts() {
     const supList = (state.supports ?? [])
         .filter(s => supportsPillar(s) && needsPier(pieces[s.pieceIndex]));
     if (usingStandard()) {
+        // ONE authority for how a stack assembles: planSupportAssembly — the
+        // same plan the scene renderer draws. This block used to re-derive
+        // the stacking by hand, which is the three-copies seam the planner
+        // exists to close; now it only tallies what the plan says.
         let feet = 0, jogs = 0;
         const riserCounts = new Map();
         const spacerCounts = new Map();
-        // true assembled placements per kind, mirroring rebuild()'s stacking
-        const put = (map, key, at, yaw = 0) => {
+        const put = (map, key, place) => {
             if (!map.has(key)) map.set(key, []);
-            map.get(key).push({ at, yaw });
+            map.get(key).push(place);
         };
         const footAt = [], jogAt = [];
         const riserAt = new Map(), spacerAt = new Map();
         for (const sup of supList) {
             const pc = pieces[sup.pieceIndex];
-            // counted before the decompose, because a grounded minimal piece
-            // has NO stack under its spacer and would drop out at the `continue`
-            const sp = spacerHeightMm(pc);
-            let y = stackHeightMm(pc, sup);
-            const boss = supportBossPos(pc, sup);
-            if (sup.mode === 'jog') {
-                jogs++;
-                jogAt.push({ at: [sup.x, y, sup.z],
-                    yaw: -Math.atan2(boss.z - sup.z, boss.x - sup.x) });
-            }
-            if (sp > 0) {
-                spacerCounts.set(sp, (spacerCounts.get(sp) ?? 0) + 1);
-                put(spacerAt, sp, [boss.x, y + (sup.mode === 'jog' ? SPEC.jog.heightMm : 0), boss.z]);
-            }
-            const dec = decomposeSupport(stackHeightMm(pc, sup));
-            if (!dec) continue;
-            feet++;
-            footAt.push({ at: [sup.x, 0, sup.z], yaw: 0 });
-            let ry = STANDARD.footHeight;
-            for (const r of [...dec.risers].sort((a, b) => b - a)) {
-                riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
-                put(riserAt, r, [sup.x, ry, sup.z]);
-                ry += r;
+            for (const it of planSupportAssembly(pc, sup)) {
+                const place = { at: it.at, yaw: it.yaw };
+                if (it.kind === 'foot') { feet++; footAt.push(place); }
+                else if (it.kind === 'jog') { jogs++; jogAt.push(place); }
+                else if (/^spacer:/.test(it.kind)) {
+                    const sp = Number(it.kind.slice(7));
+                    spacerCounts.set(sp, (spacerCounts.get(sp) ?? 0) + 1);
+                    put(spacerAt, sp, place);
+                } else if (/^\d+$/.test(it.kind)) {
+                    const r = Number(it.kind);
+                    riserCounts.set(r, (riserCounts.get(r) ?? 0) + 1);
+                    put(riserAt, r, place);
+                }
+                // 'pillar' (undecomposable custom stack) is not a stock part
             }
         }
         if (jogs) parts.push({ name: 'support_jog', count: jogs, sig: 'support_jog', kind: 'support', note: note.jog,
@@ -4704,10 +4726,7 @@ function selectGalleryPart(i, additive = false) {
         // Fit the shadow frustum to THIS part — a frustum sized for the whole
         // scene wastes the depth range and washes out small recesses.
         framePartShadow(gallery, box, c, size);
-        const cat = /^(pillar|support)/.test(part.name) ? 'pillar'
-            : /^scenery/.test(part.name) ? 'scenery'
-            : /^figure_body|^figure_pend/.test(part.name) ? 'figure'
-            : /^connector|^gate|plugs/.test(part.name) ? 'small' : 'track';
+        const cat = partWeightCategory(part.name);
         const countLabel = part.count > 1 ? ` (x${part.count})` : '';
         $('print-part-caption').innerHTML =
             `<b>${part.name}${countLabel}</b> · ${(report.volumeMm3 / 1000).toFixed(1)} cm³ · ≈${printedWeightG(report.volumeMm3, cat).toFixed(0)} g printed · ` +
@@ -4932,6 +4951,13 @@ function mergePlacedMeshes(items, byName) {
 
 /** Below this much first-layer area a part is standing on a point, not sitting. */
 const MIN_BED_MM2 = 25;
+// A first layer in several pieces fails differently: each island holds its
+// own tower down alone. The collet spaghetti came off a part whose TOTAL was a
+// comfortable 122 mm2 — as three unbraced 35 mm2 crescents. Doctrine
+// (mesh_utils.js): where area and islands disagree, islands win. 100 mm2
+// clears every one-piece part in the library and flags the slotted posts
+// (~38 mm2 crescents) exactly when the brim checkbox is off.
+const MIN_ISLAND_MM2 = 100;
 
 // ---------------------------------------------------------------------------
 // Print shop: pick quantities of any part, watch the plates fill up
@@ -5602,8 +5628,11 @@ async function openPrintShop(opts = {}) {
                     name: part.name, kind: part.kind ?? 'track', ...fp,
                     variant: shopVariantLabel(part),
                     vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
-                    // watertight is not the same as printable — see bedStability
+                    // watertight is not the same as printable — see bedStability;
+                    // and AREA is not the same as HELD-DOWN: gate on the
+                    // smallest first-layer island (mesh_utils: islands win)
                     bed: bedStability(mesh.positions, mesh.indices),
+                    islands: firstLayerIslands(mesh),
                     designCount: part.count ?? 0, thumb: ''
                 });
                 shop.counts.set(part.name, part.count ?? 0);
@@ -5667,6 +5696,12 @@ async function shopExport(format = '3mf') {
         const unstable = shop.items
             .filter(it => onPlates.has(it.name) && it.bed && it.bed.contactMm2 < MIN_BED_MM2)
             .map(it => ({ name: it.name, bed: it.bed }));
+        // islands, not just area — a part can pass the total and still be
+        // three crescents each holding its own tower down alone
+        const fragmented = shop.items
+            .filter(it => onPlates.has(it.name) && it.islands && it.islands.persistentIslands > 1
+                && it.islands.areas[it.islands.areas.length - 1] < MIN_ISLAND_MM2)
+            .map(it => ({ name: it.name, islands: it.islands }));
         // The calibration parts bring their own paperwork. Exporting them
         // through the ordinary path would otherwise drop the measurement sheet
         // and the nominals a measuring script reads, which are most of the
@@ -5682,7 +5717,7 @@ async function shopExport(format = '3mf') {
                 sectionReadme({ manifest: shop.calibration.manifest }));
         }
         files['README.txt'] = fflate.strToU8(exportReadme(
-            shop.joints ?? 0, shop.switchCount ?? 0, manifest, unstable));
+            shop.joints ?? 0, shop.switchCount ?? 0, manifest, unstable, fragmented));
         const blob = new Blob([fflate.zipSync(files)], { type: 'application/zip' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -5784,6 +5819,7 @@ async function loadCalibrationParts() {
                 name: part.name, kind: part.kind, ...bedFootprint(mesh.positions),
                 variant: '', vol: rep.volumeMm3, mesh, geo: toBufferGeometry(mesh),
                 bed: bedStability(mesh.positions, mesh.indices),
+                islands: firstLayerIslands(mesh),
                 designCount: part.count, thumb: ''
             });
             shop.counts.set(part.name, part.count);
@@ -5984,7 +6020,7 @@ embedded filament or process settings — so the slicer keeps whatever profile
 you have selected instead of overriding it. Click through it and slice
 normally.`;
 
-function exportReadme(joints, switchCount, plateManifest = null, unstable = []) {
+function exportReadme(joints, switchCount, plateManifest = null, unstable = [], fragmented = []) {
     const sceneryLines = state.scenery.length
         ? state.scenery.map(s => `  - ${s.kind} at (${s.x}, ${s.z}) mm`).join('\n')
         : '  (none placed)';
@@ -6076,6 +6112,12 @@ ${unstable.map(u => `! ${u.name}: only ${u.bed.contactMm2.toFixed(1)} mm² touch
   ${u.bed.widthMm.toFixed(0)} x ${u.bed.depthMm.toFixed(0)} x ${u.bed.heightMm.toFixed(0)} mm. It is standing on a point with the rest of it
   in mid-air. That is an orientation bug, not a slicer setting — do not try
   to print it.`).join('\n')}
+
+` : ''}${fragmented.length ? `FIRST LAYER IN PIECES — EACH ISLAND HOLDS ITS OWN TOWER DOWN ALONE
+${fragmented.map(u => `! ${u.name}: first layer is ${u.islands.islands} separate islands, smallest
+  ${u.islands.areas[u.islands.areas.length - 1].toFixed(0)} mm². Total area passes, which is exactly how the collet printed
+  spaghetti. For slotted posts, tick "Brim on slotted posts" in the shop (ties
+  the islands into one, snips off after); otherwise add a brim in your slicer.`).join('\n')}
 
 ` : ''}ASSEMBLY (in order)
 ${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}
