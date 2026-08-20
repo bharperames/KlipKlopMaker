@@ -3905,6 +3905,47 @@ function initGallery() {
     const allBtn = $('print-all-scene');
     if (allBtn) allBtn.addEventListener('click', () =>
         selectGalleryScene(gallery.parts.map((_, i) => i), 'whole scene'));
+
+    /**
+     * CLICK A PART IN THE SCENE, FIND IT IN THE LIST. Only live in the
+     * scene-composite views, where many parts share one mesh and the eye has
+     * no way back from a solid to its row. A click raycasts to a face, the
+     * face's index range names the part (scenePartAtFace), and the row lights
+     * up and scrolls into view — the view itself stays put, because the point
+     * is identification, not navigation. An orbit drag must never count, and
+     * DISTANCE alone is the discriminator: a held-still press is a click
+     * however long it takes. A time guard was tried and rejected 684 ms real
+     * clicks — the composite's heavy frames delay the up event, and a
+     * deliberate human click is easily that slow.
+     */
+    const el = gallery.renderer.domElement;
+    let downAt = null;
+    el.addEventListener('pointerdown', (e) => { downAt = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener('pointerup', (e) => {
+        const d = downAt; downAt = null;
+        if (!d || !gallery.sceneRanges) return;
+        if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) return;
+        const target = gallery.mesh ?? gallery.prepass;
+        if (!target) return;
+        const r = el.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+            ((e.clientX - r.left) / r.width) * 2 - 1,
+            -((e.clientY - r.top) / r.height) * 2 + 1);
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(ndc, gallery.camera);
+        const hit = ray.intersectObject(target, false)[0];
+        if (!hit || hit.faceIndex == null) return;
+        const pi = scenePartAtFace(hit.faceIndex);
+        if (pi == null) return;
+        const rows = [...$('print-parts-list').children];
+        rows.forEach((li, k) => li.classList.toggle('selected', k === pi));
+        rows[pi]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        const part = gallery.parts[pi];
+        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
+        $('print-part-caption').innerHTML =
+            `<b>${part.name}${countLabel}</b> — that part, where you clicked.<br>` +
+            `<span style="opacity:.8">Click its row to inspect it alone; 🏰 All scene brings this view back.</span>`;
+    });
 }
 
 /**
@@ -4637,6 +4678,12 @@ function closeGallery() {
  */
 function compositeSceneGeometry(indices) {
     const pos = [], idx = [];
+    // WHO OWNS WHICH TRIANGLES. The composite is one merged geometry — that
+    // is what lets the whole viewer pipeline work on it unchanged — so part
+    // identity has to ride alongside: one range of index positions per placed
+    // instance, in emit order. A click raycasts to a face, the face's index
+    // offset binary-searches these, and the list row lights up.
+    const ranges = [];
     let base = 0, placed = 0;
     for (const i of indices) {
         const part = gallery.parts[i];
@@ -4646,6 +4693,7 @@ function compositeSceneGeometry(indices) {
         for (const pl of places) {
             const c = Math.cos(pl.yaw ?? 0), s = Math.sin(pl.yaw ?? 0);
             const P = g.positions, I = g.indices;
+            ranges.push({ i0: idx.length, part: i });
             for (let k = 0; k < P.length; k += 3) {
                 const x = P[k], y = P[k + 1], z = P[k + 2];
                 pos.push(pl.at[0] + x * c + z * s, pl.at[1] + y, pl.at[2] - x * s + z * c);
@@ -4655,7 +4703,20 @@ function compositeSceneGeometry(indices) {
             placed++;
         }
     }
-    return { positions: new Float32Array(pos), indices: new Uint32Array(idx), placed };
+    return { positions: new Float32Array(pos), indices: new Uint32Array(idx), placed, ranges };
+}
+
+/** The part that owns a face of the scene composite, by its index offset. */
+function scenePartAtFace(faceIndex) {
+    const ranges = gallery.sceneRanges;
+    if (!ranges || !ranges.length) return null;
+    const off = faceIndex * 3;
+    let lo = 0, hi = ranges.length - 1;
+    while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (ranges[mid].i0 <= off) lo = mid; else hi = mid - 1;
+    }
+    return ranges[lo].part;
 }
 
 function selectGalleryScene(indices, label) {
@@ -4672,6 +4733,7 @@ function selectGalleryScene(indices, label) {
             return;
         }
         gallery.geo = toBufferGeometry(merged);
+        gallery.sceneRanges = merged.ranges;   // click-to-identify (scenePartAtFace)
         applyGalleryStyle();
         gallery.geo.computeBoundingBox();
         const box = gallery.geo.boundingBox.clone();
@@ -4699,6 +4761,7 @@ function selectGalleryPart(i, additive = false) {
         i = [...set][0] ?? i;
     }
     gallery.sceneSelection = null;
+    gallery.sceneRanges = null;      // clicks identify nothing in a single-part view
     const part = gallery.parts[i];
     if (!part) return;
     gallery.selectedIndex = i;
