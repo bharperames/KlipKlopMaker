@@ -1654,7 +1654,36 @@ function frogDeckKnots(main, branch, spec) {
         const s = (sSep * i) / N;
         knots.push([s, mainDrop(project(s).along) + sink]);
     }
-    knots.push([branch.planLen, branch.drop]);
+    // THE DESCENT AFTER SEPARATION IS EASED, NOT KINKED. This was one straight
+    // segment to the exit: 12.26 deg constant, meeting the plane-following
+    // frog (which falls at 11.2 tapering to ~10.4 deg as the heading rotates)
+    // in an instant slope change at sClear, and meeting the next piece's
+    // 11.22 deg in a 1 deg crease at the exit face. Brett, off the ride: the
+    // branch "does not drop into the curve segment, so the pony really wants
+    // to keep going down the straight path ... this has to be made smoother
+    // with decline happening sooner."
+    //
+    // Sooner has a legal limit: wherever the two channels share ground the
+    // surface is ONE (the knee), so the descent cannot begin before sSep —
+    // but it can begin STEEPENING immediately there instead of arriving all
+    // at once. A cubic in drop(s) with matched end slopes does exactly that:
+    // the gradient starts deepening at sSep itself, peaks mid-run (~13 deg,
+    // inside the 14 deg hard window), and arrives at the exit already at the
+    // branch's nominal grade so the seam to the next piece carries no crease.
+    const dropC = mainDrop(project(sSep).along) + sink;
+    const dropL = branch.drop;
+    const W = branch.planLen - sSep;
+    // slope entering the ease = the flush section's own gradient at sSep
+    const g0 = (dropC - (mainDrop(project(sSep - 2).along) + sink)) / 2;
+    const gE = branch.drop / branch.planLen;          // nominal grade at the exit
+    const nE = Math.max(4, Math.round(W / 6));
+    for (let i = 1; i <= nE; i++) {
+        const t = i / nE;
+        const h00 = 2 * t * t * t - 3 * t * t + 1, h10 = t * t * t - 2 * t * t + t;
+        const h01 = -2 * t * t * t + 3 * t * t, h11 = t * t * t - t * t;
+        knots.push([sSep + W * t,
+            h00 * dropC + h10 * W * g0 + h01 * dropL + h11 * W * gE]);
+    }
     return { knots, sSep, mainSep: project(sSep).along };
 }
 

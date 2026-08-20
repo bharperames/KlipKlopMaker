@@ -145,8 +145,36 @@ export function toManifold(g) {
  * which is exactly what a rib standing proud of a rigid PLA wall is not.
  */
 export const GATE = {
-    vaneThk: 2.6,
-    len: 52,
+    /**
+     * 3.2, was 2.6 — Brett asked for a stiffer blade to go with the longer
+     * one. Eight perimeters at a 0.4 nozzle, and the parked slot still
+     * swallows it: the slot spans (Wi-0.3)..(Wo+1.5) and the blade parked
+     * flush on the wall reaches Wi..Wi+3.2.
+     */
+    vaneThk: 3.2,
+    /**
+     * 78, was 52 — "the gate needs to be at least 50% longer" (Brett, after
+     * watching the pony walk past it). The 52 blade's diverting reach was
+     * 12.1 mm into a 48 mm channel: it sealed the sliver between the two
+     * walls and ended at main-s 66, where the branch had diverged only that
+     * far — the open gap past the tip was 35.9 mm against a 38 mm figure,
+     * a graze, and the main channel recaptured everything it grazed. At 78
+     * the tip runs to s 92, reach 22.5 (past mid-channel), and the gap is
+     * 25.5 mm: the figure cannot pass without riding the blade. And then the
+     * steering model (scripts/frog_steer.mjs) argued for more: riding the
+     * blade, the figure's CENTRE tracks a line half a body inboard of it, and
+     * commitment is decided at the frog nose by which centreline the figure
+     * is nearer — 78's delivery leaves it at the boundary, where hand-level
+     * float noise picks the route, while 95 (reach 30.3, tip at s 109, right
+     * at the separation) crosses it. Cost: pin torque scales with the contact
+     * radius (~1.8x the 52 blade); the C-pin's hold was "a great fit,
+     * perfect" with margin unquantified, so if the gate creeps under a
+     * pushing figure in plastic, the pin grip is the suspect, not the length.
+     * The diverting tip still lands ON the branch's outer wall line (the
+     * reach formula guarantees it), so a pushing figure wedges the tip into
+     * the wall and the wall, not the pin, takes the load.
+     */
+    len: 95,
     hubR: 2.9,      // was 5; the rest was grip. Must clear the pin's shoulder.
     pinR: 2.0,      // Ø4.0 — the SAME as the bore; see below
     pinBoreR: 1.2,  // hollow, leaving 0.8 mm of wall: two perimeters, and a spring
@@ -156,7 +184,7 @@ export const GATE = {
      * 3.2 mm of material around the bore, and the reason is structural, not
      * a print-shrinkage theory. The boss was R3.6, which leaves 1.6 mm of
      * wall around a Ø4 bore — thin for a bearing that takes its load
-     * sideways, through a 52 mm blade. R5.2 doubles it.
+     * sideways, through a 78 mm blade. R5.2 doubles it.
      */
     bossR: 5.2
 };
