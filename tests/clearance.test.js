@@ -220,3 +220,52 @@ describe('one width, everywhere', () => {
         }
     });
 });
+
+// ---------------------------------------------------------------------------
+// physical route choice: the gate decides by geometry, not by its label
+// ---------------------------------------------------------------------------
+import { gateCaptures, resolveRidePathPhysical } from '../js/clearance.js';
+import { GATE } from '../js/track.js';
+
+describe('the gate captures by geometry', () => {
+    const y = (hand, gate) => layoutTrack(
+        ['straight', { type: hand, gate, main: ['straight'], branch: ['curveR'] }], {}).pieces;
+    const pair = (pieces) => [pieces.find(p => p.role === 'main'), pieces.find(p => p.role === 'branch')];
+
+    test.each(['switchL', 'switchR'])('%s: the shipped blade captures, the old 52 does not', (hand) => {
+        const [main, branch] = pair(y(hand, 'branch'));
+        expect(gateCaptures(main, branch).captured).toBe(true);           // GATE.len as shipped
+        expect(gateCaptures(main, branch, { bladeLenMm: 52 }).captured).toBe(false);
+        expect(GATE.len).toBe(95);   // if the blade changes, re-run frog_steer and retune
+    });
+
+    test('at the shipped blade, physics and the gate label agree on every route', () => {
+        for (const hand of ['switchL', 'switchR']) {
+            for (const gate of ['main', 'branch']) {
+                const pieces = y(hand, gate);
+                const ideal = resolveRidePath(pieces).map(p => p.name);
+                const phys = resolveRidePathPhysical(pieces);
+                expect(phys.pieces.map(p => p.name)).toEqual(ideal);
+                expect(phys.disagreements).toEqual([]);
+            }
+        }
+    });
+
+    test('an under-length blade is overruled OUT LOUD, and the path follows the physics', () => {
+        const pieces = y('switchL', 'branch');
+        const phys = resolveRidePathPhysical(pieces, { bladeLenMm: 52 });
+        expect(phys.disagreements).toHaveLength(1);
+        expect(phys.disagreements[0].msg).toContain('walks straight through');
+        // the ride takes the MAIN route: the switch main role and its container
+        expect(phys.pieces.some(p => p.role === 'main')).toBe(true);
+        expect(phys.pieces.some(p => p.role === 'branch')).toBe(false);
+        expect(phys.pieces.some(p => p.type === 'curveR')).toBe(false);
+    });
+
+    test('a parked gate never captures — physical and ideal agree trivially', () => {
+        const pieces = y('switchR', 'main');
+        const phys = resolveRidePathPhysical(pieces, { bladeLenMm: 300 });
+        expect(phys.pieces.map(p => p.name)).toEqual(resolveRidePath(pieces).map(p => p.name));
+        expect(phys.disagreements).toEqual([]);
+    });
+});

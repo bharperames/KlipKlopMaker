@@ -23,7 +23,7 @@ import Module from 'manifold-3d';
 import {
     SPEC, STANDARD, GEOMETRY_VERSION, stationsForPiece, planPosAt, deckYAt, innerWidthAt, bankAt, massCentreS,
     pieceFrame, pieceInFrame, supportInFrame, socketMouthY, collarFits, laysOnUnderside,
-    undersidePlane
+    undersidePlane, GATE, gatePinPosition
 } from './track.js';
 import {
     textRings, textWidthMm, textHeightMm, blockRings, blockSizeMm,
@@ -144,50 +144,12 @@ export function toManifold(g) {
  * closing 0.48 mm is 1.19% strain, against PLA's 2-3% yield. It is a spring,
  * which is exactly what a rib standing proud of a rigid PLA wall is not.
  */
-export const GATE = {
-    /**
-     * 3.2, was 2.6 — Brett asked for a stiffer blade to go with the longer
-     * one. Eight perimeters at a 0.4 nozzle, and the parked slot still
-     * swallows it: the slot spans (Wi-0.3)..(Wo+1.5) and the blade parked
-     * flush on the wall reaches Wi..Wi+3.2.
-     */
-    vaneThk: 3.2,
-    /**
-     * 78, was 52 — "the gate needs to be at least 50% longer" (Brett, after
-     * watching the pony walk past it). The 52 blade's diverting reach was
-     * 12.1 mm into a 48 mm channel: it sealed the sliver between the two
-     * walls and ended at main-s 66, where the branch had diverged only that
-     * far — the open gap past the tip was 35.9 mm against a 38 mm figure,
-     * a graze, and the main channel recaptured everything it grazed. At 78
-     * the tip runs to s 92, reach 22.5 (past mid-channel), and the gap is
-     * 25.5 mm: the figure cannot pass without riding the blade. And then the
-     * steering model (scripts/frog_steer.mjs) argued for more: riding the
-     * blade, the figure's CENTRE tracks a line half a body inboard of it, and
-     * commitment is decided at the frog nose by which centreline the figure
-     * is nearer — 78's delivery leaves it at the boundary, where hand-level
-     * float noise picks the route, while 95 (reach 30.3, tip at s 109, right
-     * at the separation) crosses it. Cost: pin torque scales with the contact
-     * radius (~1.8x the 52 blade); the C-pin's hold was "a great fit,
-     * perfect" with margin unquantified, so if the gate creeps under a
-     * pushing figure in plastic, the pin grip is the suspect, not the length.
-     * The diverting tip still lands ON the branch's outer wall line (the
-     * reach formula guarantees it), so a pushing figure wedges the tip into
-     * the wall and the wall, not the pin, takes the load.
-     */
-    len: 95,
-    hubR: 2.9,      // was 5; the rest was grip. Must clear the pin's shoulder.
-    pinR: 2.0,      // Ø4.0 — the SAME as the bore; see below
-    pinBoreR: 1.2,  // hollow, leaving 0.8 mm of wall: two perimeters, and a spring
-    pinSlot: 1.0,   // the gap that makes it a C rather than a tube
-    boreR: 2.0,     // Ø4.0, plain and fully enclosed — the pin is what gives
-    /**
-     * 3.2 mm of material around the bore, and the reason is structural, not
-     * a print-shrinkage theory. The boss was R3.6, which leaves 1.6 mm of
-     * wall around a Ø4 bore — thin for a bearing that takes its load
-     * sideways, through a 78 mm blade. R5.2 doubles it.
-     */
-    bossR: 5.2
-};
+// GATE and gatePinPosition moved to track.js (pure): the physical route
+// resolver in clearance.js needs them, and clearance cannot import this
+// module (Three.js + WASM). Re-exported here so every existing importer —
+// app, scripts, tests — keeps its path. ONE definition either way.
+export { GATE, gatePinPosition } from './track.js';
+
 
 export const ADDITION = 'add';
 export const SUBTRACTION = 'subtract';
@@ -1566,59 +1528,7 @@ function gateSeatOps(mainPiece, branchPiece, spec) {
  *    branch as surely as the main since at 16 mm in the two routes are still
  *    the same channel.
  */
-export function gatePinPosition(mainPiece, branchPiece) {
-    const h = mainPiece.entry.h;
-    const dir = [Math.cos(h), Math.sin(h)];
-    const right = [Math.sin(h), -Math.cos(h)];
-    // THE HINGE IS ON THE WALL OPPOSITE THE BRANCH, and it is DERIVED, not
-    // tabulated. This was `switchL ? 1 : -1` with a comment asserting which way
-    // a switchL curls — true until the turn sign was corrected in 2.6.0, after
-    // which the pin sat on the SAME wall as the branch on both hands: the blade
-    // would have hinged into the diverging route instead of across it. Brett
-    // caught it: "when you flipped the left/right switches you moved (or didn't
-    // move) the hole that the gate arm plugs into."
-    //
-    // Reading the branch's actual divergence means a future sign change cannot
-    // desynchronise this again — there is nothing left to keep in step.
-    const hingeSide = (() => {
-        if (!branchPiece) return mainPiece.switchType === 'switchL' ? -1 : 1;
-        const e = planPosAt(branchPiece, branchPiece.planLen);
-        const lat = (e.x - mainPiece.entry.x) * right[0] + (e.z - mainPiece.entry.z) * right[1];
-        return lat >= 0 ? -1 : 1;          // opposite the side the branch leaves on
-    })();
-    const wall = mainPiece.innerWidth / 2;
 
-    /** Branch's outer (hinge-side) wall as a lateral offset in the main frame. */
-    const branchOuter = (s) => {
-        if (!branchPiece) return wall;
-        const q = planPosAt(branchPiece, Math.min(s, branchPiece.planLen));
-        const dx = q.x - mainPiece.entry.x, dz = q.z - mainPiece.entry.z;
-        const off = (dx * right[0] + dz * right[1]) * hingeSide;
-        const turn = Math.abs(branchPiece.turn ?? 0) * Math.min(s, branchPiece.planLen)
-            / (branchPiece.planLen || 1);
-        return off + (branchPiece.innerWidth / 2) / Math.max(0.2, Math.cos(turn));
-    };
-
-    // divergence: first station where the branch wall has pulled clear
-    let sHinge = 0;
-    while (sHinge < mainPiece.planLen && wall - branchOuter(sHinge) < 0.5) sHinge += 1;
-    sHinge = Math.min(sHinge, mainPiece.planLen - GATE.len);
-
-    const reach = Math.max(0, wall - branchOuter(sHinge + GATE.len));
-    // pivot on the wall line: parked, the blade's inner face IS the wall
-    const lat = (wall + GATE.vaneThk / 2) * hingeSide;
-    return {
-        x: mainPiece.entry.x + dir[0] * sHinge + right[0] * lat,
-        z: mainPiece.entry.z + dir[1] * sHinge + right[1] * lat,
-        deckY: mainPiece.entryDeck - (sHinge / mainPiece.planLen) * mainPiece.drop,
-        hingeSide,
-        s: sHinge,
-        yawParked: h,
-        // + hingeSide, not −: the tip's lateral offset moves by −len·sin(δ),
-        // so a positive δ carries it INTO the channel on the +right wall.
-        yawDiverting: h + hingeSide * Math.asin(Math.min(0.95, reach / GATE.len))
-    };
-}
 
 /**
  * Section-view helper: removes everything on the +normal side of a plane and

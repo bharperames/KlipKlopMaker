@@ -671,6 +671,22 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <select id="in-mu"></select>
         </div>
 
+        <h2>Route choice at switches</h2>
+        <div class="slider-row">
+            <label>Test ride follows</label>
+            <select id="in-route-mode">
+                <option value="ideal">🎢 The gate setting (idealized)</option>
+                <option value="physical">🔬 What the blade can capture (physical)</option>
+            </select>
+        </div>
+        <div class="hint">
+            Idealized routes by the gate label, roller-coaster-tycoon style.
+            Physical asks the geometry: a diverting blade only takes the figure
+            with it if its reach commits the body past the frog's nose — and if
+            it cannot, the ride says so and walks straight through, exactly as
+            an under-length printed gate does.
+        </div>
+
         <details class="acc" open>
             <summary>Figure lab — for the curious (figures are stock toys, not printed)</summary>
             <div class="card" style="margin-top:8px">

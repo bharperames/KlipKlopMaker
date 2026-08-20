@@ -27,7 +27,7 @@ import {
     spacerHeightMm, spacerVariant, SPACER_VARIANTS, normaliseSkirtStyle
 } from './track.js';
 import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG, stanceWaveform } from './physics.js';
-import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
+import { checkChannelFit, walkerFootprint, CLEARANCE, resolveRidePathPhysical } from './clearance.js';
 import { partCode } from './engrave.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
 import { simulateRun, makePathSampler } from './simulate.js';
@@ -70,6 +70,7 @@ const state = {
     innerWidth: STANDARD.innerWidth,
     curveRadius: STANDARD.curveRadius,
     muKey: 'washboard',
+    routeMode: 'ideal',   // 'ideal' routes by gate label; 'physical' by blade capture
     skirtStyle: SPEC.skirt.style,
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
@@ -1201,6 +1202,14 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
 }
 muSel.value = state.muKey;
 muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
+
+// idealized vs physical route choice — a SIM setting, not a design edit:
+// nothing in the layout or the parts changes, only which path the ride takes
+const routeSel = $('in-route-mode');
+if (routeSel) {
+    routeSel.value = state.routeMode;
+    routeSel.addEventListener('change', () => { state.routeMode = routeSel.value; });
+}
 
 // Part shape: z-up block vs tilted slab — see normaliseSkirtStyle for the
 // styles themselves. A change re-lays the whole track (every piece carries the
@@ -3135,7 +3144,24 @@ function togglePause() {
 
 function startSim() {
     stopSim();
-    const ridePath = resolveRidePath(state.layout.pieces);
+    /**
+     * WHICH PATH — the label's or the physics'. Idealized routes by the gate
+     * setting, RCT-style, and stays the default (Brett: "I still might want
+     * to retain the idealistic action"). Physical routes by what the blade
+     * geometry can actually capture (clearance.js gateCaptures — the frog
+     * nose criterion distilled from scripts/frog_steer.mjs), and SAYS SO when
+     * it overrules a gate label, because an under-length gate that lets the
+     * figure walk straight through is a truth about the printed part, not a
+     * bug in the ride. At the shipped 95 mm blade the two modes agree.
+     */
+    let ridePath;
+    if (state.routeMode === 'physical') {
+        const phys = resolveRidePathPhysical(state.layout.pieces);
+        ridePath = phys.pieces;
+        for (const d of phys.disagreements) toast(`🔬 ${d.msg}`);
+    } else {
+        ridePath = resolveRidePath(state.layout.pieces);
+    }
     // guard on what actually matters: something to ride, and (for loops) closure
     if (!ridePath.some(p => p.slopeDeg > 0 || p.isLift)) {
         toast('Add at least one ramp piece first.');

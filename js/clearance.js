@@ -43,7 +43,7 @@
  *      measurement of when a hoof starts to bind.
  */
 
-import { STANDARD, SPEC, degToRad, innerWidthAt, samplePath, resolveRidePath } from './track.js';
+import { STANDARD, SPEC, degToRad, innerWidthAt, samplePath, resolveRidePath, planPosAt, GATE, gatePinPosition, isSwitchNode } from './track.js';
 import { bodySideOutline, pendulumSideOutline, FIGURE } from './geometry.js';
 
 export const CLEARANCE = {
@@ -410,4 +410,127 @@ export function checkChannelFit(pieces, opts = {}) {
         });
     }
     return { issues, ...fit };
+}
+
+// ---------------------------------------------------------------------------
+// Physical route choice at a switch — the lateral question the 1D simulator
+// cannot ask, answered here because this module IS the lateral half of the
+// physics (fit ACROSS the track).
+// ---------------------------------------------------------------------------
+
+/**
+ * DOES THE DIVERTING BLADE ACTUALLY CAPTURE THE FIGURE?
+ *
+ * The idealized ride routes by the gate LABEL: set it to branch and the
+ * figure takes the branch, whatever the blade could really do — Brett:
+ * "does it still know which way it should go and influences that way." It
+ * did. This is the physical criterion instead, distilled from the steering
+ * model (scripts/frog_steer.mjs), which is the full version of the argument:
+ *
+ *  - Riding the blade, the figure's CENTRE tracks a line half a body width
+ *    inboard of it; at the tip it has been delivered `reach + width/2` from
+ *    the hinge wall.
+ *  - Commitment is decided at the frog nose, where the inner rails resume as
+ *    a V: the nose strikes the body off its centre and deflects it toward
+ *    whichever route's centreline the centre is already nearer.
+ *
+ * So: captured iff, at the blade's tip station, the delivered centre is
+ * nearer the branch centreline than the main's. The 52 mm blade fails this
+ * everywhere (delivery 12+19 = 31 mm out of the needed ~43); the 95 mm one
+ * clears it. A parked blade captures nothing by definition.
+ */
+export function gateCaptures(mainPiece, branchPiece, opts = {}) {
+    const bladeLen = opts.bladeLenMm ?? GATE.len;
+    const figureW = opts.figureWidthMm ?? FIGURE.widthMm;
+    const pin = gatePinPosition(mainPiece, branchPiece);
+    const sTip = Math.min(pin.s + bladeLen, mainPiece.planLen);
+    const h = mainPiece.entry.h;
+    const right = [Math.sin(h), -Math.cos(h)];
+    // the branch's outer wall in the main frame, hinge-positive — the same
+    // derivation gatePinPosition uses for the diverting reach
+    const outer = (s) => {
+        const q = planPosAt(branchPiece, Math.min(s, branchPiece.planLen));
+        const off = ((q.x - mainPiece.entry.x) * right[0] + (q.z - mainPiece.entry.z) * right[1]) * pin.hingeSide;
+        const turn = Math.abs(branchPiece.turn ?? 0) * Math.min(s, branchPiece.planLen)
+            / (branchPiece.planLen || 1);
+        return off + (branchPiece.innerWidth / 2) / Math.max(0.2, Math.cos(turn));
+    };
+    const reach = Math.max(0, mainPiece.innerWidth / 2 - outer(sTip));
+    // delivered centre, as a lateral offset from the MAIN centreline toward
+    // the branch (positive): from the hinge wall, reach + half a body
+    const delivered = (reach + figureW / 2) - mainPiece.innerWidth / 2;
+    // AT THE TIP the comparison is degenerate: the tip sits ON the branch's
+    // outer wall, so the delivered figure is always exactly its play from the
+    // branch centreline there, and every blade "captures". Commitment is
+    // decided at the NOSE — where the main's inner rail resumes, i.e. where
+    // the branch channel has pulled fully across the main's far rail line —
+    // and by then the branch centreline has run further out while the figure,
+    // released from the blade with the rack pulling it mainward, has not. The
+    // criterion holds the delivered lateral constant from tip to nose (the
+    // conservative grant: no free outward drift) and compares there.
+    const halfM = mainPiece.innerWidth / 2;
+    let sNose = sTip;
+    while (sNose < mainPiece.planLen && -outer(sNose) < halfM) sNose += 1;
+    const branchCentreAtNose = -(outer(sNose)) + branchPiece.innerWidth / 2;
+    const toMain = Math.abs(delivered);
+    const toBranch = Math.abs(delivered - branchCentreAtNose);
+    return { captured: toBranch < toMain, reach, delivered,
+        branchCentre: branchCentreAtNose, sTip, sNose };
+}
+
+/**
+ * The ride path the PHYSICS predicts, as against the one the gate label
+ * declares. Same shape as resolveRidePath — a linear piece list — but at
+ * every switch the route is what the blade geometry can actually do:
+ * parked -> main always; diverting -> branch only if gateCaptures says so.
+ * `disagreements` lists every switch where physics overrules the label, so
+ * the app can say "the gate is set to divert, but the blade cannot capture
+ * the figure" instead of silently doing either thing.
+ */
+export function resolveRidePathPhysical(pieces, opts = {}) {
+    // pair the switch role pieces by key
+    const pairs = new Map();
+    for (const pc of pieces) {
+        if (!pc.switchKey) continue;
+        const pair = pairs.get(pc.switchKey) ?? {};
+        pair[pc.role] = pc;
+        pairs.set(pc.switchKey, pair);
+    }
+    const chosen = new Map();          // switchKey -> 'main' | 'branch'
+    const disagreements = [];
+    for (const [key, pair] of pairs) {
+        if (!pair.main || !pair.branch) continue;
+        const label = pair.main.gateOpen ? 'main' : 'branch';
+        let phys = 'main';
+        if (label === 'branch') {
+            const cap = gateCaptures(pair.main, pair.branch, opts);
+            phys = cap.captured ? 'branch' : 'main';
+            if (!cap.captured) disagreements.push({
+                switchKey: key, label, physical: phys,
+                msg: `gate is set to divert, but the ${opts.bladeLenMm ?? GATE.len} mm blade delivers the figure only ${(cap.delivered + pair.main.innerWidth / 2).toFixed(0)} mm across — it walks straight through`
+            });
+        }
+        chosen.set(key, phys);
+    }
+    // a piece is on the physical path if every switch on its address took the
+    // route the piece sits in — addresses carry 'main'/'branch' tokens at
+    // each switch level, and the switch role pieces carry their own role
+    const keyOfAddress = (addr) => JSON.stringify(addr);
+    const switchAddr = new Map();      // pathKey(address) is track.js-internal;
+    for (const pc of pieces) {         // recover addresses from the role pieces
+        if (pc.switchKey && pc.role === 'main') switchAddr.set(keyOfAddress(pc.address), pc.switchKey);
+    }
+    const onPath = (pc) => {
+        const addr = pc.address ?? [];
+        for (let i = 0; i < addr.length; i++) {
+            if (addr[i] === 'main' || addr[i] === 'branch') {
+                const swKey = switchAddr.get(keyOfAddress(addr.slice(0, i)));
+                const want = swKey != null ? chosen.get(swKey) : null;
+                if (want != null && addr[i] !== want) return false;
+            }
+        }
+        if (pc.switchKey) return (chosen.get(pc.switchKey) ?? (pc.gateOpen ? pc.role : null)) === pc.role;
+        return true;
+    };
+    return { pieces: pieces.filter(onPath), disagreements };
 }
