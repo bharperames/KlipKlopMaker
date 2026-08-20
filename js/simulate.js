@@ -63,6 +63,17 @@ export function simulateRun(pieces, opts = {}) {
     const dt = opts.dt ?? 0.002;
     const maxT = opts.maxT ?? 180;
     const traceEvery = opts.traceEvery ?? 0.02;
+    /**
+     * IDEALIZED MODE — roller-coaster-tycoon track following, Brett's "treat
+     * it like an idealized game". The figure follows the resolved path and
+     * ALWAYS completes: pieces the physics would stall, ski or tumble on are
+     * ridden at a nominal gait instead, platforms are trotted across rather
+     * than coasted to a stop on, and the momentum rule is off. It is a MODE
+     * of this simulator, not app-side motion logic, so the trace, the gait
+     * phase and the animation contract stay identical — one simulator either
+     * way. The harness and the scenes always run physical.
+     */
+    const idealized = opts.idealized === true;
 
     const liftSpeed = opts.liftSpeedMmS ?? 110;
     const sampler = makePathSampler(pieces, 4);
@@ -76,6 +87,20 @@ export function simulateRun(pieces, opts = {}) {
                 ? assessSlope(pc.slopeDeg, { mu, walker, ridgePitchMm: pc.ridgePitch })
                 : { status: 'platform', speedMmS: 0, stepHz: 0, strideMm: 0 }
     );
+    if (idealized) {
+        // the nominal gait every non-walking piece is granted: the Standard's
+        // own, so an idealized ride looks like a healthy one everywhere
+        const nominal = assessSlope(11.21808, { walker, ridgePitchMm: 2.5 });
+        for (let i = 0; i < assess.length; i++) {
+            const a = assess[i];
+            if (a.status === 'lift') continue;
+            if (a.status !== 'walk' || !(a.speedMmS > 0)) {
+                assess[i] = { ...a, status: 'walk',
+                    speedMmS: nominal.speedMmS, stepHz: nominal.stepHz,
+                    strideMm: nominal.strideMm };
+            }
+        }
+    }
 
     // start at the head of the first running piece (where a child places the
     // toy) — a descending ramp or a powered lift both count
@@ -102,7 +127,7 @@ export function simulateRun(pieces, opts = {}) {
 
         if (pi !== lastPiece) {
             logEvent('piece', `${piece.name} (${a.status})`);
-            if (a.status === 'tumble') {
+            if (!idealized && a.status === 'tumble') {
                 outcome = 'tumbled';
                 logEvent('outcome', 'slope exceeds swing limiter — figure pitches over its front axle');
                 break;
@@ -117,8 +142,9 @@ export function simulateRun(pieces, opts = {}) {
             nextMode = 'lift'; // externally powered conveyor section
         } else if (a.status === 'walk') {
             // momentum rule: a figure sliding in much faster than the gait speed
-            // cannot re-enter the rocking cycle — it keeps skiing.
-            nextMode = (mode === 'slide' && v > 1.6 * gaitV) ? 'slide' : 'walk';
+            // cannot re-enter the rocking cycle — it keeps skiing. Off in the
+            // idealized mode: track following never skis.
+            nextMode = (!idealized && mode === 'slide' && v > 1.6 * gaitV) ? 'slide' : 'walk';
         } else {
             nextMode = 'slide'; // slide dynamics cover coasting & decel too
         }

@@ -141,3 +141,29 @@ describe('LIFT regime', () => {
         expect(verifyEnergyBudget(r.trace).ok).toBe(true);
     });
 });
+
+describe('IDEALIZED mode — track following that always completes', () => {
+    test('a layout that stalls physically arrives idealized, same simulator', () => {
+        // the STALL regime's own fixture: shallow, slick, lossy — proven to stall
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 8 });
+        const cfg = { mu: FRICTION_PRESETS.smooth.mu,
+            walker: { alphaDeg: 18, legLenMm: 26, efficiency: 0.15, massG: 45 } };
+        const phys = simulateRun(pieces, cfg);
+        const ideal = simulateRun(pieces, { ...cfg, idealized: true });
+        expect(phys.outcome).not.toBe('arrived');
+        expect(ideal.outcome).toBe('arrived');
+        // and it is still a gait, not a teleport: clacks happened, phase rode along
+        expect(ideal.stats.clacks).toBeGreaterThan(5);
+        expect(ideal.trace.some(s => s.phase > 0)).toBe(true);
+    });
+
+    test('on a compliant layout the two modes agree about the ride', () => {
+        const { pieces } = layoutTrack(['straight', 'curveL', 'straight'], {});
+        const phys = simulateRun(pieces, { mu: FRICTION_PRESETS.washboard.mu });
+        const ideal = simulateRun(pieces, { mu: FRICTION_PRESETS.washboard.mu, idealized: true });
+        expect(phys.outcome).toBe('arrived');
+        expect(ideal.outcome).toBe('arrived');
+        // idealized grants nothing a healthy ride did not already have
+        expect(Math.abs(ideal.tEnd - phys.tEnd)).toBeLessThan(1.5);
+    });
+});

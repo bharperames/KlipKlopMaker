@@ -70,7 +70,7 @@ const state = {
     innerWidth: STANDARD.innerWidth,
     curveRadius: STANDARD.curveRadius,
     muKey: 'washboard',
-    routeMode: 'ideal',   // 'ideal' routes by gate label; 'physical' by blade capture
+    simMode: 'physical',  // 'physical' = full model incl. blade-capture routing; 'ideal' = RCT track following
     skirtStyle: SPEC.skirt.style,
     walker: { ...DEFAULT_WALKER },
     soundOn: true,
@@ -1203,12 +1203,17 @@ for (const [key, p] of Object.entries(FRICTION_PRESETS)) {
 muSel.value = state.muKey;
 muSel.addEventListener('change', () => { recordEdit(); state.muKey = muSel.value; rebuild(); });
 
-// idealized vs physical route choice — a SIM setting, not a design edit:
-// nothing in the layout or the parts changes, only which path the ride takes
-const routeSel = $('in-route-mode');
-if (routeSel) {
-    routeSel.value = state.routeMode;
-    routeSel.addEventListener('change', () => { state.routeMode = routeSel.value; });
+// GLOBAL simulation mode — a SIM setting, not a design edit: nothing in the
+// layout or the parts changes, only how truthfully the ride treats them
+const simModeSel = $('in-sim-mode');
+if (simModeSel) {
+    simModeSel.value = state.simMode;
+    simModeSel.addEventListener('change', () => {
+        state.simMode = simModeSel.value;
+        toast(state.simMode === 'ideal'
+            ? '🎢 Idealized: track following — the ride always completes'
+            : '🔬 Physics driven: real gait, real failures, real gate capture');
+    });
 }
 
 // Part shape: z-up block vs tilted slab — see normaliseSkirtStyle for the
@@ -3155,7 +3160,7 @@ function startSim() {
      * bug in the ride. At the shipped 95 mm blade the two modes agree.
      */
     let ridePath;
-    if (state.routeMode === 'physical') {
+    if (state.simMode === 'physical') {
         const phys = resolveRidePathPhysical(state.layout.pieces);
         ridePath = phys.pieces;
         for (const d of phys.disagreements) toast(`🔬 ${d.msg}`);
@@ -3170,6 +3175,7 @@ function startSim() {
 
     sim.run = simulateRun(ridePath, {
         ...physOpts(),
+        idealized: state.simMode === 'ideal',
         liftSpeedMmS: SPEC.liftSpeedMmS,
         loop: state.layout.isCircuit,
         maxLaps: 3

@@ -353,12 +353,16 @@ select {
 /* the selected row — clicking a row OR clicking that part in the scene view.
    The class was being toggled all along with no rule to show it: verified in
    the DOM, invisible on the screen. */
+/* bright yellow, not the accent blue — Brett: the blue was "hard to read
+   against the dark background". The row has to read from across the room
+   when a scene click picks it. */
 #print-parts-list li.selected {
-    background: var(--panel-2);
-    color: var(--accent);
-    box-shadow: inset 3px 0 0 var(--accent);
+    background: rgba(255, 215, 40, 0.16);
+    color: #ffd728;
+    box-shadow: inset 3px 0 0 #ffd728;
     font-weight: 600;
 }
+#print-parts-list li.selected .wt { color: #ffd728; }
 #print-parts-list .wt { color: var(--ink-3); font-size: 11px; }
 #parts-heading .wt { color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
 /* The tab bar is how you get between panes, so it must never scroll away —
@@ -671,20 +675,22 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-radius: 
             <select id="in-mu"></select>
         </div>
 
-        <h2>Route choice at switches</h2>
+        <h2>Simulation mode</h2>
         <div class="slider-row">
-            <label>Test ride follows</label>
-            <select id="in-route-mode">
-                <option value="ideal">🎢 The gate setting (idealized)</option>
-                <option value="physical">🔬 What the blade can capture (physical)</option>
+            <label>Test ride is</label>
+            <select id="in-sim-mode">
+                <option value="physical">🔬 Physics driven — the printed parts, truthfully</option>
+                <option value="ideal">🎢 Idealized — track following, always completes</option>
             </select>
         </div>
         <div class="hint">
-            Idealized routes by the gate label, roller-coaster-tycoon style.
-            Physical asks the geometry: a diverting blade only takes the figure
-            with it if its reach commits the body past the frog's nose — and if
-            it cannot, the ride says so and walks straight through, exactly as
-            an under-length printed gate does.
+            One switch for the whole ride. <b>Physics driven</b> runs the real
+            model: gait, stalls, skis, tumbles, and switches route by what the
+            gate blade can actually capture — if a gate is set to divert but
+            cannot commit the figure past the frog's nose, the ride says so and
+            walks straight through. <b>Idealized</b> is the
+            roller-coaster-tycoon mode: the figure follows the track as the
+            gate labels route it, never fails, and always reaches the corral.
         </div>
 
         <details class="acc" open>
