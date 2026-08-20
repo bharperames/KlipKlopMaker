@@ -1,6 +1,6 @@
 import {
     FRICTION_PRESETS, DEFAULT_WALKER, steadyOmega, integrateStep,
-    assessSlope, goldilocksRange, ballastPlan, trackVerdict
+    assessSlope, goldilocksRange, ballastPlan, trackVerdict, stanceWaveform
 } from '../js/physics.js';
 import { layoutTrack } from '../js/track.js';
 
@@ -76,6 +76,21 @@ describe('rimless-wheel gait model', () => {
         expect(r.speedMmS).toBeGreaterThan(smooth.speedMmS * 0.85);
         // even a coarse rack can never quantise the stride to zero
         expect(assessSlope(11.217, { mu: 0.6, ridgePitchMm: 30 }).ridgesPerStep).toBe(1);
+    });
+
+    test('the stance waveform is the step, reshaped for playback', () => {
+        const w = stanceWaveform(11.2181);
+        // endpoints are the stance's own: grip at -(alpha-gamma), strike at +(alpha+gamma)
+        expect(w.phi01[0]).toBeCloseTo(w.phi0, 6);
+        expect(w.phi01[w.phi01.length - 1]).toBeCloseTo(w.phi1, 6);
+        // monotonic — the leg never swings backwards in a completed step
+        for (let i = 1; i < w.phi01.length; i++) expect(w.phi01[i]).toBeGreaterThanOrEqual(w.phi01[i - 1]);
+        // same physics as integrateStep, not a second opinion of it
+        const step = integrateStep(11.2181, steadyOmega(11.2181));
+        expect(w.stepTime).toBeCloseTo(step.stepTime, 2);
+        // and the asymmetry is present: less than 45% of the stride is done
+        // at half time — the slow grip, then the accelerating fall
+        expect(w.s01[Math.floor(w.s01.length / 2)]).toBeLessThan(0.45);
     });
 
     test('each step splits into a grip phase and a release-swing phase', () => {

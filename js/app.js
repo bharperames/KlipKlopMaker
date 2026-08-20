@@ -26,7 +26,7 @@ import {
     planPosAt, deckYAt, stackHeightMm, supportBossPos, pieceFrame, innerWidthAt,
     spacerHeightMm, spacerVariant, SPACER_VARIANTS, normaliseSkirtStyle
 } from './track.js';
-import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG } from './physics.js';
+import { FRICTION_PRESETS, DEFAULT_WALKER, assessSlope, goldilocksRange, ballastPlan, trackVerdict, printedWeightG, stanceWaveform } from './physics.js';
 import { checkChannelFit, walkerFootprint, CLEARANCE } from './clearance.js';
 import { partCode } from './engrave.js';
 import { computeMeshVolumeMm3 } from './mesh_utils.js';
@@ -3156,6 +3156,9 @@ function startSim() {
     sim.t = 0;
     sim.phase = 0;
     sim.cursor = 0;
+    sim.wave = new Map();
+    sim.stepCount = 0;
+    sim.lastPhase = null;
     sim.paused = false;
     sim.running = true;
     for (const btn of document.querySelectorAll('[data-figstyle]')) btn.disabled = true;
@@ -3219,7 +3222,10 @@ function traceAt(t) {
     const a = tr[sim.cursor], b = tr[Math.min(sim.cursor + 1, tr.length - 1)];
     if (a === b) return a;
     const f = (t - a.t) / (b.t - a.t);
-    return { t, dist: a.dist + (b.dist - a.dist) * f, v: a.v + (b.v - a.v) * f, mode: a.mode, pieceIndex: a.pieceIndex };
+    return { t, dist: a.dist + (b.dist - a.dist) * f, v: a.v + (b.v - a.v) * f, mode: a.mode, pieceIndex: a.pieceIndex,
+        // phase is NOT interpolated across samples — it wraps at 1 — so carry
+        // the anchor sample's phase and time; the tick advances it by stepHz
+        phase: a.phase ?? 0, phaseT: a.t };
 }
 
 function tickSim(dt) {
@@ -3237,19 +3243,58 @@ function tickSim(dt) {
 
     const a = sim.run.assess[s.pieceIndex];
     if (s.mode === 'walk' && a.stepHz > 0.1) {
-        const prev = Math.sin(Math.PI * a.stepHz * sim.phase);
-        sim.phase += dt;
-        const cur = Math.sin(Math.PI * a.stepHz * sim.phase);
-        sim.horse.userData.pivot.rotation.x = 0.14 * cur;
+        /**
+         * THE POSE IS THE PHYSICS NOW. This was a symmetric sine at an
+         * arbitrary 0.14 rad, free-running its own phase — the on-screen
+         * strikes were nobody's number and the shape erased the very
+         * asymmetry the model exists for. Three sources, one authority each:
+         *   PHASE   the trace's stepPhase (simulate.js counts the clacks off
+         *           the same variable), advanced by stepHz since the anchor
+         *           sample so it stays smooth between 20 ms trace points.
+         *   SHAPE   stanceWaveform — the integrated stance: phi(t) runs
+         *           -(alpha-gamma) .. +(alpha+gamma), a slow tip over the
+         *           fresh grip then an accelerating fall. Body rock is
+         *           phi - gamma, a true +-alpha about the ramp: the rimless
+         *           wheel's own angle, no display gain.
+         *   RATCHET s01(phase) - phase is the zero-mean difference between
+         *           the physical advance profile and the trace's linear mean
+         *           — the figure now covers 63% of each stride in the back
+         *           half of the step, lurching exactly as the toy does,
+         *           while arrival times stay the simulator's.
+         */
+        const pc = sim.ridePath[s.pieceIndex];
+        sim.wave ??= new Map();
+        if (!sim.wave.has(s.pieceIndex)) {
+            sim.wave.set(s.pieceIndex, stanceWaveform(pc.slopeDeg, state.walker));
+        }
+        const w = sim.wave.get(s.pieceIndex);
+        const phase = (s.phase + a.stepHz * (sim.t - s.phaseT)) % 1;
+        const look = (arr) => {
+            const u = phase * (arr.length - 1);
+            const i = Math.min(arr.length - 2, Math.floor(u));
+            return arr[i] + (arr[i + 1] - arr[i]) * (u - i);
+        };
+        const gamma = pc.slopeDeg * Math.PI / 180;
+        const rock = look(w.phi01) - gamma;              // +-alpha about the ramp
+        sim.horse.userData.pivot.rotation.x = rock;
+        sim.horse.userData.pend.rotation.x = -rock;      // limiter stop to stop
         // lateral waddle seen in reference footage: the toy sways once per
         // two steps (weight shifts alternate sides). Display-only.
-        sim.horse.userData.pivot.rotation.z = 0.07 * Math.sin(Math.PI * a.stepHz * sim.phase / 2);
-        sim.horse.userData.pend.rotation.x = -state.walker.alphaDeg * Math.PI / 180 * cur;
-        if (Math.sign(cur) !== Math.sign(prev) && Math.sign(cur) !== 0) {
-            const front = Math.sign(cur) > 0;
+        sim.stepCount ??= 0;
+        sim.horse.userData.pivot.rotation.z = 0.07 * Math.sin(Math.PI * (sim.stepCount + phase));
+        // the grip-release lurch, as a zero-mean offset on the trace's dist
+        const lurch = (a.strideMm || 0) * (look(w.s01) - phase);
+        const pl = sim.sampler.at(Math.max(0, s.dist + lurch));
+        sim.horse.position.set(pl.x, pl.y, pl.z);
+        sim.horse.rotation.y = Math.PI / 2 - pl.h;
+        // strike: the phase wrap IS the clack simulate.js counted
+        if (sim.lastPhase != null && phase < sim.lastPhase - 0.5) {
+            sim.stepCount++;
+            const front = (sim.stepCount & 1) === 0;
             clack(front ? 1900 : 1300);
             dropStrikeMarker(front);
         }
+        sim.lastPhase = phase;
     } else if (s.mode === 'lift') {
         sim.phase += dt;
         sim.horse.userData.pivot.rotation.x = 0.03 * Math.sin(8 * sim.phase); // conveyor judder

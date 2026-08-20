@@ -176,7 +176,13 @@ export function simulateRun(pieces, opts = {}) {
             lastTrace = t;
             trace.push({
                 t: +t.toFixed(3), dist: +dist.toFixed(2), v: +v.toFixed(2),
-                y: +here.y.toFixed(2), mode, pieceIndex: pi
+                y: +here.y.toFixed(2), mode, pieceIndex: pi,
+                // gait phase, 0..1 within the current step — the ride's pose,
+                // clacks and ratchet all key on THIS, so the figure on screen
+                // strikes exactly when the simulation counts a clack instead
+                // of free-running its own phase and drifting (it did, and the
+                // displayed clacks were nobody's number)
+                phase: +stepPhase.toFixed(3)
             });
         }
     }

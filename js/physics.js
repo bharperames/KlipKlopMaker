@@ -85,6 +85,49 @@ export function integrateStep(slopeDeg, omega0, walker = DEFAULT_WALKER) {
 }
 
 /**
+ * THE STANCE, AS A WAVEFORM THE RIDE CAN PLAY. `integrateStep` proves a step
+ * completes; this returns its actual shape: at each time fraction t01 of one
+ * step, the stance angle phi (radians, from -(alpha-gamma) at the grip to
+ * +(alpha+gamma) at the strike) and the fraction s01 of the stride advanced.
+ * The shape is the klip...klop asymmetry itself — a slow tip over the new
+ * pad, then an accelerating fall onto the next — and the ride used to erase
+ * it with a symmetric sine at an arbitrary amplitude. Pure and deterministic;
+ * cache by (slopeDeg, walker) if calling per frame.
+ */
+export function stanceWaveform(slopeDeg, walker = DEFAULT_WALKER, n = 48) {
+    const a = d2r(walker.alphaDeg), g = d2r(slopeDeg);
+    const omega0 = steadyOmega(slopeDeg, walker);
+    const gl = G_MM_S2 / walker.legLenMm;
+    const phi0 = -(a - g), phi1 = a + g;
+    // integrate once at fine dt, then resample to n+1 uniform time fractions
+    const dt = 0.0005;
+    const raw = [];
+    let phi = phi0, omega = omega0, t = 0;
+    while (phi < phi1 && t < 3) {
+        raw.push([t, phi]);
+        omega += gl * Math.sin(phi) * dt;
+        if (omega <= 0) break;
+        phi += omega * dt;
+        t += dt;
+    }
+    raw.push([t, phi1]);
+    const T = t;
+    const t01 = [], phi01 = [], s01 = [];
+    let k = 0;
+    for (let i = 0; i <= n; i++) {
+        const tf = (T * i) / n;
+        while (k + 1 < raw.length && raw[k + 1][0] < tf) k++;
+        const [ta, pa] = raw[k], [tb, pb] = raw[Math.min(k + 1, raw.length - 1)];
+        const f = tb === ta ? 0 : (tf - ta) / (tb - ta);
+        const p = pa + (pb - pa) * f;
+        t01.push(i / n);
+        phi01.push(p);
+        s01.push((p - phi0) / (phi1 - phi0));   // stride fraction ~ angle swept
+    }
+    return { t01, phi01, s01, stepTime: T, phi0, phi1 };
+}
+
+/**
  * Full assessment of a slope against a walker + surface configuration.
  *
  * THE GAIT IS A GRIP-RELEASE CYCLE ON A RACK, not a continuous roll — Brett,

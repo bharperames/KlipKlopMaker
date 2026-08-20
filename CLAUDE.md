@@ -53,6 +53,16 @@ building, gait physics simulation, and watertight STL/3MF export.
   The app's "Test ride" replays its trace; the harness (`tests/scenes.test.js`,
   `scripts/generate_reports.mjs`) asserts on it. Never re-add ad-hoc motion
   logic to `app.js`. It must stay pure and deterministic (no Date/random).
+  THE POSE IS PHYSICS TOO: the trace carries `phase` (0..1 in the current
+  step, the same variable the sim counts clacks off), and the ride's body
+  rock, pendulum, strikes and grip-release lurch all come from
+  `stanceWaveform` (physics.js — the integrated stance, phi from
+  -(alpha-gamma) to +(alpha+gamma)) looked up at that phase. The ride used to
+  free-run a symmetric sine at an arbitrary amplitude; its strikes were
+  nobody's number and the shape erased the klip...klop asymmetry (63% of each
+  stride happens in the back half of the step). Don't reintroduce a display
+  phase — sync drift between shown and counted clacks is the bug that rule
+  exists for.
 - **Scenes are tests**: files in `scenes/` carry an `expect` block and are
   auto-picked-up by the harness and the report generator. Keep expectations in
   the scene file, not hardcoded in tests.
