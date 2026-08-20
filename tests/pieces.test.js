@@ -1606,9 +1606,12 @@ describe('calibration coupons', () => {
         const g = joint.build();
         const vol = am(g.positions, g.indices).volumeMm3;
         // the pocket alone is ~9 x 12 x 24 mm of absence; a coupon that solid
-        // would be well over 20 cm3, so a sane hollow is the check
+        // would be well over 20 cm3, so a sane hollow is the check. The
+        // ceiling is style-dependent by doctrine — the coupon follows the
+        // design's underside, and the block form fills to the rim (~62 cm3)
+        // where the slab stops at the underside plane (~48).
         expect(vol).toBeGreaterThan(1000);
-        expect(vol).toBeLessThan(60000);
+        expect(vol).toBeLessThan(80000);
     }, 240000);
 });
 

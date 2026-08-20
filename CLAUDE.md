@@ -91,8 +91,12 @@ building, gait physics simulation, and watertight STL/3MF export.
   (the original dovetail tab failed in the slicer as a floating cantilever) —
   joints are bowtie keys in rib-recessed pockets; `tests/pieces.test.js`
   enforces the footprint rule.
-- **TWO PART SHAPES: `block` (z-up) and `minimal` (tilted slab), chosen in the
-  Print/Parts panel.** Brett, on the tilted parts in practice: "the pieces
+- **TWO PART SHAPES: `block` (z-up, THE DEFAULT) and `minimal` (tilted slab),
+  chosen in the Print/Parts panel.** Block became the default when Brett,
+  finding a session's exports in the orientation he had not chosen, made the
+  naming explicit: block is "the standard print", minimal "the angled print".
+  A saved scene's explicit `skirtStyle` is always honored — an old `minimal`
+  file stays minimal, because it describes printed parts. Brett, on the tilted parts in practice: "the pieces
   look odd and are hard to reason about ... I suspect they will look more
   natural in the hand and make more sense." A block piece keeps the minimal
   deck, rails and joints but stands them on VERTICAL walls down to a flat rim

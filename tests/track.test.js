@@ -43,7 +43,8 @@ describe('layoutTrack', () => {
      * below ground, and never a full spare grid unit of daylight.
      */
     test('the lowest point of the lowest part rests on the ground (within one grid unit)', () => {
-        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11 });
+        // pinned to the slab style — the lift under test only exists there
+        const { pieces } = layoutTrack(['straight', 'straight'], { slopeDeg: 11, skirtStyle: 'minimal' });
         const lowest = Math.min(...pieces.map((pc) => {
             if (!laysOnUnderside(pc, SPEC)) return pc.rimY;
             const pl = undersidePlane(pc, SPEC);
@@ -269,10 +270,11 @@ describe('lift pieces', () => {
     });
 
     test('lowest rim still lands on the grid datum with lifts in play', () => {
+        // slab style: the grid-snapped ground lift is the thing under test
         // grounding is by the lowest UNDERSIDE now (see the ground-shift test),
         // lifted in whole grid units — so the rim invariant is grid membership,
         // with the true low point pinned in [0, grid) by the same shift
-        const { pieces } = layoutTrack(['lift', 'lift', 'curveL', 'curveL', 'straight'], { slopeDeg: 11 });
+        const { pieces } = layoutTrack(['lift', 'lift', 'curveL', 'curveL', 'straight'], { slopeDeg: 11, skirtStyle: 'minimal' });
         const minRim = Math.min(...pieces.map(p => p.rimY));
         expect(minRim % STANDARD.gridMm).toBeCloseTo(0, 9);
         expect(minRim).toBeLessThanOrEqual(STANDARD.gridMm);

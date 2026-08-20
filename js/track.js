@@ -187,7 +187,7 @@ export const SPEC = {
      * been printed: see HANDOFF.md. `viaduct` remains fully supported and is
      * one selection away in the Underside control.
      */
-    skirt: { style: 'minimal', minimalDepthMm: 17 },
+    skirt: { style: 'block', minimalDepthMm: 17 },
     ridge: { height: 0.6, pitch: 2.5 },
     waterfallStepMm: 0.25,
     // Assembly clearance where nothing better is known. The two joints that
@@ -2130,7 +2130,15 @@ export function undersidePlane(piece, spec = SPEC) {
  * the piece's high end, paid in infill rather than walls.
  */
 export function normaliseSkirtStyle(style) {
-    return style === 'block' ? 'block' : 'minimal';
+    // Explicit styles are honored — a scene saved with `minimal` must come
+    // back as `minimal`, it is a different printed part. Everything else
+    // (absent, legacy `viaduct`, junk) takes the DEFAULT, which is `block`:
+    // Brett calls it the standard print, and the app handing him the tilted
+    // variant when he had chosen nothing is how a session's exports came out
+    // in the orientation he did not want. (`viaduct` maps here too — it
+    // printed rim-down on a flat rim, which is block's orientation, not the
+    // tilted slab's.)
+    return style === 'minimal' ? 'minimal' : 'block';
 }
 
 export function laysOnUnderside(piece, spec) {
