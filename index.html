@@ -350,6 +350,15 @@ select {
 }
 #print-parts-list li:last-child { border-bottom: none; }
 #print-parts-list li:hover { background: var(--panel-2); color: var(--accent); }
+/* the selected row — clicking a row OR clicking that part in the scene view.
+   The class was being toggled all along with no rule to show it: verified in
+   the DOM, invisible on the screen. */
+#print-parts-list li.selected {
+    background: var(--panel-2);
+    color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+    font-weight: 600;
+}
 #print-parts-list .wt { color: var(--ink-3); font-size: 11px; }
 #parts-heading .wt { color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
 /* The tab bar is how you get between panes, so it must never scroll away —

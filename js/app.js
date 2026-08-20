@@ -3276,7 +3276,20 @@ function tickSim(dt) {
         };
         const gamma = pc.slopeDeg * Math.PI / 180;
         const rock = look(w.phi01) - gamma;              // +-alpha about the ramp
-        sim.horse.userData.pivot.rotation.x = rock;
+        /**
+         * THE BODY IS NOT THE SPOKE. phi is the rimless wheel's virtual leg
+         * angle; the real figure rolls on convex hoof cams (r ~30 mm over a
+         * 26 mm axle height, PHYSICS.md 1) and the cam absorbs most of that
+         * angle under the body — played at full +-alpha the figure
+         * nose-planted every strike and Brett called it off a film sample:
+         * "the pony seems to be rocking much, much too fast". The WAVEFORM
+         * (shape, phase, strikes) is still the physics verbatim; only the
+         * body's visible pitch is attenuated, by a cam factor calibrated to
+         * read like the reference footage. The PENDULUM keeps full +-alpha:
+         * it really does swing limiter stop to limiter stop.
+         */
+        const CAM_ATTENUATION = 0.4;
+        sim.horse.userData.pivot.rotation.x = rock * CAM_ATTENUATION;
         sim.horse.userData.pend.rotation.x = -rock;      // limiter stop to stop
         // lateral waddle seen in reference footage: the toy sways once per
         // two steps (weight shifts alternate sides). Display-only.
@@ -3985,11 +3998,9 @@ function initGallery() {
         const rows = [...$('print-parts-list').children];
         rows.forEach((li, k) => li.classList.toggle('selected', k === pi));
         rows[pi]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        const part = gallery.parts[pi];
-        const countLabel = part.count > 1 ? ` (x${part.count})` : '';
-        $('print-part-caption').innerHTML =
-            `<b>${part.name}${countLabel}</b> — that part, where you clicked.<br>` +
-            `<span style="opacity:.8">Click its row to inspect it alone; 🏰 All scene brings this view back.</span>`;
+        // no caption prose — the highlighted row IS the answer (Brett: "I
+        // don't see as necessary if the entry in the list just gets
+        // selected/highlighted")
     });
 }
 
